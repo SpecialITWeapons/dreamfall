@@ -37,6 +37,15 @@ describe('createEngine', () => {
     expect(r.setPixelRatio).toHaveBeenLastCalledWith(renderScale(2, 2560, 1440));
     expect(r.setSize).toHaveBeenLastCalledWith(2560, 1440, false);
   });
+  it('never sizes the drawing buffer below one pixel', async () => {
+    const r = fakeRenderer({ isWebGPUBackend: true });
+    const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });
+    engine.resize(0, 0, 2);
+    expect(r.setSize).toHaveBeenLastCalledWith(1, 1, false);
+    expect(r.setPixelRatio).toHaveBeenLastCalledWith(renderScale(2, 1, 1));
+    engine.resize(1280.7, 720.2, 1);
+    expect(r.setSize).toHaveBeenLastCalledWith(1280, 720, false);
+  });
   it('waits for submitted GPU work and one browser frame before unveiling', async () => {
     const onSubmittedWorkDone = vi.fn(async () => {});
     const lost = new Promise<{ reason: string }>(() => {});

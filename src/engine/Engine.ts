@@ -66,8 +66,12 @@ export async function createEngine(
     renderer,
     backend: backend.isWebGPUBackend ? 'webgpu' : 'webgl2',
     resize(width, height, dpr) {
-      renderer.setPixelRatio(renderScale(dpr, width, height));
-      renderer.setSize(width, height, false);
+      // A viewport can report 0×0 at start-up (embedded views, background tabs);
+      // a 0×0 drawing buffer is a WebGPU validation error, so hold one pixel until the resize event arrives.
+      const w = Math.max(1, Math.floor(width));
+      const h = Math.max(1, Math.floor(height));
+      renderer.setPixelRatio(renderScale(dpr, w, h));
+      renderer.setSize(w, h, false);
     },
     render(scene, camera) {
       renderer.render(scene, camera);
