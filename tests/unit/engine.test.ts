@@ -61,4 +61,66 @@ describe('createEngine', () => {
     expect(r.setAnimationLoop).toHaveBeenLastCalledWith(null);
     expect(r.dispose).toHaveBeenCalledTimes(1);
   });
+  it('notifies device loss from uncapturederror and from a lost device, but not when destroyed', async () => {
+    let resolveLost1!: (info: { reason: string }) => void;
+    const lost1 = new Promise<{ reason: string }>((resolve) => {
+      resolveLost1 = resolve;
+    });
+    let uncapturedHandler: (() => void) | undefined;
+    const device1 = {
+      queue: { onSubmittedWorkDone: vi.fn(async () => {}) },
+      lost: lost1,
+      addEventListener(_type: 'uncapturederror', cb: () => void) {
+        uncapturedHandler = cb;
+      },
+    };
+    const r1 = fakeRenderer({ isWebGPUBackend: true, device: device1 });
+    const engine1 = await createEngine(canvas, {}, { makeRenderer: () => r1, raf });
+    const cb = vi.fn();
+    engine1.onDeviceLost(cb);
+    uncapturedHandler?.();
+    expect(cb).toHaveBeenCalledTimes(1);
+    resolveLost1({ reason: 'unknown' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cb).toHaveBeenCalledTimes(2);
+
+    let resolveLost2!: (info: { reason: string }) => void;
+    const lost2 = new Promise<{ reason: string }>((resolve) => {
+      resolveLost2 = resolve;
+    });
+    const device2 = {
+      queue: { onSubmittedWorkDone: vi.fn(async () => {}) },
+      lost: lost2,
+      addEventListener() {},
+    };
+    const r2 = fakeRenderer({ isWebGPUBackend: true, device: device2 });
+    const engine2 = await createEngine(canvas, {}, { makeRenderer: () => r2, raf });
+    const cb2 = vi.fn();
+    engine2.onDeviceLost(cb2);
+    resolveLost2({ reason: 'destroyed' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(cb2).not.toHaveBeenCalled();
+  });
+  it('waits on a WebGL2 fence before the browser frame', async () => {
+    const gl = {
+      SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
+      SYNC_STATUS: 0x9114,
+      SIGNALED: 0x9119,
+      fenceSync: vi.fn(() => ({})),
+      flush: vi.fn(),
+      getSyncParameter: vi.fn(() => 0x9119),
+      deleteSync: vi.fn(),
+    };
+    const r = fakeRenderer({ isWebGPUBackend: false, gl: gl as unknown as WebGL2RenderingContext });
+    const frames = vi.fn((cb: () => void) => cb());
+    const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf: frames });
+    await engine.waitForGpu();
+    expect(gl.fenceSync).toHaveBeenCalledTimes(1);
+    expect(gl.flush).toHaveBeenCalledTimes(1);
+    expect(gl.getSyncParameter).toHaveBeenCalledTimes(1);
+    expect(gl.deleteSync).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveBeenCalledTimes(1);
+  });
 });
