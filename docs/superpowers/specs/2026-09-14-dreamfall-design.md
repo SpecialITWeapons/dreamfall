@@ -256,7 +256,9 @@ statycznie; mierzy je `tools/bench` i panel dev.
 
 ### 5.7 Świadome ograniczenia silnika
 
-- Teren jest heightfieldem: brak jaskiń, nawisów, tuneli i mostów.
+- Teren jest heightfieldem: jedna wysokość na punkt, więc brak jaskiń, nawisów,
+  naturalnych łuków i tuneli. Mosty są możliwe jako obiekty nad terenem
+  (odłożone: wymagają rzek, przeszkód z dołem i pokładu w `RoadKit`).
 - Jeden model oświetlenia, jedna mgła, jedne cienie i jeden post-process; biom
   może je odcieniować w dozwolonym zakresie, nie podmienić.
 - W jednym punkcie mieszają się najwyżej trzy biomy.
@@ -385,7 +387,9 @@ kondygnacji; parcela wybiera hashem rodzaj, obrót i odcień. Każdy budynek
 zostawia rekord przeszkody. Wynik generatora dla stanowiska jest czystą
 funkcją `(seed, komórka kraty, params)`, więc testuje się w Node.
 
-Pierwsza wersja świadomie bez: malowanych pól na ziemi, mostów, wnętrz.
+Pierwsza wersja świadomie bez: malowanych pól na ziemi, mostów (po rzekach w
+M6: przeszkody z `bottom`, `kit.bridge(from, to, width)` z filarami, wykrywanie
+wąwozu wzdłuż drogi po `heightAt`), wnętrz.
 
 ## 9. Postać
 
@@ -552,7 +556,9 @@ wersją.
 ## 16. Poza zakresem
 
 Pełny lot ręczny jako tryb, spadochron i lądowanie, VR, wielu użytkowników,
-mosty i tunele, wnętrza, telemetria użytkowników, drugi wygląd na stronie.
+tunele i nawisy (niemożliwe na heightfieldzie), wnętrza, telemetria
+użytkowników, drugi wygląd na stronie. Mosty i rzeki nie są poza zakresem,
+tylko odłożone do M6.
 
 ## 17. Ryzyka
 
