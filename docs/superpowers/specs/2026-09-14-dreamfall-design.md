@@ -62,6 +62,10 @@ Nowe:
    Node.
 9. Biom to parametry (JSON) plus haki. Parametry są edytowalne w locie; haki
    czytają je przez uniformy w shaderze i przez obiekt w kodzie CPU.
+10. Współrzędne świata żyją w `Simulation` w podwójnej precyzji; prezentacja
+    dostaje współrzędne względem ruchomego początku układu (18.2).
+11. Teren stoi za wąskim interfejsem; nikt poza `terrain/` nie zna jego
+    reprezentacji (18.1).
 
 ## 4. Architektura i struktura modułów
 
@@ -265,7 +269,9 @@ statycznie; mierzy je `tools/bench` i panel dev.
 - Koszt shadera ziemi rośnie z liczbą biomów w rejestrze (każdy pod gałęzią
   warunkową). Przy około dziesięciu jest w porządku; przy kilkudziesięciu
   potrzebny byłby podział terenu na kafle z osobnymi materiałami.
-- Stanowisko nie może przekraczać pierścienia streamingu.
+- Promień stanowiska w pierwszej wersji do 900 m; plan stanowiska jest
+  oddzielony od geometrii (18.2), więc później limitem jest koszt planu, nie
+  pierścień streamingu.
 
 ## 6. Teren i klimat
 
@@ -348,8 +354,15 @@ Cień pod drzewami jako arkusz canvas (port, `flipY = false`). Trawa jako
 lokalne okno (port).
 
 Przeszkody: `Obstacles` trzyma rekordy `{x, z, ground, top, radius, kind}` z
-drzew, propsów z `obstacle`, budynków i stanowisk; lot i kamera pytają
-`floorAt(x, z)` i `aheadAlong(arc)`.
+drzew, propsów z `obstacle`, budynków i stanowisk w siatce haszującej o
+komórce 64 m; lot i kamera pytają `floorAt(x, z)` i `aheadAlong(arc)`, które
+czytają tylko komórki na trasie.
+
+Stanowiska: `build(site, kit)` produkuje plan (drogi, rezerwacje, lista
+rozmieszczeń) trzymany w pamięci podręcznej dla promienia większego niż
+pierścień; geometrię instancjonują komórki z planu, tak jak drzewa z
+`scatter`. Przed rozmieszczeniem komórka i stanowisko pytają
+`Overrides.for(key)`; w pierwszej wersji odpowiedź jest pusta (18.2).
 
 Drogi: `RoadKit` buduje wstęgi z łamanych, próbkuje `heightAt` co 4 m,
 unosi o 0,15 m, kolor nawierzchni z parametrów w kopercie, jedna scalona
@@ -535,18 +548,20 @@ wersją.
    Wynik: płaska ziemia pod niebem w jednym kolorze, dostępna pod adresem.
 2. **M1 Świat.** Porty: szum, pola bazowe, okno wysokości, siatka terenu z
    jednym wbudowanym kolorem ziemi, woda, zegar doby z paletą, kopuła nieba,
-   mgła, światła, model oświetlenia, post-process, grade. Wynik: ziarno 42
+   mgła, światła, model oświetlenia, post-process, grade; ruchomy początek
+   układu i sampler jako czysta funkcja testowana w Node. Wynik: ziarno 42
    wygląda jak w fly-with-me, kamera leci po prostej ścieżce.
-3. **M2 Lot i postać.** Kontroler z `minClearance` i `maxAltitude`, kamera TPP
-   i FPP, `ProceduralHuman`, sterowanie, pamięć, HUD. Wynik: spokojny lot ze
-   sterowaniem i wznowieniem.
+3. **M2 Lot i postać.** Kontroler z `minClearance` i `maxAltitude`, rejestr
+   przeszkód z siatką haszującą, kamera TPP i FPP, `ProceduralHuman`,
+   sterowanie, pamięć, HUD. Wynik: spokojny lot ze sterowaniem i wznowieniem.
 4. **M3 Kontrakt v2 i sceneria.** `contract.ts`, walidatory, standardowe haki,
-   złożony shader ziemi z trzema slotami, streaming komórek z pulami, port
-   zestawu drzewa z morfingiem koron i cztery gatunki, propsy, cień pod
-   drzewami, trawa; dziesięć biomów oryginału jako biomy z danych.
-5. **M4 Osady.** Stanowiska, `RoadKit`, `StructureKit`, generator z
-   parametrami wioski i miasteczka, przeszkody. Wynik: pierwsza osada
-   znaleziona w locie.
+   złożony shader ziemi z trzema slotami, streaming komórek z pulami i pustą
+   warstwą nadpisań, port zestawu drzewa z morfingiem koron i cztery
+   gatunki, propsy, cień pod drzewami, trawa; dziesięć biomów oryginału jako
+   biomy z danych.
+5. **M4 Osady.** Stanowiska z planem oddzielonym od geometrii, `RoadKit`,
+   `StructureKit`, generator z parametrami wioski i miasteczka, przeszkody.
+   Wynik: pierwsza osada znaleziona w locie.
 6. **M5 Dopieszczenie.** Porty Drogi Mlecznej i śniegu, otwarcie z kartą
    tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
    przegląd wydajności.
@@ -566,9 +581,10 @@ tylko odłożone do M6.
   aktualizacja z różnicą parity.
 - Koszt złożonego shadera ziemi rośnie z liczbą biomów; mierzony od M3, kafle
   jako plan awaryjny.
-- Precyzja float32 współrzędnych świata: siatka przesuwana o całe komórki,
-  szumy w shaderach czytają `positionWorld`; przy dziesiątkach kilometrów w
-  porządku, rebase układu jako możliwe rozszerzenie.
+- Precyzja float32 współrzędnych świata: rozwiązana ruchomym początkiem
+  układu (18.2); ryzykiem pozostaje pominięcie jakiegoś odczytu pozycji poza
+  `World.toLocal`, dlatego test w Node leci 200 km i porównuje wynik z lotem
+  od zera.
 - Postać proceduralna z bliska jest umowna; interfejs `Avatar` pozwala na
   model szkieletowy bez zmian w silniku.
 - WebGPU w CI bez GPU jest niestabilne; testy pikselowe w CI na WebGL2, pełna
@@ -576,7 +592,63 @@ tylko odłożone do M6.
 - Rekompilacja materiału terenu przy podmianie biomu może trwać sekundy; w
   edytorze parametry przez uniformy nie wymagają rekompilacji.
 
-## 18. Stałe startowe
+## 18. Granice rozwoju i furtki projektowe
+
+Projekt ma być rozwijany w stronę bardziej złożonego świata, więc poniżej
+jest zapisane, co jest twardym sufitem, co trzeba zaprojektować teraz, a co
+skaluje się przez dodanie.
+
+### 18.1 Twardy sufit
+
+Jedna wysokość na punkt (x, z). Niemożliwe: jaskinie, nawisy, naturalne łuki,
+tunele, wielopoziomowe wnętrza w skale. Możliwe jako obiekty nad terenem:
+mosty, estakady, ruiny z wnętrzami, wiszące wyspy, udawane wejścia do jaskiń.
+Wyjściem byłby teren wolumetryczny (SDF lub voxele), czyli nowy moduł terenu.
+Zobowiązanie: teren stoi za wąskim interfejsem (`groundAt`, `slopeAt`,
+`weightsAt`, `Obstacles`) i żaden inny moduł nie zna jego reprezentacji, więc
+nawet ta wymiana zostaje w jednym module.
+
+### 18.2 Zobowiązania projektowe od pierwszej wersji
+
+1. **Ruchomy początek układu.** `Simulation` trzyma pozycje w podwójnej
+   precyzji (liczby JS), `Presentation` dostaje współrzędne względem
+   `worldOrigin`, przesuwanego skokowo, gdy postać oddali się od niego o
+   więcej niż 4 km. Wszystkie współrzędne świata przechodzą przez jedno
+   miejsce (`World.toLocal`), a szumy w shaderach czytają pozycję lokalną plus
+   uniform przesunięcia o ograniczonej wielkości. Wprowadzane w M1.
+2. **Plan stanowiska oddzielony od geometrii.** `build(site, kit)` produkuje
+   plan (drogi, rezerwacje, listę rozmieszczeń) jako dane trzymane w pamięci
+   podręcznej dla promienia większego niż pierścień streamingu; komórki
+   instancjonują geometrię z planu. Limit promienia stanowiska (900 m w
+   pierwszej wersji) staje się limitem kosztu planu, nie pierścienia, i ta
+   sama droga prowadzi do dróg między miastami i dzielnic. Wprowadzane w M4.
+3. **Rejestr przeszkód z siatką haszującą** (komórka 64 m), zapytania
+   `floorAt` i `aheadAlong` czytają tylko komórki na trasie. Wprowadzane w M2.
+4. **Sampler i generatory gotowe na Web Workery.** `WorldSampler`, standardowe
+   haki CPU i generator osad są czystymi funkcjami bez DOM, bez renderera i
+   bez stanu modułu, więc przeniesienie ich do wątku roboczego z transferem
+   buforów jest mechaniczne. Sprawdzane testem w Node od M1.
+5. **Warstwa nadpisań.** Komórka i stanowisko pytają `Overrides.for(key)`
+   przed rozmieszczeniem; w pierwszej wersji odpowiedź jest zawsze pusta.
+   Trwałe zmiany świata (zniszczenia, budowle użytkownika, edytor świata)
+   dochodzą później bez ruszania streamingu. Wprowadzane w M3.
+
+### 18.3 Skaluje się przez dodanie
+
+Dalekie góry i osady na horyzoncie (drugie, rzadsze okno wysokości jako
+pierścień dalekiego terenu; impostory osad), jeziora na dowolnej wysokości
+(bajt zapasowy), pogoda i pory roku (parametry palety i haków), inni ludzie
+w tym samym niebie (świat z ziarna jest identyczny u wszystkich, synchronizują
+się pozycje), chodzenie po ziemi w FPP (kolizja z heightfieldem; budynki
+potrzebują brył kolizyjnych z przepisów).
+
+Najtrudniejsza naturalna cecha to rzeki: płyną w dół aż do morza, czego nie
+da się wyliczyć lokalnie z szumu per texel. Potrzebna jest hydrologia na
+regionie (drenaż na zgrubnej siatce per kafel około 10 km, deterministyczny
+i cachowany jak plan stanowiska). Wykonalne w tej architekturze, większe niż
+osady; razem z mostami w M6.
+
+## 19. Stałe startowe
 
 | Stała | Wartość |
 | --- | --- |
