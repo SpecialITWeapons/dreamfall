@@ -538,6 +538,11 @@ fly-with-me, które nadal obowiązują), `CONTRIBUTING.md` (proza kontraktu v2 i
 komendy), `docs/perf-notes.md` (pomiary), `README.md`. Każdy plik ma jedną
 rolę, bez powtórzeń.
 
+Język: kod, identyfikatory, komentarze w kodzie, komunikaty commitów i
+dokumentacja repozytorium (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`,
+`VISION.md`) po angielsku; specyfikacje i plany w `docs/superpowers/` po
+polsku. `CLAUDE.md` w korzeniu zapisuje tę zasadę dla agentów.
+
 ## 15. Kamienie milowe
 
 Każdy z własnym planem implementacji, kończy się zielonym CI i wdrożoną
