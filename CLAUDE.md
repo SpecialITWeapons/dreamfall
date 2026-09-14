@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Dreamfall
 
 Working agreements for Claude Code and any other agent working in this repository.
