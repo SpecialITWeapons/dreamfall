@@ -87,7 +87,7 @@ addEventListener('pageshow', (e) => {
 });
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
-  window.dreamfallFailure();
+  if (!disposed) window.dreamfallFailure();
 });
 engine.onDeviceLost(() => {
   if (!disposed) window.dreamfallFailure();
