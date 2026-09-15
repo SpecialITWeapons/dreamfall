@@ -1,4 +1,11 @@
+import type { MemorySnapshot } from '../engine/Engine';
 import type { FlightState } from '../engine/sim/Simulation';
+
+/** GPU counters taken right before and right after `world.dispose()`, to prove dispose actually frees things. */
+export interface DisposeReport {
+  before: MemorySnapshot;
+  afterWorld: MemorySnapshot;
+}
 
 /** What browser tests and tools read from the running page. */
 export interface WorldDebug {
@@ -11,8 +18,8 @@ export interface WorldDebug {
   readonly state: FlightState;
   step(dt: number): void;
   begin(): void;
-  dispose(): Promise<void>;
-  memoryTotal(): number;
+  dispose(): Promise<DisposeReport>;
+  memory(): MemorySnapshot;
 }
 
 declare global {

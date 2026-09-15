@@ -12,7 +12,7 @@ function fakeRenderer(backend: Record<string, unknown>) {
     setAnimationLoop: vi.fn(),
     dispose: vi.fn(),
     backend,
-    info: { memory: { total: 3 } },
+    info: { memory: { geometries: 1, textures: 2, total: 3 } },
   };
   return r as unknown as WebGPURenderer & typeof r;
 }
@@ -65,7 +65,10 @@ describe('createEngine', () => {
     const fn = () => {};
     engine.setLoop(fn);
     expect(r.setAnimationLoop).toHaveBeenLastCalledWith(fn);
-    expect(engine.memoryTotal()).toBe(3);
+    const snapshot = engine.memory();
+    expect(snapshot).toEqual({ geometries: 1, textures: 2, total: 3 });
+    snapshot.total = 999;
+    expect(r.info.memory.total).toBe(3);
     engine.dispose();
     expect(r.setAnimationLoop).toHaveBeenLastCalledWith(null);
     expect(r.dispose).toHaveBeenCalledTimes(1);

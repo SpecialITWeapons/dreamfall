@@ -12,6 +12,13 @@ export interface EngineDeps {
   raf?: (cb: () => void) => void;
 }
 
+/** A copy of the renderer's GPU allocation counters, safe to keep past the next frame. */
+export interface MemorySnapshot {
+  geometries: number;
+  textures: number;
+  total: number;
+}
+
 export interface Engine {
   readonly renderer: WebGPURenderer;
   readonly backend: 'webgpu' | 'webgl2';
@@ -21,7 +28,7 @@ export interface Engine {
   /** Resolves once the GPU has finished its outstanding work and one browser frame has passed. */
   waitForGpu(): Promise<void>;
   onDeviceLost(cb: () => void): void;
-  memoryTotal(): number;
+  memory(): MemorySnapshot;
   dispose(): void;
 }
 
@@ -94,8 +101,9 @@ export async function createEngine(
     onDeviceLost(cb) {
       lostListeners.push(cb);
     },
-    memoryTotal() {
-      return (renderer.info.memory as unknown as { total?: number }).total ?? 0;
+    memory() {
+      const { geometries, textures, total } = renderer.info.memory;
+      return { geometries, textures, total };
     },
     dispose() {
       renderer.setAnimationLoop(null);

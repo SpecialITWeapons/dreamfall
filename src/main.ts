@@ -3,7 +3,7 @@
 import { createEngine } from './engine/Engine';
 import { createLoop } from './engine/Loop';
 import { createWorld } from './engine/World';
-import { installDebug } from './page/Debug';
+import { installDebug, type DisposeReport } from './page/Debug';
 import { createGate } from './page/Gate';
 import { createHud } from './page/Hud';
 import { addressWithSeed, resolveParams, shareAddress } from './page/Params';
@@ -71,12 +71,19 @@ addEventListener('resize', () => {
 });
 document.addEventListener('visibilitychange', () => loop.suspend(document.hidden));
 
-async function dispose() {
-  if (disposed) return;
-  disposed = true;
-  loop.stop();
-  world.dispose();
-  engine.dispose();
+// Idempotent: the first call computes the report and every later call returns the same one.
+let disposeReport: DisposeReport | undefined;
+async function dispose(): Promise<DisposeReport> {
+  if (!disposeReport) {
+    disposed = true;
+    const before = engine.memory();
+    loop.stop();
+    world.dispose();
+    const afterWorld = engine.memory();
+    engine.dispose();
+    disposeReport = { before, afterWorld };
+  }
+  return disposeReport;
 }
 addEventListener('pagehide', (e) => {
   if (e.persisted) loop.suspend(true);
@@ -115,5 +122,5 @@ installDebug(window, {
   },
   begin,
   dispose,
-  memoryTotal: () => engine.memoryTotal(),
+  memory: () => engine.memory(),
 });
