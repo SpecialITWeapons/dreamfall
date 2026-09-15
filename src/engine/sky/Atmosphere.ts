@@ -1,7 +1,8 @@
-// Day cycle and atmosphere per frame: the clock advances, the palette is
-// evaluated, the sky bodies are placed, every shared uniform is written, the
-// one directional light becomes the sun or the moon, and the cloud sea,
-// whiteout and exposure follow the camera's altitude relative to the deck.
+// Day cycle and atmosphere per frame: the clock has been advanced by the
+// simulation; the palette is read, the sky bodies are placed, every shared
+// uniform is written, the one directional light becomes the sun or the moon,
+// and the cloud sea, whiteout and exposure follow the camera's altitude
+// relative to the deck.
 import { Vector3 } from 'three';
 import { LOOK } from '../render/ColorGrade';
 import { sstep } from '../terrain/noise';
@@ -30,8 +31,7 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     get exposure() {
       return exposure;
     },
-    update(dt: number, cameraY: number, follow: Vector3) {
-      clock.advance(dt);
+    update(cameraY: number, follow: Vector3) {
       const pal = clock.palette;
       clock.skyBodies(clock.phase, sunDir, moonDir);
       const sy = sunDir.y;
