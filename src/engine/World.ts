@@ -17,6 +17,7 @@ import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
 import { createSkyDome } from './sky/SkyDome';
 import { createSkyUniforms } from './sky/SkyUniforms';
+import { windFromSeed } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
@@ -50,6 +51,8 @@ export function createWorld(opts: { seed: number; aspect: number; renderer: WebG
   const clock = createDayClock({ phase: 0.3 });
   const look = clock.look;
   const uniforms = createSkyUniforms(look);
+  const wind = windFromSeed(opts.seed);
+  uniforms.uWind.value.set(wind.x, wind.z);
   const horizon = createHorizon(uniforms);
   // The dome covers the whole background; the clear color only matters for the frame before the dome compiles.
   scene.backgroundNode = uniforms.uHorizon;
@@ -100,7 +103,7 @@ export function createWorld(opts: { seed: number; aspect: number; renderer: WebG
     camera.lookAt(origin.localX(pose.lookX), pose.lookY, origin.localZ(pose.lookZ));
     uniforms.time.value = state.t;
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
-    clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z);
+    clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z, wind);
     cloudSea.update(origin.localX(state.x), origin.localZ(state.z));
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
