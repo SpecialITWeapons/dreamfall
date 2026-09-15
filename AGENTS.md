@@ -89,7 +89,8 @@ subdirectory.
   hash grid and the only way scenery reaches the flight.
 - The pilot's stick: `steerBy` turns the figure whole on the next step,
   `aimBy` owns the vertical while held and for `AIM.release` seconds after;
-  the sky pulls let go the moment the pilot steers or nudges, not merely aims.
+  the sky pulls let go the moment the pilot steers or nudges the course, not
+  merely aims or nudges the height.
 - Headings grow counter-clockwise seen from above; rightward input subtracts;
   the figure's frame is x left, y up, z ahead; `bodyToWorld` and
   `Object3D.rotation` with order `'YXZ'` agree.
