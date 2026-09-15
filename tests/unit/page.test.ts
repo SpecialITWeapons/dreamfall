@@ -72,3 +72,68 @@ describe('hud', () => {
     expect(pause.getAttribute('aria-pressed')).toBe('false');
   });
 });
+
+describe('hud controls', () => {
+  it('reports sound, volume and view, and disables sound when unavailable', () => {
+    const hud = createHud(document);
+    const onMute = vi.fn(),
+      onVolume = vi.fn(),
+      onView = vi.fn();
+    hud.onMute(onMute);
+    hud.onVolume(onVolume);
+    hud.onView(onView);
+    const mute = document.getElementById('muteBtn') as HTMLButtonElement,
+      volume = document.getElementById('volume') as HTMLInputElement,
+      view = document.getElementById('viewBtn') as HTMLButtonElement;
+    hud.setMuted(false);
+    expect(mute.textContent).toBe('sound on');
+    expect(mute.getAttribute('aria-pressed')).toBe('false');
+    hud.setMuted(true);
+    expect(mute.textContent).toBe('sound off');
+    expect(mute.getAttribute('aria-pressed')).toBe('true');
+    expect(mute.getAttribute('aria-label')).toBe('Unmute sound');
+    hud.setMuted(false, false);
+    expect(mute.textContent).toBe('sound unavailable');
+    expect(mute.disabled).toBe(true);
+    hud.setMuted(true, true);
+    expect(mute.disabled).toBe(false);
+    mute.click();
+    expect(onMute).toHaveBeenCalledTimes(1);
+    hud.setVolume(0.25);
+    expect(volume.value).toBe('0.25');
+    volume.value = '0.7';
+    volume.dispatchEvent(new Event('input'));
+    expect(onVolume).toHaveBeenLastCalledWith(0.7);
+    hud.setView('tpp');
+    expect(view.textContent).toBe('view: behind');
+    expect(view.getAttribute('aria-pressed')).toBe('false');
+    hud.setView('fpp');
+    expect(view.textContent).toBe('view: eyes');
+    expect(view.getAttribute('aria-pressed')).toBe('true');
+    view.click();
+    expect(onView).toHaveBeenCalledTimes(1);
+  });
+  it('dims after a while without the pointer and wakes on hover, never while inert', () => {
+    vi.useFakeTimers();
+    try {
+      const hud = createHud(document, { idleMs: 100 });
+      const el = document.getElementById('hud')!;
+      el.dispatchEvent(new Event('pointerenter'));
+      vi.advanceTimersByTime(200);
+      expect(el.classList.contains('is-idle')).toBe(false);
+      hud.enable();
+      vi.advanceTimersByTime(200);
+      expect(el.classList.contains('is-idle')).toBe(true);
+      el.dispatchEvent(new Event('pointerenter'));
+      expect(el.classList.contains('is-idle')).toBe(false);
+      expect(el.classList.contains('is-awake')).toBe(true);
+      el.dispatchEvent(new Event('pointerleave'));
+      vi.advanceTimersByTime(200);
+      expect(el.classList.contains('is-idle')).toBe(true);
+      hud.wake();
+      expect(el.classList.contains('is-awake')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

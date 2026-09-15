@@ -206,6 +206,60 @@
         letter-spacing: 0.2em;
         font-size: 0.68rem;
       }
+      #hud input[type='range'] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 84px;
+        height: 44px;
+        margin: 0;
+        background: none;
+        cursor: pointer;
+      }
+      #hud input[type='range']::-webkit-slider-runnable-track {
+        height: 1px;
+        background: rgba(241, 236, 227, 0.5);
+      }
+      #hud input[type='range']::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 11px;
+        height: 11px;
+        margin-top: -5px;
+        border-radius: 50%;
+        border: 1px solid rgba(248, 242, 230, 0.9);
+        background: rgba(248, 242, 230, 0.92);
+        box-shadow: 0 0 10px rgba(8, 18, 26, 0.35);
+      }
+      #hud input[type='range']::-moz-range-track {
+        height: 1px;
+        background: rgba(241, 236, 227, 0.5);
+        border: 0;
+      }
+      #hud input[type='range']::-moz-range-thumb {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        border: 1px solid rgba(248, 242, 230, 0.9);
+        background: rgba(248, 242, 230, 0.92);
+      }
+      #hud {
+        transition:
+          opacity 0.6s ease,
+          background-color 0.6s ease,
+          border-color 0.6s ease;
+      }
+      #hud.is-idle {
+        opacity: 0.34;
+        background: rgba(14, 26, 34, 0.14);
+        border-color: rgba(241, 236, 227, 0.18);
+      }
+      #hud.is-idle:hover,
+      #hud.is-idle:focus-within,
+      #hud.is-awake {
+        opacity: 1;
+        background: rgba(14, 26, 34, 0.3);
+        border-color: rgba(241, 236, 227, 0.42);
+      }
       #hud[inert] {
         visibility: hidden;
       }
@@ -237,7 +291,11 @@
     <div id="begin">
       <button id="beginBtn" disabled>begin</button>
       <p class="hint">
-        <span>A flight across an endless world. It flies itself; there is nothing to do.</span>
+        <span>A flight across an endless world. It flies itself.</span><br />
+        <span
+          >Drag with the right button or a finger to steer, the left button looks around, V changes the
+          view.</span
+        >
       </p>
     </div>
     <div id="loading">
@@ -247,8 +305,27 @@
     </div>
     <div id="hud" inert>
       <a id="shareLink" href="#" title="A link to this exact world">share this world</a>
+      <button id="muteBtn" aria-label="Mute sound" title="Toggle sound" aria-pressed="false">sound on</button>
+      <input
+        id="volume"
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value="0.5"
+        aria-label="Volume"
+        title="Volume"
+      />
       <button id="pauseBtn" aria-label="Pause flight" title="Pause flight" aria-pressed="false" disabled>
         pause
+      </button>
+      <button
+        id="viewBtn"
+        aria-label="Switch to the first-person view"
+        title="Switch view (V)"
+        aria-pressed="false"
+      >
+        view: behind
       </button>
       <span id="backendLabel" class="dim"></span>
     </div>
