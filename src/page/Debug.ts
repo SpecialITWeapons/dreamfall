@@ -1,4 +1,5 @@
 import type { MemorySnapshot } from '../engine/Engine';
+import type { Capture } from '../engine/render/Post';
 import type { FlightState } from '../engine/sim/Simulation';
 
 /** GPU counters taken right before and right after `world.dispose()`, to prove dispose actually frees things. */
@@ -20,6 +21,13 @@ export interface WorldDebug {
   begin(): void;
   dispose(): Promise<DisposeReport>;
   memory(): MemorySnapshot;
+  heightAt(x: number, z: number): number;
+  /** Day-clock phase; setting it re-evaluates the palette and draws one frame. */
+  dayPhase: number;
+  readonly origin: { x: number; z: number };
+  /** Height of the flyer over the terrain under it, m. */
+  readonly clearance: number;
+  capture(width?: number, height?: number): Promise<Capture | null>;
 }
 
 declare global {

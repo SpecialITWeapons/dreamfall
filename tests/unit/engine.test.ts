@@ -135,4 +135,24 @@ describe('createEngine', () => {
     expect(gl.deleteSync).toHaveBeenCalledTimes(1);
     expect(frames).toHaveBeenCalledTimes(1);
   });
+  it('renders through an attached post chain and disposes it first', async () => {
+    const r = fakeRenderer({ isWebGPUBackend: true });
+    const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });
+    const order: string[] = [];
+    const post = {
+      render: vi.fn(() => order.push('post')),
+      dispose: vi.fn(() => order.push('post-dispose')),
+    };
+    engine.attachPost(post);
+    engine.render({} as never, {} as never);
+    expect(post.render).toHaveBeenCalledTimes(1);
+    expect(r.render).not.toHaveBeenCalled();
+    engine.attachPost(null);
+    engine.render({} as never, {} as never);
+    expect(r.render).toHaveBeenCalledTimes(1);
+    engine.attachPost(post);
+    r.dispose.mockImplementation(() => order.push('renderer-dispose'));
+    engine.dispose();
+    expect(order.slice(-2)).toEqual(['post-dispose', 'renderer-dispose']);
+  });
 });

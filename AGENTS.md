@@ -7,7 +7,11 @@ truth; this file collects what you need to know for every change.
 ## Layout
 
 Vite + TypeScript in `src/`, JavaScript with JSDoc in `library/` (from M3
-onward). `three` is aliased to `three/webgpu`, pinned to 0.185.1; an
+onward). Under `src/engine/`: `sim/` (flight, floating origin), `terrain/`
+(noise, base fields, heightfield window, terrain mesh), `sky/` (uniforms,
+lights, atmosphere, fog, dome, clouds), `water/`, `render/` (color grade,
+lighting model, display chain), `time/` (day clock). `three` is aliased to
+`three/webgpu`, pinned to 0.185.1; an
 upgrade is its own PR with a pixel comparison. `tools/` and `tests/` never
 end up in the bundle. Paths are relative, so the page works under a Pages
 subdirectory.
@@ -16,11 +20,14 @@ subdirectory.
 
 - No module-level singletons: state lives in objects returned by factories
   (`createEngine`, `createWorld`, `createLoop`, `createSimulation`).
-- `src/engine/sim/**` imports neither Three.js nor the DOM. Everything that
-  runs on the CPU has a Vitest test; the GPU is checked by Playwright on
-  WebGL2.
-- The CPU height field will be the sole source of truth for terrain (M1);
-  the GPU only reads it.
+- The pure CPU modules (`src/engine/sim/**`, `terrain/noise.ts`,
+  `terrain/WorldSampler.ts`, `terrain/Heightfield.ts`, `time/DayClock.ts`,
+  `render/ColorGrade.ts`) import neither `three/webgpu`, `three/tsl` nor the
+  DOM; from `three` they take only the math classes (`Color`, `Vector2`,
+  `Vector3`, `MathUtils`). Everything that runs on the CPU has a Vitest
+  test; the GPU is checked by Playwright on WebGL2.
+- The CPU height field is the sole source of truth for terrain; the GPU only
+  reads it.
 - Background color and fog color are one uniform.
 - Shader time is simulation time.
 - The veil lifts only after `engine.waitForGpu()` following the first
@@ -36,6 +43,31 @@ subdirectory.
   purpose (fail loud); a shader that only warns must not ship.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
 - Interface text lives only in `index.html` and `src/page/Hud.ts`.
+
+## Terrain, sky and time
+
+- The CPU heightfield is the only terrain truth; `heightAt` interpolates the
+  exact rendered triangle (same diagonal as `buildGrid`), never bilinearly.
+- `WorldSampler` is a verbatim port of fly-with-me's `sampleWorld`; its unit
+  tests hold golden values for seed 42, and a change to the terrain must
+  update them deliberately.
+- The simulation works in world coordinates (double precision); the scene is
+  in the local frame of `Origin`, which jumps in whole cells. Shaders that
+  read the world add `uWorldOrigin`; nothing else may read `positionWorld`
+  as a world position.
+- Day clock and solar clock differ; palette keys, sky bodies and anything
+  keyed to the sun's height read `solar(phase)`.
+- Sky and fog share `horizonTint`; `uSunDir` is always the true sun; the one
+  directional light changes direction only at zero intensity.
+- The sky dome draws last among the opaque objects (`renderOrder 1`), writes
+  no depth, and rides on the camera.
+- Only the scene pass is multisampled; everything past tone mapping is
+  eight-bit; `capture` renders before the display chain.
+- TSL is strictly typed in `@types/three`: annotate `Fn` parameters with the
+  node type (`Node<'vec3'>`, `Node<'float'>`); a bare `Node` has no operator
+  methods, so never cast to it.
+- `uncapturederror` remains fatal on purpose; a new shader that only warns
+  must not ship.
 
 ## Checking
 

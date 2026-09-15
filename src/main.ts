@@ -22,7 +22,8 @@ const engine = await createEngine(canvas, { forceWebGL: params.forceWebGL, profi
 hud.setBackend(engine.backend);
 engine.resize(innerWidth, innerHeight, devicePixelRatio);
 
-const world = createWorld({ seed: params.seed, aspect: innerWidth / innerHeight });
+const world = createWorld({ seed: params.seed, aspect: innerWidth / innerHeight, renderer: engine.renderer });
+engine.attachPost(world.post);
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => world.update(dt),
@@ -123,4 +124,21 @@ installDebug(window, {
   begin,
   dispose,
   memory: () => engine.memory(),
+  heightAt: (x, z) => world.heightAt(x, z),
+  get dayPhase() {
+    return world.clock.phase;
+  },
+  set dayPhase(v: number) {
+    world.clock.phase = v;
+    world.clock.evalPalette();
+    world.update(0.000001);
+    loop.renderOnce();
+  },
+  get origin() {
+    return { x: world.origin.x, z: world.origin.z };
+  },
+  get clearance() {
+    return world.sim.state.y - world.heightAt(world.sim.state.x, world.sim.state.z);
+  },
+  capture: (w, h) => world.post.capture(w, h),
 });

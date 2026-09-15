@@ -19,11 +19,19 @@ export interface MemorySnapshot {
   total: number;
 }
 
+/** A display chain that draws the scene in place of the renderer; the engine only calls it and disposes it. */
+export interface PostLike {
+  render(): void;
+  dispose(): void;
+}
+
 export interface Engine {
   readonly renderer: WebGPURenderer;
   readonly backend: 'webgpu' | 'webgl2';
   resize(width: number, height: number, dpr: number): void;
   render(scene: Scene, camera: Camera): void;
+  /** Routes render() through a post chain; null restores the plain renderer. */
+  attachPost(post: PostLike | null): void;
   setLoop(fn: ((now: number) => void) | null): void;
   /** Resolves once the GPU has finished its outstanding work and one browser frame has passed. */
   waitForGpu(): Promise<void>;
@@ -69,6 +77,7 @@ export async function createEngine(
   backend.device?.lost.then((info) => {
     if (info.reason !== 'destroyed') lost();
   });
+  let post: PostLike | null = null;
   return {
     renderer,
     backend: backend.isWebGPUBackend ? 'webgpu' : 'webgl2',
@@ -81,7 +90,11 @@ export async function createEngine(
       renderer.setSize(w, h, false);
     },
     render(scene, camera) {
-      renderer.render(scene, camera);
+      if (post) post.render();
+      else renderer.render(scene, camera);
+    },
+    attachPost(next) {
+      post = next;
     },
     setLoop(fn) {
       renderer.setAnimationLoop(fn);
@@ -107,6 +120,8 @@ export async function createEngine(
     },
     dispose() {
       renderer.setAnimationLoop(null);
+      post?.dispose();
+      post = null;
       renderer.dispose();
     },
   };
