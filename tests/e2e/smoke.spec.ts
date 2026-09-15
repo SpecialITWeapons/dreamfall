@@ -239,6 +239,46 @@ test('V switches to the eye and back, the HUD and the memory follow', async ({ p
   expect(errors).toEqual([]);
 });
 
+test('an arrow key takes the autopilot off, says so, and the HUD hands it back', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  expect(await page.evaluate(() => window.__world!.autopilot)).toBe(true);
+  await expect(page.locator('#manual')).toBeHidden();
+  await expect(page.locator('#autopilotBtn')).toHaveText('autopilot on');
+  // hold the left arrow: the flight is the pilot's from the first key down
+  await page.keyboard.down('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => window.__world!.autopilot)).toBe(false);
+  await expect(page.locator('#manual')).toBeVisible();
+  await expect(page.locator('#autopilotBtn')).toHaveText('resume autopilot');
+  const turning = await page.evaluate(() => {
+    const w = window.__world!;
+    const before = w.state.heading;
+    for (let i = 0; i < 80; i++) w.step(0.05);
+    return { turned: w.state.heading - before, heading: w.state.heading };
+  });
+  expect(turning.turned).toBeGreaterThan(0.2);
+  // key up: the turn stops and the course holds
+  await page.keyboard.up('ArrowLeft');
+  const held = await page.evaluate(() => {
+    const w = window.__world!;
+    for (let i = 0; i < 100; i++) w.step(0.05);
+    const settled = w.state.heading;
+    for (let i = 0; i < 400; i++) w.step(0.05);
+    return { settled, after: w.state.heading, y: w.state.y };
+  });
+  expect(Math.abs(held.after - held.settled)).toBeLessThan(0.02);
+  // the pill hands it back
+  await page.click('#autopilotBtn');
+  expect(await page.evaluate(() => window.__world!.autopilot)).toBe(true);
+  await expect(page.locator('#manual')).toBeHidden();
+  const wandered = await page.evaluate(() => {
+    const w = window.__world!;
+    for (let i = 0; i < 1200; i++) w.step(0.05);
+    return w.state.heading;
+  });
+  expect(Math.abs(wandered - held.after)).toBeGreaterThan(0.01);
+  expect(errors).toEqual([]);
+});
+
 test('the right button steers, the left button orbits, the wheel zooms, and the framing is remembered', async ({
   page,
 }) => {

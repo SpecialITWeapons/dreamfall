@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFlightController } from '../../src/engine/flight/FlightController';
 import { LOOK, ORBIT, TURN_PER_PIXEL, createSteering } from '../../src/engine/flight/Steering';
+import { wrapAngle } from '../../src/engine/flight/angles';
 
 const flight = () => createFlightController({ seed: 1, groundAt: () => 0, start: { heading: 0 } });
 
@@ -60,7 +61,7 @@ describe('createSteering', () => {
     for (let i = 0; i < 50; i++) s.wheel(-500);
     expect(s.orbit.dist).toBe(ORBIT.minDist);
   });
-  it('maps keys to pause, view and nudges', () => {
+  it('maps keys to pause, view and flying by hand', () => {
     const f = flight();
     const s = createSteering(f);
     expect(s.key('Space')).toBe('pause');
@@ -68,15 +69,39 @@ describe('createSteering', () => {
     expect(s.view).toBe('fpp');
     expect(s.key('KeyV')).toBe('view');
     expect(s.view).toBe('tpp');
-    expect(s.key('ArrowLeft')).toBe('nudge');
-    expect(f.state.nudgeYaw).toBe(0.4);
-    expect(s.key('ArrowRight')).toBe('nudge');
-    expect(f.state.nudgeYaw).toBe(-0.4);
-    expect(s.key('ArrowUp')).toBe('nudge');
-    expect(f.state.nudgeAlt).toBe(200);
-    expect(s.key('ArrowDown')).toBe('nudge');
-    expect(f.state.nudgeAlt).toBe(-180);
     expect(s.key('KeyQ')).toBe(null);
+    expect(s.autopilot).toBe(true);
+    // the first arrow takes the flight away from the autopilot and turns that way
+    expect(s.key('ArrowLeft')).toBe('fly');
+    expect(s.autopilot).toBe(false);
+    expect(f.autopilot).toBe(false);
+    const heading0 = f.state.heading;
+    for (let i = 0; i < 40; i++) f.step(0.05);
+    expect(wrapAngle(f.state.heading - heading0)).toBeGreaterThan(0.2);
+    // both at once cancel out, and the key coming up stops the turn
+    expect(s.key('ArrowRight')).toBe('fly');
+    for (let i = 0; i < 40; i++) f.step(0.05);
+    const straight = f.state.heading;
+    for (let i = 0; i < 60; i++) f.step(0.05);
+    expect(Math.abs(wrapAngle(f.state.heading - straight))).toBeLessThan(0.02);
+    expect(s.keyUp('ArrowLeft')).toBe(true);
+    expect(s.keyUp('ArrowLeft')).toBe(false);
+    for (let i = 0; i < 40; i++) f.step(0.05);
+    expect(wrapAngle(f.state.heading - straight)).toBeLessThan(-0.2); // right turn now
+    // the vertical is inverted the way a stick is: ArrowDown raises the nose
+    s.releaseKeys();
+    for (let i = 0; i < 40; i++) f.step(0.05);
+    s.key('ArrowDown');
+    for (let i = 0; i < 60; i++) f.step(0.05);
+    expect(f.state.vy).toBeGreaterThan(5);
+    s.keyUp('ArrowDown');
+    s.key('ArrowUp');
+    for (let i = 0; i < 80; i++) f.step(0.05);
+    expect(f.state.vy).toBeLessThan(-5);
+    // the HUD hands the flight back, and that lets go of every key
+    s.setAutopilot(true);
+    expect(s.autopilot).toBe(true);
+    expect(s.keyUp('ArrowUp')).toBe(false);
   });
   it('looks around in the first person and returns to the course in about a second and a half', () => {
     const s = createSteering(flight(), { view: 'fpp' });

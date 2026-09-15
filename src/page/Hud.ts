@@ -1,5 +1,6 @@
-// The controls pill in the corner: world link, sound, volume, pause, view,
-// backend. Inert until Begin; it dims after a few seconds without the pointer
+// The controls pill in the corner: world link, sound, volume, pause,
+// autopilot, view, backend, and the line at the top that says the flight is
+// the pilot's now. Inert until Begin; it dims after a few seconds without the pointer
 // and wakes on hover, press or focus. Every interface string lives here or
 // in index.html.
 import type { View } from '../engine/flight/Steering';
@@ -12,6 +13,8 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   const pause = doc.getElementById('pauseBtn') as HTMLButtonElement;
   const mute = doc.getElementById('muteBtn') as HTMLButtonElement;
   const volume = doc.getElementById('volume') as HTMLInputElement;
+  const autopilot = doc.getElementById('autopilotBtn') as HTMLButtonElement;
+  const manual = doc.getElementById('manual')!;
   const view = doc.getElementById('viewBtn') as HTMLButtonElement;
   const backend = doc.getElementById('backendLabel')!;
   const idleMs = opts.idleMs ?? HUD_IDLE_MS;
@@ -19,6 +22,7 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   const muteListeners: Array<() => void> = [];
   const volumeListeners: Array<(v: number) => void> = [];
   const viewListeners: Array<() => void> = [];
+  const autopilotListeners: Array<() => void> = [];
   pause.addEventListener('click', () => {
     for (const cb of pauseListeners) cb();
   });
@@ -31,6 +35,9 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   });
   view.addEventListener('click', () => {
     for (const cb of viewListeners) cb();
+  });
+  autopilot.addEventListener('click', () => {
+    for (const cb of autopilotListeners) cb();
   });
   // Dimming: the pill fades once the pointer has left it for a while, and comes back on touch or focus.
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -91,6 +98,20 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
     },
     onVolume(cb: (v: number) => void) {
       volumeListeners.push(cb);
+    },
+    /** The pill says which it is; the line at the top only shows while the flight is by hand. */
+    setAutopilot(on: boolean) {
+      autopilot.textContent = on ? 'autopilot on' : 'resume autopilot';
+      autopilot.title = on ? 'Autopilot (any arrow key takes it off)' : 'Hand the flight back';
+      autopilot.setAttribute('aria-pressed', String(on));
+      autopilot.setAttribute(
+        'aria-label',
+        on ? 'The flight flies itself; an arrow key takes it off' : 'Hand the flight back to the autopilot',
+      );
+      manual.toggleAttribute('hidden', on);
+    },
+    onAutopilot(cb: () => void) {
+      autopilotListeners.push(cb);
     },
     setView(next: View) {
       view.textContent = next === 'tpp' ? 'view: behind' : 'view: eyes';

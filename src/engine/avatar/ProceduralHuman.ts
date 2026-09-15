@@ -44,7 +44,7 @@ const UP = new Vector3(0, 1, 0),
   AXIS_Z = new Vector3(0, 0, 1);
 
 // The arch, in the figure's frame (x left, y up, z ahead): joints and limb
-// directions. The elbow bends 80 degrees and the knee 72, so both read as
+// directions. The elbow bends 80 degrees and the knee 57, so both read as
 // joints rather than as one stiff limb; the hands end up ahead of the eye and
 // the feet above the back.
 const SHOULDER = new Vector3(0.24, 0.03, 0.26),
@@ -58,8 +58,8 @@ const FOOT = { rx: 0.055, ry: 0.115, rz: 0.045 };
 const upperDir = (side: number) => new Vector3(side * 0.78, -0.08, 0.62).normalize();
 const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normalize();
 const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
-const shinDir = (side: number) => new Vector3(side * 0.1, 0.93, -0.35).normalize();
-const footDir = (side: number) => new Vector3(side * 0.05, 0.62, -0.78).normalize();
+const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
+const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
 
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
 function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
@@ -204,9 +204,9 @@ export function createProceduralHuman(
     part('thigh', limb(THIGH.r, THIGH.len), 'suit', hip.pivot);
     const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
     part('shin', limb(SHIN.r, SHIN.len), 'suit', knee.pivot);
-    // The foot breaks away from the shin at the ankle: without a hinge of its
-    // own a boot on the shin's axis is only a thicker shin, which is what the
-    // figure had.
+    // The foot breaks 29 degrees away from the shin at the ankle: without a
+    // hinge of its own a boot on the shin's axis is only a thicker shin, which
+    // is what the figure had.
     const ankle = hinge(
       'ankle',
       `ankle${s}`,

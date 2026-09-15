@@ -14,8 +14,6 @@ const state = (over: Partial<FlightState> = {}): FlightState => ({
   bank: 0,
   pitch: 0,
   yawRate: 0,
-  nudgeYaw: 0,
-  nudgeAlt: 0,
   steer: 0,
   aim: 0,
   aimHold: 0,

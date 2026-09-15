@@ -152,18 +152,13 @@ describe('createFlightController', () => {
     }
     expect(ymax).toBeLessThanOrEqual(MAX_ALTITUDE + 1);
   });
-  it('turns whole with steering, banks into the turn and decays nudges', () => {
+  it('turns whole with steering and banks into the turn', () => {
     const c = createFlightController({ seed: 2, groundAt: flat, start: { heading: 0 } });
     c.steerBy(0.5);
     c.step(0.05);
     expect(c.state.heading).toBeCloseTo(0.5, 1);
     expect(c.state.bank).toBeLessThan(0); // a left turn banks left
-    c.nudge(0.4, 200);
-    expect(c.state.nudgeYaw).toBe(0.4);
-    expect(c.state.nudgeAlt).toBe(200);
     fly(c, 10);
-    expect(c.state.nudgeYaw).toBeLessThan(0.01);
-    expect(c.state.nudgeAlt).toBeLessThan(15);
   });
   it('clears an obstacle top like ground', () => {
     const obstacles = createObstacles();

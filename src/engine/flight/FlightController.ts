@@ -72,8 +72,6 @@ export interface FlightState {
   bank: number;
   pitch: number;
   yawRate: number;
-  nudgeYaw: number;
-  nudgeAlt: number;
   /** Heading change from steering, applied whole on the next step. */
   steer: number;
   /** Climb angle the pilot steered to, radians, and how much of the vertical is theirs (1 while they steer). */
@@ -129,8 +127,6 @@ export interface FlightController {
   /** Aims the nose; the vertical is the pilot's while the stick is held and a moment after. */
   aimBy(delta: number): void;
   setSteering(held: boolean): void;
-  /** Arrow-key nudges: a yaw rate and an altitude offset that decay. */
-  nudge(yaw: number, alt: number): void;
   /** The pilot took the reins: the sky lets go. */
   release(): void;
   /** The hard floor at a world point: sea, ground and obstacle tops. */
@@ -160,8 +156,6 @@ export function createFlightController(deps: FlightDeps): FlightController {
     bank: 0,
     pitch: 0,
     yawRate: 0,
-    nudgeYaw: 0,
-    nudgeAlt: 0,
     steer: 0,
     aim: 0,
     aimHold: 0,
@@ -304,7 +298,7 @@ export function createFlightController(deps: FlightDeps): FlightController {
       const toward = Math.max(-0.2, Math.min(0.2, wrapAngle(pulled - s.heading) * 0.5));
       const aside = escapeTurn(wall, 2200 * reach);
       const yawRateTarget = autopilot
-        ? wander * (1 - pull) + toward * pull + s.nudgeYaw + aside
+        ? wander * (1 - pull) + toward * pull + aside
         : manual.yaw * MANUAL.turn + aside;
       s.yawRate += (yawRateTarget - s.yawRate) * Math.min(1, dt * 1.5);
       const turn = s.steer;
@@ -337,7 +331,7 @@ export function createFlightController(deps: FlightDeps): FlightController {
         SEA_LEVEL + 55 - 32 * low,
       );
       const high = DECK_Y + 190 + 30 * n1(s.t * 0.05, S1 + 8);
-      let target = autopilot ? cruise + (high - Math.min(cruise, high)) * s.cloudSchedule + s.nudgeAlt : hold;
+      let target = autopilot ? cruise + (high - Math.min(cruise, high)) * s.cloudSchedule : hold;
       // The envelope: never above the ceiling, never closer to the ground ahead
       // than the clearance plus a margin, so the hard floor below stays a last resort.
       const floor = Math.max(ahead + MIN_CLEARANCE + 10, here + MIN_CLEARANCE + 20, wall);
@@ -412,11 +406,6 @@ export function createFlightController(deps: FlightDeps): FlightController {
       }
       s.gust += ((gusting ? 1 : 0) - s.gust) * Math.min(1, dt * (gusting ? 4 : 1.5));
       s.windPhase += dt * (4.5 + 3.5 * s.gust + Math.abs(s.vy) * 0.1);
-      // nudge decay
-      if (!held) {
-        s.nudgeYaw *= Math.exp(-dt / 2.4);
-        s.nudgeAlt *= Math.exp(-dt / 3.5);
-      }
       return true;
     },
     steerBy(delta) {
@@ -430,10 +419,6 @@ export function createFlightController(deps: FlightDeps): FlightController {
     },
     setSteering(value) {
       held = value;
-    },
-    nudge(yaw, alt) {
-      if (yaw) state.nudgeYaw = yaw;
-      if (alt) state.nudgeAlt = alt;
     },
     release() {
       pulls?.release();
