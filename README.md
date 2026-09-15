@@ -11,6 +11,7 @@ and source of the ported modules is [fly-with-me](https://github.com/kunchenguid
 
 Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
 `?profile=1` arms frame profiling, `?dev=1` loads the developer panel (M5).
+`?seed=42` opens the reference world (the same terrain as fly-with-me's seed 42).
 
 ## Documents
 
@@ -22,3 +23,4 @@ Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
 ## Status
 
 M0 Skeleton: engine, empty world, veil and gate, tests, CI, Pages.
+M1 World: heightfield terrain, water, sky and day cycle, floating origin, display chain.
