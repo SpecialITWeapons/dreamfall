@@ -5,7 +5,6 @@
 // continues from. Pure CPU, no Three.js beyond the math classes, no DOM.
 import {
   MAX_STEP,
-  SPEED,
   createFlightController,
   type FlightController,
   type FlightState,
@@ -40,6 +39,7 @@ export interface ResumeState {
 export interface Simulation {
   readonly seed: number;
   readonly state: FlightState;
+  /** Airspeed, m/s; it rises in a dive and falls in a climb. */
   readonly speed: number;
   readonly clock: DayClock;
   readonly pulls: SkyPulls;
@@ -95,7 +95,9 @@ export function createSimulation(opts: SimulationOptions): Simulation {
   return {
     seed: opts.seed >>> 0,
     state,
-    speed: SPEED,
+    get speed() {
+      return state.speed;
+    },
     clock,
     pulls,
     flight,

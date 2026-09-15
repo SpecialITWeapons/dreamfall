@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { headingFromSeed } from '../../src/engine/flight/FlightController';
+import { AIRSPEED, SPEED, headingFromSeed } from '../../src/engine/flight/FlightController';
 import { MAX_STEP, createSimulation } from '../../src/engine/sim/Simulation';
 import { DAY_SECONDS } from '../../src/engine/time/DayClock';
 
@@ -16,7 +16,12 @@ describe('createSimulation', () => {
     expect(sim.step(MAX_STEP)).toBe(true);
     expect(sim.state.t).toBe(MAX_STEP);
     expect(sim.clock.phase).toBeCloseTo(0.3 + MAX_STEP / DAY_SECONDS, 9);
-    expect(sim.speed).toBe(40);
+    // airspeed is live now: it starts level and follows the climb from there
+    expect(sim.speed).toBeCloseTo(SPEED, 1);
+    for (let i = 0; i < 400; i++) sim.step(0.05);
+    expect(sim.speed).toBe(sim.state.speed);
+    expect(sim.speed).toBeGreaterThanOrEqual(AIRSPEED.min);
+    expect(sim.speed).toBeLessThanOrEqual(AIRSPEED.max);
   });
   it('snapshots the flight and resumes from the snapshot, phase and release included', () => {
     const a = createSimulation({ seed: 7, groundAt: () => 0 });

@@ -171,6 +171,7 @@ export function createWorld(opts: WorldOptions): World {
     pose.bank = state.bank;
     pose.pitch = state.pitch;
     pose.vy = state.vy;
+    pose.speed = state.speed;
     pose.windPhase = state.windPhase;
     pose.gust = state.gust;
     pose.view = steering.view;

@@ -10,6 +10,7 @@ const state = (over: Partial<FlightState> = {}): FlightState => ({
   z: 300,
   heading: 0,
   vy: 0,
+  speed: 40,
   bank: 0,
   pitch: 0,
   yawRate: 0,
