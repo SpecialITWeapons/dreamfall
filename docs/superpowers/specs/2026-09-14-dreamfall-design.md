@@ -477,8 +477,10 @@ Jeden stan lotu, dwa widoki, przełączane klawiszem `V` i przyciskiem HUD,
 zapamiętane w ustawieniach, przełączenie natychmiastowe.
 
 - TPP: port sztywnej orbity bez sprężyny (yaw, pitch, dystans), podnoszenie
-  nad ziemię i przeszkody z prześwitem 9 m; dystans domyślnie 10 m w zakresie
-  5..30, pitch domyślnie 0,3 w zakresie −0,5..1,2, FOV 55°, look-at 0,4 m nad
+  nad ziemię i przeszkody z prześwitem 9 m; dystans domyślnie 7 m w zakresie
+  3..30 (2026-09-15; przedtem 10 w zakresie 5..30 — z tyłu długość postaci jest
+  skrócona perspektywą, więc 5 m to wciąż dziesiąta część kadru), pitch
+  domyślnie 0,3 w zakresie −0,5..1,2, FOV 55°, look-at 0,4 m nad
   środkiem postaci.
 - FPP: kamera w `eye`, orientacja z kursu i pochylenia, przechył tłumiony do
   40 %; rozglądanie z lewego przycisku lub dotyku ±110° w poziomie i ±60° w
@@ -689,7 +691,7 @@ osady; razem z mostami w M6.
 | `MAX_HEIGHT_DELTA` | 300 m |
 | budżet pikseli | 2 000 000, DPR <= 1,5 |
 | budżet czasu na klatkę dla wypełniania i stanowisk | 4 ms |
-| kamera TPP | dystans 10 (5..30), pitch 0,3, FOV 55° |
+| kamera TPP | dystans 7 (3..30), pitch 0,3, FOV 55° |
 | kamera FPP | FOV 75°, rozglądanie ±110°/±60°, powrót 1,5 s, przechył 40 % |
 | wioska | krata 6 km, odds 0,5, promień 120..250 m |
 | miasteczko | krata 20 km, odds 0,6, promień 400..900 m |

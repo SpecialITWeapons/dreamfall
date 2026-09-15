@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { ORBIT } from '../../src/engine/flight/Steering';
 import type { WorldDebug } from '../../src/page/Debug';
 
 declare global {
@@ -310,7 +311,7 @@ test('the right button steers, the left button orbits, the wheel zooms, and the 
   expect((await page.evaluate(() => window.__world!.orbit)).yaw).toBeCloseTo(0.4, 3);
   await page.mouse.wheel(0, 300);
   const orbit = await page.evaluate(() => window.__world!.orbit);
-  expect(orbit.dist).toBeCloseTo(10 * Math.exp(300 * 0.0012), 3);
+  expect(orbit.dist).toBeCloseTo(ORBIT.dist * Math.exp(300 * 0.0012), 3);
   const remembered = await page.evaluate(
     () => JSON.parse(localStorage.getItem('dreamfall-settings')!).camera,
   );

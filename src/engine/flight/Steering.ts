@@ -12,7 +12,11 @@ import { wrapAngle } from './angles';
 import type { FlightController } from './FlightController';
 
 export const TURN_PER_PIXEL = 0.004;
-export const ORBIT = { dist: 10, minDist: 5, maxDist: 30, pitch: 0.3, minPitch: -0.5, maxPitch: 1.2 };
+// Distance to the figure, m. The close end is 3 m rather than 5: at 5 the
+// figure is about a tenth of the frame seen from behind, where its own length
+// is foreshortened away, and the whole point of the near end is to look at it.
+// TPP.near is 0.5 m, so nothing clips.
+export const ORBIT = { dist: 7, minDist: 3, maxDist: 30, pitch: 0.3, minPitch: -0.5, maxPitch: 1.2 };
 export const LOOK = { yaw: (110 * Math.PI) / 180, pitch: (60 * Math.PI) / 180, returnSeconds: 1.5 };
 
 export type View = 'tpp' | 'fpp';
