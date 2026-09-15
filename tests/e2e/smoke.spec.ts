@@ -41,6 +41,20 @@ test('the veil holds until the first frame, then Begin starts the flight', async
   expect(errors).toEqual([]);
 });
 
+test('the veil says what the start is doing, and the timings are readable after it', async ({ page }) => {
+  const errors = await openWorld(page, 'seed=42&webgl=1&profile=1');
+  // by the time the world is ready the veil has lifted; what it said on the way
+  // is checked in Node (page.test.ts) -- here it only has to be gone
+  await expect(page.locator('#loading')).toHaveClass(/gone/);
+  const timings = await page.evaluate(() => window.__world!.timings);
+  // every step of the start is measured, in order, and the last one is the frame
+  expect(Object.keys(timings)).toEqual(['graphics', 'ground', 'sky']);
+  expect(timings.graphics).toBeGreaterThan(0);
+  expect(timings.ground).toBeGreaterThanOrEqual(timings.graphics!);
+  expect(timings.sky).toBeGreaterThanOrEqual(timings.ground!);
+  expect(errors).toEqual([]);
+});
+
 test('space pauses the flight and dispose releases the GPU', async ({ page }) => {
   const errors = await openWorld(page, 'seed=7&webgl=1');
   await page.click('#beginBtn');

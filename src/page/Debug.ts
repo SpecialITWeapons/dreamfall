@@ -40,6 +40,8 @@ export interface WorldDebug {
   readonly resumed: boolean;
   snapshot(): ResumeState;
   saveFlight(): void;
+  /** What each step of the start cost, ms from the module's first line. */
+  readonly timings: Record<string, number>;
   /** The registry, in the order the window's slot indices point into. */
   readonly biomes: string[];
   /** The three biome slots of the cell a world point falls in, by name. */

@@ -158,3 +158,34 @@ describe('hud controls', () => {
     }
   });
 });
+
+describe('veil', () => {
+  it('says what the start is doing, in the words the page keeps, and lifts at the end', async () => {
+    const veil = createVeil(document);
+    const line = () => document.getElementById('loadingText')!.textContent;
+    const el = document.getElementById('loading')!;
+    expect(line()).toBe('waking the world');
+    await veil.stage('graphics');
+    expect(line()).toBe('finding the graphics');
+    await veil.stage('ground');
+    expect(line()).toBe('shaping the ground');
+    await veil.stage('sky');
+    expect(line()).toBe('drawing the first sky');
+    expect(el.classList.contains('gone')).toBe(false);
+    veil.lift();
+    expect(el.classList.contains('gone')).toBe(true);
+  });
+  it('does not talk over a failure, or over a world that is already up', async () => {
+    const veil = createVeil(document);
+    const el = document.getElementById('loading')!;
+    const text = document.getElementById('loadingText')!;
+    el.classList.add('failed');
+    text.textContent = 'The view could not start.';
+    await veil.stage('ground');
+    expect(text.textContent).toBe('The view could not start.');
+    el.classList.remove('failed');
+    veil.lift();
+    await veil.stage('ground');
+    expect(text.textContent).toBe('The view could not start.');
+  });
+});
