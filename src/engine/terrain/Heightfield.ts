@@ -3,6 +3,11 @@
 // move refills only the rows and columns that entered the window. It is the
 // only terrain truth: anything that needs a height reads heightAt, which
 // interpolates the exact triangle the terrain grid draws.
+//
+// It carries who as well as how high: the height comes out of one sampling and
+// so do the three biome weights that made it, because a ground painted with a
+// neighbouring cell's climate would not be the ground the flight is flying
+// over. Heights interpolate across the triangle; weights belong to the cell.
 import { CELL, type WorldSampler } from './WorldSampler';
 
 /** Window side in cells: 560 x 16 m is about 9 km. */
@@ -11,8 +16,10 @@ export const N = 560;
 export interface Heightfield {
   readonly cell: number;
   readonly size: number;
-  /** RGBA float texels (height, temperature, moisture, region), ready for a DataTexture. */
+  /** RGBA float texels (height, w0, w1, w2), ready for a DataTexture. */
   readonly data: Float32Array;
+  /** RGBA byte texels (i0, i1, i2, spare): which biomes the weights belong to. The spare byte is reserved for standing water. */
+  readonly slots: Uint8Array;
   /** Grows on every write; the presentation uploads the texture when it changes. */
   readonly version: number;
   readonly center: { cx: number; cz: number };
@@ -22,8 +29,8 @@ export interface Heightfield {
   texel(ix: number, iz: number, channel: number): number;
   /** Height by barycentric interpolation on the grid's own triangles. */
   heightAt(x: number, z: number): number;
-  /** A climate channel (1..3) at the nearest cell. */
-  fieldAt(x: number, z: number, channel: number): number;
+  /** The three biome slots of the cell a point falls in: registry indices and their weights. */
+  weightsAt(x: number, z: number, ids: Uint8Array, weights: Float32Array): void;
   slopeAt(x: number, z: number): number;
 }
 
@@ -35,17 +42,23 @@ export function createHeightfield(
   const size = opts.size ?? N;
   const half = size / 2;
   const data = new Float32Array(size * size * 4);
-  const tmp = [0, 0, 0, 0];
+  const slots = new Uint8Array(size * size * 4);
+  const tmp = new Float64Array(4);
+  const tmpSlots = new Uint8Array(4);
   const center = { cx: 0, cz: 0 };
   let version = 0;
   const wrap = (i: number) => ((i % size) + size) % size;
   const fillCell = (ix: number, iz: number) => {
-    sampler.sample(ix * cell, iz * cell, tmp);
+    sampler.sampleWindow(ix * cell, iz * cell, tmp, tmpSlots);
     const o = (wrap(iz) * size + wrap(ix)) * 4;
     data[o] = tmp[0]!;
     data[o + 1] = tmp[1]!;
     data[o + 2] = tmp[2]!;
     data[o + 3] = tmp[3]!;
+    slots[o] = tmpSlots[0]!;
+    slots[o + 1] = tmpSlots[1]!;
+    slots[o + 2] = tmpSlots[2]!;
+    slots[o + 3] = 0;
   };
   const texel = (ix: number, iz: number, channel: number) =>
     data[(wrap(iz) * size + wrap(ix)) * 4 + channel]!;
@@ -60,6 +73,7 @@ export function createHeightfield(
     cell,
     size,
     data,
+    slots,
     get version() {
       return version;
     },
@@ -117,8 +131,12 @@ export function createHeightfield(
         ? h00 + (h10 - h00) * tx + (h01 - h00) * tz
         : h11 + (h01 - h11) * (1 - tx) + (h10 - h11) * (1 - tz);
     },
-    fieldAt(x, z, channel) {
-      return texel(Math.round(x / cell), Math.round(z / cell), channel);
+    weightsAt(x, z, ids, weights) {
+      const o = (wrap(Math.round(z / cell)) * size + wrap(Math.round(x / cell))) * 4;
+      for (let k = 0; k < 3; k++) {
+        ids[k] = slots[o + k]!;
+        weights[k] = data[o + 1 + k]!;
+      }
     },
     slopeAt(x, z) {
       const ix = Math.round(x / cell),
