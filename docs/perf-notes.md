@@ -49,3 +49,39 @@ Two things were making it much worse, both fixed:
 With the loop running, each capture still pays a recompile, because the loop's
 own frames alternate the two configurations: 45 s a capture here. Paused, the
 second and later captures are 187 ms. Browser tests that capture pause first.
+
+## M3a on a real GPU
+
+The first numbers from hardware rather than from SwiftShader: the owner's
+machine, WebGPU backend, ten biomes, `?profile=1`.
+
+Start, ms from the module's first line:
+
+| step                             | here (software) | on the GPU |
+| -------------------------------- | --------------- | ---------- |
+| `graphics` (renderer)            | 135             | 43         |
+| `ground` (window, materials)     | 839             | 370        |
+| `sky` (first frame, its shaders) | 5228            | 2146       |
+
+So the shader compile is 1.8 s of a 2.1 s start on real hardware -- two and a
+half times faster than software rendering, not the order of magnitude that was
+predicted here. It stays five sixths of the start, and it stays behind the veil.
+
+Frame cost, `__world.gpuMs` sampled ten times a second for ten seconds in
+flight:
+
+| min     | median      | max  |
+| ------- | ----------- | ---- |
+| 1.25 ms | **3.15 ms** | 8 ms |
+
+A sixtieth of a second is 16.7 ms, so the whole scene -- ground with ten biome
+branches, sky, clouds, water, the figure, the display chain -- costs about a
+fifth of a 60 Hz frame, and fits inside 144 Hz with room to spare.
+
+**What this settles:** the ten branches are not worth redesigning. The standing
+fallback -- compiling every standard `layers` ground into one painter reading
+its colours from a uniform array, so the shader stops growing with the registry
+-- saves compile time, not frame time, and compile time is a one-off 1.8 s
+behind a veil. Revisit it when the registry is two or three times longer, or if
+a frame ever stops fitting; the number to watch is `__world.gpuMs`, not the
+start.
