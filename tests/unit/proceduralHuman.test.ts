@@ -1,4 +1,4 @@
-import { Mesh, type Object3D } from 'three';
+import { Mesh, Vector3, type Object3D } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
@@ -25,6 +25,19 @@ const pose = (over: Partial<FlightPose> = {}): FlightPose => ({
   view: 'tpp',
   ...over,
 });
+const world = (root: Object3D, name: string) => {
+  root.updateMatrixWorld(true);
+  return root.getObjectByName(name)!.getWorldPosition(new Vector3());
+};
+/** Every mesh of this name, both sides, in the figure's own frame. */
+const parts = (root: Object3D, name: string) => {
+  root.updateMatrixWorld(true);
+  const out: Vector3[] = [];
+  root.traverse((c) => {
+    if (c.name === name) out.push(c.getWorldPosition(new Vector3()));
+  });
+  return out;
+};
 const meshes = (root: Object3D) => {
   const out: Mesh[] = [];
   root.traverse((c) => {
@@ -43,9 +56,64 @@ describe('createProceduralHuman', () => {
     expect(human.bounds).toEqual(HUMAN_BOUNDS);
     expect(HUMAN_BOUNDS.below).toBeGreaterThan(0);
     expect(HUMAN_BOUNDS.radius).toBeGreaterThan(0.8);
-    const parts = meshes(human.object);
-    expect(parts.length).toBe(17);
-    expect(parts.every((m) => m.castShadow)).toBe(true);
+    const all = meshes(human.object);
+    expect(all.length).toBe(18);
+    expect(all.every((m) => m.castShadow)).toBe(true);
+  });
+  it('holds the box position: elbows and knees bent, hands ahead of the eye, feet above the back', () => {
+    const human = createProceduralHuman(lit);
+    human.update(pose(), 0.05);
+    const shoulder = world(human.object, 'shoulderL'),
+      elbow = world(human.object, 'elbowL'),
+      hip = world(human.object, 'hipL'),
+      knee = world(human.object, 'kneeL'),
+      ankle = world(human.object, 'ankleL');
+    // the upper arm reaches out and forward of the shoulder, the forearm turns in
+    expect(elbow.x).toBeGreaterThan(shoulder.x + 0.15);
+    expect(elbow.z).toBeGreaterThan(shoulder.z + 0.1);
+    const upper = elbow.clone().sub(shoulder).normalize();
+    const hands = parts(human.object, 'hand');
+    expect(hands.length).toBe(2);
+    // both hands sit ahead of the eye, so the first-person view has something to show
+    for (const hand of hands) {
+      expect(hand.z).toBeGreaterThan(human.eye.z + 0.1);
+      expect(Math.abs(hand.x)).toBeGreaterThan(0.2);
+    }
+    // the elbow is a real bend, not a kink: between 60 and 110 degrees
+    const forearm = hands[0]!.clone().sub(elbow).normalize();
+    const elbowBend = Math.acos(Math.max(-1, Math.min(1, upper.dot(forearm))));
+    expect(elbowBend).toBeGreaterThan((60 * Math.PI) / 180);
+    expect(elbowBend).toBeLessThan((110 * Math.PI) / 180);
+    // the thigh trails back, the knee folds so the ankle rides above the hip
+    expect(knee.z).toBeLessThan(hip.z - 0.3);
+    expect(ankle.y).toBeGreaterThan(hip.y + 0.25);
+    const thigh = knee.clone().sub(hip).normalize(),
+      shin = ankle.clone().sub(knee).normalize();
+    const kneeBend = Math.acos(Math.max(-1, Math.min(1, thigh.dot(shin))));
+    expect(kneeBend).toBeGreaterThan((55 * Math.PI) / 180);
+    expect(kneeBend).toBeLessThan((100 * Math.PI) / 180);
+    // the boots break away from the shin instead of continuing it
+    const boots = parts(human.object, 'boot');
+    expect(boots.length).toBe(2);
+    const foot = boots[0]!.clone().sub(ankle).normalize();
+    expect(Math.acos(Math.max(-1, Math.min(1, shin.dot(foot))))).toBeGreaterThan((20 * Math.PI) / 180);
+  });
+  it('sweeps the arms back in a dive and forward in a climb', () => {
+    const human = createProceduralHuman(lit);
+    const shoulderL = human.object.getObjectByName('shoulderL')!;
+    human.update(pose(), 0.05);
+    const level = shoulderL.quaternion.clone();
+    // read the arm in the figure's own frame: the object's own pitch must not count
+    const armIn = (p: Partial<FlightPose>) => {
+      human.update(pose(p), 0.05);
+      const q = shoulderL.quaternion.clone();
+      return new Vector3(0, 1, 0).applyQuaternion(q);
+    };
+    const restArm = new Vector3(0, 1, 0).applyQuaternion(level);
+    const dive = armIn({ pitch: -0.43 });
+    const climb = armIn({ pitch: 0.55 });
+    expect(dive.z).toBeLessThan(restArm.z - 0.1);
+    expect(climb.z).toBeGreaterThan(restArm.z + 0.02);
   });
   it('takes the pose: position, then yaw, pitch and roll in YXZ order', () => {
     const human = createProceduralHuman(lit);
