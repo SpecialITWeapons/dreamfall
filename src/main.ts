@@ -329,6 +329,18 @@ installDebug(window, {
   resumed: resume !== null,
   snapshot: () => world.snapshot(),
   saveFlight,
+  get biomes() {
+    return world.library.biomes.map((b) => b.id);
+  },
+  weightsAt(x: number, z: number) {
+    const ids = new Uint8Array(3),
+      weights = new Float32Array(3);
+    world.heightfield.weightsAt(x, z, ids, weights);
+    return [...ids].map((id, k) => ({
+      id: world.library.biomes[id]?.id ?? String(id),
+      weight: weights[k]!,
+    }));
+  },
   key: (code) => steering.key(code),
   keyUp: (code) => steering.keyUp(code),
   get autopilot() {

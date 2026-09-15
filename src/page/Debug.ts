@@ -40,6 +40,10 @@ export interface WorldDebug {
   readonly resumed: boolean;
   snapshot(): ResumeState;
   saveFlight(): void;
+  /** The registry, in the order the window's slot indices point into. */
+  readonly biomes: string[];
+  /** The three biome slots of the cell a world point falls in, by name. */
+  weightsAt(x: number, z: number): Array<{ id: string; weight: number }>;
   key(code: string): KeyAction;
   keyUp(code: string): boolean;
   /** The flight flies itself; an arrow key takes it off and this hands it back. */

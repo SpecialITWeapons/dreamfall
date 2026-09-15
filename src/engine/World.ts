@@ -7,6 +7,8 @@
 // figure and the camera get their poses converted through it.
 import { PerspectiveCamera, Scene, Vector3 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { validateLibrary, type Library } from '../../library/contract';
+import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
@@ -37,6 +39,8 @@ export interface WorldOptions {
   seed: number;
   aspect: number;
   renderer: WebGPURenderer;
+  /** The registry; the built-in one by default. It is validated before anything is built. */
+  library?: Library;
   /** A remembered flight of this seed to continue. */
   resume?: ResumeState | null;
   view?: View;
@@ -50,6 +54,7 @@ export interface WorldOptions {
 
 export interface World {
   readonly seed: number;
+  readonly library: Library;
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
   readonly sim: Simulation;
@@ -80,9 +85,15 @@ export interface World {
 const safeAspect = (aspect: number) => (Number.isFinite(aspect) && aspect > 0 ? aspect : 1);
 
 export function createWorld(opts: WorldOptions): World {
+  // The library is checked before the world is built, and a bad entry stops the
+  // page rather than painting something wrong: the failure hook in index.html
+  // shows what the console already says, by entry name.
+  const library = opts.library ?? createLibrary();
+  const problems = validateLibrary(library);
+  if (problems.length > 0) throw new Error(`library:\n${problems.join('\n')}`);
   const scene = new Scene();
   const camera = new PerspectiveCamera(TPP.fov, safeAspect(opts.aspect), TPP.near, 14_000);
-  const sampler = createWorldSampler(opts.seed);
+  const sampler = createWorldSampler(opts.seed, { biomes: library.biomes });
   const heightfield = createHeightfield(sampler);
   const heightAt = (x: number, z: number) => heightfield.heightAt(x, z);
   const obstacles = createObstacles();
@@ -113,7 +124,7 @@ export function createWorld(opts: WorldOptions): World {
   const litMaterial = createLitMaterial(createSoftShadow(lights.shadowMatrix));
   const atmosphere = createAtmosphere({ clock, uniforms, lights });
   const palette = createTerrainPalette(look);
-  const terrain = createTerrain({ heightfield, uniforms, litMaterial, palette });
+  const terrain = createTerrain({ heightfield, uniforms, litMaterial, palette, biomes: library.biomes });
   scene.add(terrain.mesh);
   const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
   scene.add(water.mesh);
@@ -210,6 +221,7 @@ export function createWorld(opts: WorldOptions): World {
   place(0);
   return {
     seed: opts.seed,
+    library,
     scene,
     camera,
     sim,
