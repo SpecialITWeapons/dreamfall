@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_STEP, createSimulation, headingFromSeed } from '../../src/engine/sim/Simulation';
+import {
+  CLEAR_HERE,
+  CRUISE_ALTITUDE,
+  FLOOR,
+  LOOK_AHEAD,
+  MAX_STEP,
+  createSimulation,
+  headingFromSeed,
+} from '../../src/engine/sim/Simulation';
 
 describe('createSimulation', () => {
   it('flies straight ahead at its speed', () => {
@@ -32,5 +40,43 @@ describe('createSimulation', () => {
     const sim = createSimulation({ seed: 5 });
     expect(sim.speed).toBe(40);
     expect(sim.state.y).toBe(120);
+  });
+});
+
+describe('terrain following', () => {
+  it('keeps the M0 behaviour without a ground function', () => {
+    const sim = createSimulation({ seed: 1, heading: 0 });
+    for (let i = 0; i < 100; i++) sim.step(0.05);
+    expect(sim.state.y).toBe(CRUISE_ALTITUDE);
+  });
+  it('stays at cruise altitude over flat ground', () => {
+    const sim = createSimulation({ seed: 1, heading: 0, groundAt: () => 0 });
+    for (let i = 0; i < 200; i++) sim.step(0.05);
+    expect(sim.state.y).toBeCloseTo(CRUISE_ALTITUDE, 6);
+  });
+  it('climbs before a wall and never drops under the floor over it', () => {
+    // heading pi/2 flies along +x; a 400 m wall stands from x = 500 on
+    const groundAt = (x: number) => (x >= 500 ? 400 : 0);
+    const sim = createSimulation({ seed: 1, heading: Math.PI / 2, groundAt });
+    let yAt300 = 0;
+    for (let i = 0; i < 600; i++) {
+      sim.step(0.05);
+      const ground = groundAt(sim.state.x);
+      expect(sim.state.y).toBeGreaterThanOrEqual(ground + FLOOR - 1e-9);
+      if (yAt300 === 0 && sim.state.x >= 300) yAt300 = sim.state.y;
+    }
+    // the look-ahead saw the wall LOOK_AHEAD metres early and started the climb before reaching it
+    expect(LOOK_AHEAD).toBe(300);
+    expect(yAt300).toBeGreaterThan(CRUISE_ALTITUDE + 20);
+    expect(sim.state.y).toBeGreaterThanOrEqual(400 + CLEAR_HERE - 1);
+  });
+  it('settles back down over flat ground after a high start', () => {
+    const sim = createSimulation({ seed: 1, heading: 0, altitude: 500, groundAt: () => 0 });
+    for (let i = 0; i < 200; i++) sim.step(0.05);
+    expect(sim.state.y).toBeLessThan(200);
+    expect(sim.state.y).toBeGreaterThan(CRUISE_ALTITUDE - 1e-6);
+  });
+  it('accepts an explicit heading', () => {
+    expect(createSimulation({ seed: 5, heading: 1.25 }).state.heading).toBe(1.25);
   });
 });
