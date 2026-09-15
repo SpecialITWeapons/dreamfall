@@ -125,6 +125,20 @@ export function createSkyPulls(clock: DayClock, opts: { galaxyHeading?: number }
   };
   let pull = 0,
     heading = 0;
+  // The event (if any) with the strongest pull at a phase, shared by update() and restore()
+  // so a resumed flight primes `sunward.event` the same way the next update() would find it.
+  const strongestEvent = (phase: number): { event: SkyEvent | null; weight: number } => {
+    let weight = 0,
+      event: SkyEvent | null = null;
+    for (const candidate of events) {
+      const w = skyEventWeight(candidate, phase);
+      if (w > weight) {
+        weight = w;
+        event = candidate;
+      }
+    }
+    return { event, weight };
+  };
   return {
     events,
     sunrise,
@@ -143,15 +157,7 @@ export function createSkyPulls(clock: DayClock, opts: { galaxyHeading?: number }
     },
     isNight,
     update(phase, t, current, dt) {
-      let best = 0,
-        event: SkyEvent | null = null;
-      for (const candidate of events) {
-        const weight = skyEventWeight(candidate, phase);
-        if (weight > best) {
-          best = weight;
-          event = candidate;
-        }
-      }
+      const { event, weight: best } = strongestEvent(phase);
       if (event !== sunward.event) sunward.released = false;
       sunward.event = event;
       sunward.pull = sunward.released ? 0 : best;
@@ -196,6 +202,11 @@ export function createSkyPulls(clock: DayClock, opts: { galaxyHeading?: number }
       nightward.done = true;
     },
     restore(released) {
+      // Prime `sunward.event` from the clock's current phase (already the resumed
+      // flight's phase at this point, before any advance()), so the very next
+      // update() sees the same event and doesn't treat it as "changed" -- which
+      // would otherwise reset `released` back to false one tick after resume.
+      sunward.event = strongestEvent(clock.phase).event;
       sunward.released = released;
     },
   };

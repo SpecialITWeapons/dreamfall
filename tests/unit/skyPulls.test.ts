@@ -68,6 +68,24 @@ describe('createSkyPulls', () => {
     pulls.restore(true);
     expect(pulls.released).toBe(true);
   });
+  it('restore() primes the current event, so a released resume survives the next update()', () => {
+    // A fresh flight resumed mid-event, with the pull already released before saving: the
+    // very first update() after restore() must not reset `released`, since the event it
+    // finds is the same one restore() was told about (bug: a freshly constructed SkyPulls
+    // starts with sunward.event === null, so the first update() saw "event changed" and
+    // cleared `released` one tick after restore(true) set it).
+    const clock = createDayClock({ phase: 0 });
+    const probe = createSkyPulls(clock);
+    clock.phase = probe.sunrise.phase; // land the clock inside the sunrise pull's window
+    const pulls = createSkyPulls(clock); // built fresh, as a resumed flight's simulation would
+    pulls.restore(true);
+    expect(pulls.released).toBe(true);
+    // the resumed flight's first update() call passes the same phase, before the clock advances
+    pulls.update(clock.phase, 0, 0, 0.05);
+    expect(pulls.event).toBe(pulls.sunrise);
+    expect(pulls.released).toBe(true);
+    expect(pulls.pull).toBe(0); // released: no pull, even though an event is active
+  });
   it('knows night from the same crossings', () => {
     const pulls = createSkyPulls(createDayClock());
     expect(pulls.isNight(0)).toBe(true);
