@@ -9,6 +9,7 @@ import {
   type Biome,
   type GroundHook,
 } from '../../library/contract';
+import { createLibrary } from '../../library/index.js';
 
 // The validator never calls a hook, so a stub of the right shape is enough.
 const ground = (() => ({ albedo: null })) as unknown as GroundHook;
@@ -104,5 +105,38 @@ describe('validateLibrary', () => {
     expect(BUDGET.propInstances).toBe(2000);
     expect(BUDGET.siteInstances).toBe(4);
     expect(BUDGET.speciesScale).toBe(3);
+  });
+});
+
+describe('the library itself', () => {
+  it('ships ten biomes that pass their own validator', () => {
+    const library = createLibrary();
+    expect(library.biomes).toHaveLength(10);
+    expect(library.biomes[0]!.id).toBe('wildsong'); // the fallback for an unclaimed texel
+    expect(validateLibrary(library)).toEqual([]);
+    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(10);
+    for (const biome of library.biomes) {
+      expect(biome.kind).toBe('biome');
+      expect(biome.name.length).toBeGreaterThan(2);
+      expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock']);
+    }
+  });
+  it('spreads them across climate space, so no two claim the same ground', () => {
+    const points = createLibrary().biomes.map(
+      (b) => (b.presence as { point: [number, number, number] }).point,
+    );
+    for (let i = 0; i < points.length; i++)
+      for (let j = i + 1; j < points.length; j++) {
+        const d = Math.hypot(...points[i]!.map((v, k) => v - points[j]![k]!));
+        expect(d).toBeGreaterThan(0.06);
+      }
+  });
+  it('paints every biome out of the swatch book, undercoat first', () => {
+    for (const biome of createLibrary().biomes) {
+      const ground = biome.ground as { type: string; layers: Array<{ color: string; mask?: string }> };
+      expect(ground.type).toBe('layers');
+      expect(ground.layers[0]!.mask).toBeUndefined(); // the undercoat takes no mask
+      for (const layer of ground.layers) expect(colorProblem(layer.color)).toBeNull();
+    }
   });
 });
