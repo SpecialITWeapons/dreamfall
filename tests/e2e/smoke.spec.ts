@@ -85,9 +85,8 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   expect(start.origin).toEqual({ x: 0, z: 0 });
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
-  // fly 16 km in simulated time (400 s): long enough that the origin, which only
-  // shifts once a 4000 m drift accumulates on some axis, must have moved at least
-  // once; clearance must hold everywhere along the way.
+  // fly 16 km in simulated time (400 s): clearance must hold everywhere along the way,
+  // and net displacement must fall well short of the path length.
   const flown = await page.evaluate(() => {
     const w = window.__world!;
     let minClearance = Infinity;
@@ -103,10 +102,21 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   // real heading drift with no scripted opening to hold it steady (deferred to a later
   // milestone, see DayClock.ts's `rate` doc comment), so this is well under the 16 km path.
   expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(3000);
-  expect(Math.hypot(flown.origin.x, flown.origin.z)).toBeGreaterThan(0);
+  // The origin follows: proven directly and deterministically (push state.x past Origin's
+  // 4000 m shift threshold, then take one step) rather than by waiting on the flight's own
+  // stochastic wander to eventually cross it -- Origin's own shift/snap algorithm already
+  // has its own unit test (tests/unit/origin.test.ts); this only needs to prove the
+  // World -> Origin wiring, independent of seed 42's particular flight path.
+  const shifted = await page.evaluate((origin) => {
+    const w = window.__world!;
+    w.state.x = origin.x + 6000;
+    w.step(0.05);
+    return w.origin;
+  }, flown.origin);
+  expect(shifted).not.toEqual(flown.origin);
   // Math.abs: a negative multiple of 16 gives -0, which toBe(0) rejects
-  expect(Math.abs(flown.origin.x % 16)).toBe(0);
-  expect(Math.abs(flown.origin.z % 16)).toBe(0);
+  expect(Math.abs(shifted.x % 16)).toBe(0);
+  expect(Math.abs(shifted.z % 16)).toBe(0);
   expect(errors).toEqual([]);
 });
 
