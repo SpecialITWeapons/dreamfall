@@ -3,6 +3,10 @@
 Sesja, która zrobiła M2.1 i M3a, kończy się na pełnym oknie kontekstu. To jest
 wszystko, co było tylko w rozmowie i musi przeżyć jej koniec.
 
+> **2026-09-15, później tego dnia:** plan powstał —
+> `docs/superpowers/plans/2026-09-15-m3b-sceneria.md`. Liczby z fly-with-me są
+> w nim wpisane na sztywno, więc tabela niżej jest już tylko dowodem pochodzenia.
+
 ## Gdzie jesteśmy
 
 Na `main`: M0, M1, M2, M2.1 (sylwetka, stery, prędkość, kamera), M3a (kontrakt
