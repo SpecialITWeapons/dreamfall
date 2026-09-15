@@ -6,8 +6,11 @@ truth; this file collects what you need to know for every change.
 
 ## Layout
 
-Vite + TypeScript in `src/`, JavaScript with JSDoc in `library/` (from M3
-onward). Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
+Vite + TypeScript in `src/`, JavaScript with JSDoc in `library/` plus its one
+TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
+`library/standard/` imports TSL: a ground hook is handed `color`, `mix` and
+`ramp` through its context, which is what lets the layer painter be read by a
+test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `scenery/` (obstacle
 registry), `avatar/` (character interface, procedural human, outfits),
 `terrain/` (noise, base fields, heightfield window, terrain mesh), `sky/`
@@ -57,6 +60,21 @@ subdirectory.
 
 - The CPU heightfield is the only terrain truth; `heightAt` interpolates the
   exact rendered triangle (same diagonal as `buildGrid`), never bilinearly.
+- The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, spare)` from
+  one sampling: heights interpolate across the triangle, weights belong to the
+  cell, and the spare byte is reserved for standing water.
+- Presence is the CPU's: every biome's hook is clipped to 0..1, normalised, and
+  the three strongest are kept and renormalised. The GPU only reads the result,
+  which is why a biome may have any presence function rather than a point in
+  climate space. The climate sharpening (2.2) lives inside `climatePoint`, not
+  in the sampler, or the borders move.
+- A height hook sees the base height, never a neighbour's answer, and its change
+  is clipped to `MAX_HEIGHT_DELTA` and weighed by its own slot, so the order of
+  the registry cannot move the ground.
+- The ground material is composed once from the registry, one branch per biome
+  gated at a hundredth of a fragment; ten biomes cost about 2 ms on a full
+  window fill (530 ms against 528 without them), because the base fields are
+  what a fill actually costs.
 - `WorldSampler` is a verbatim port of fly-with-me's `sampleWorld`; its unit
   tests hold golden values for seed 42, and a change to the terrain must
   update them deliberately.
@@ -71,7 +89,15 @@ subdirectory.
 - The sky dome draws last among the opaque objects (`renderOrder 1`), writes
   no depth, and rides on the camera.
 - Only the scene pass is multisampled; everything past tone mapping is
-  eight-bit; `capture` renders before the display chain.
+  eight-bit; `capture` renders before the display chain. It renders straight to
+  its own target, so the scene compiles a second time for that configuration:
+  the first capture costs seconds and the rest a fifth of one, provided the loop
+  is paused -- a running loop puts a pipeline frame between two captures and
+  buys the recompile again. A browser test that captures pauses first.
+- The renderer's tone mapping stays `NoToneMapping` and the display chain names
+  ACES itself: a node program is keyed on the renderer's tone mapping, so
+  flipping that global recompiles every material in the scene. Exposure is a
+  uniform and is free to move every frame.
 - TSL is strictly typed in `@types/three`: annotate `Fn` parameters with the
   node type (`Node<'vec3'>`, `Node<'float'>`); a bare `Node` has no operator
   methods, so never cast to it.

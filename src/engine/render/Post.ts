@@ -46,11 +46,23 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
   const col = scenePass.getTextureNode();
   const glow = bloom(col, LOOK.bloom.strength, LOOK.bloom.radius, LOOK.bloom.threshold);
   const pipeline = new RenderPipeline(renderer);
-  renderer.toneMapping = ACESFilmicToneMapping;
+  // The renderer's own tone mapping stays off and the display chain asks for
+  // ACES by name. A node material's compiled program is keyed on the renderer's
+  // tone mapping, so the global setting is not a setting: flipping it -- as
+  // capture() used to, twice a call -- recompiles every material in the scene,
+  // which went from a moment to tens of seconds when the ground grew a branch
+  // per biome. Exposure is a uniform and stays cheap; the atmosphere moves it
+  // every frame.
+  renderer.toneMapping = NoToneMapping;
   renderer.toneMappingExposure = LOOK.exposure;
   pipeline.outputColorTransform = false;
   const LDR = { type: UnsignedByteType, depthBuffer: false };
-  const display = convertToTexture(renderOutput(vec4(col.rgb.add(glow.rgb), 1)), null, null, LDR);
+  const display = convertToTexture(
+    renderOutput(vec4(col.rgb.add(glow.rgb), 1), ACESFilmicToneMapping),
+    null,
+    null,
+    LDR,
+  );
   const softened = Fn(() => {
     const center = display.sample(screenUV),
       sum = center.rgb.mul(4).toVar(),
@@ -83,6 +95,11 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
   pipeline.outputNode = fxaa(softDisplay);
   let captureTask: Promise<unknown> = Promise.resolve();
   let disposed = false;
+  // One target per size, kept between captures. A render target is a pipeline:
+  // building a new one makes the renderer compile the scene's materials for it,
+  // which is seconds rather than milliseconds now that the ground carries a
+  // branch per biome -- and it was paid again on every single capture.
+  const captureTargets = new Map<string, RenderTarget>();
   return {
     render() {
       pipeline.render();
@@ -95,13 +112,17 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
       if (disposed) return Promise.resolve(null);
       const task = captureTask.then(async () => {
         if (disposed) return null;
-        const target = new RenderTarget(width, height, { type: FloatType, depthBuffer: true });
+        const key = `${width}x${height}`;
+        let target = captureTargets.get(key);
+        if (!target) {
+          target = new RenderTarget(width, height, { type: FloatType, depthBuffer: true });
+          captureTargets.set(key, target);
+        }
         const persp = camera as PerspectiveCamera;
         const aspect = persp.aspect;
-        const toneMapping = renderer.toneMapping;
         persp.aspect = width / height;
         persp.updateProjectionMatrix();
-        renderer.toneMapping = NoToneMapping;
+        // no tone mapping to switch off: the renderer never had it on
         renderer.setRenderTarget(target);
         try {
           await renderer.renderAsync(scene, camera);
@@ -114,10 +135,8 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
           return { width, height, data };
         } finally {
           renderer.setRenderTarget(null);
-          renderer.toneMapping = toneMapping;
           persp.aspect = aspect;
           persp.updateProjectionMatrix();
-          target.dispose();
         }
       });
       captureTask = task.catch(() => null);
@@ -130,6 +149,8 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
       // Pending readbacks must finish before their buffers are destroyed; dispose is
       // called from the page's dispose, which awaits nothing else, so chain here.
       void captureTask.then(() => {
+        for (const target of captureTargets.values()) target.dispose();
+        captureTargets.clear();
         scenePass.dispose();
         glow.dispose();
         display.dispose();

@@ -380,6 +380,11 @@ test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
 test('the clouds move with the wind: sixty simulated seconds change the sky under the same sun', async ({
   page,
 }) => {
+  // The first capture compiles the whole scene a second time, for the capture's
+  // own target: about 5 s here and several times that on a CI runner with no
+  // GPU. Everything after it is a fifth of a second -- as long as the loop is
+  // paused, which is why the pause below is not only about the wind.
+  test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const sky = async () =>
@@ -402,5 +407,100 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
     x && y ? x.reduce((s, v, i) => s + Math.abs(v - y[i]!), 0) / x.length : NaN;
   expect(diff(a, again)).toBeLessThan(1e-4);
   expect(diff(a, b)).toBeGreaterThan(0.01);
+  expect(errors).toEqual([]);
+});
+
+test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
+  // Five window refills and three renders, on a software rasteriser, and every
+  // refill now runs ten presence hooks over 313 600 texels: this one is slow by
+  // construction, not by accident.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page); // no render loop competing with the teleports below
+  const biomes = await page.evaluate(() => window.__world!.biomes);
+  expect(biomes).toHaveLength(10);
+  expect(biomes[0]).toBe('wildsong');
+  const here = await page.evaluate(() => window.__world!.weightsAt(0, 0));
+  expect(here).toHaveLength(3);
+  expect(here.reduce((s, slot) => s + slot.weight, 0)).toBeCloseTo(1, 4);
+  expect(here[0]!.weight).toBeGreaterThanOrEqual(here[1]!.weight);
+  expect(biomes).toContain(here[0]!.id);
+
+  // Two places on dry land that different biomes own. They are hard-coded
+  // rather than searched for because a search means a window refill per probe,
+  // and sixty of those do not fit in a test budget; seed 42's base fields are
+  // frozen (see worldSampler.test.ts), so these stay where they are, and the
+  // ids below fail loudly if the weighting ever moves.
+  const STEPPE = { x: 24_000, z: 5_500 },
+    WILDSONG = { x: 162_000, z: 62_500 };
+  const owner = async (at: { x: number; z: number }) =>
+    page.evaluate(({ x, z }) => {
+      const w = window.__world!;
+      w.state.x = x;
+      w.state.z = z;
+      w.step(0.05); // the window refills on the jump
+      return { id: w.weightsAt(x, z)[0]!.id, h: w.heightAt(x, z) };
+    }, at);
+  const a = await owner(STEPPE),
+    b = await owner(WILDSONG);
+  expect(a.id).toBe('steppe');
+  expect(b.id).toBe('wildsong');
+  expect(a.h).toBeGreaterThan(40);
+  expect(b.h).toBeGreaterThan(40);
+
+  // The same flight, the same sun, the same frame: only the ground differs.
+  const groundAt = async (x: number, z: number, h: number) =>
+    page.evaluate(
+      async ({ x, z, h }) => {
+        const w = window.__world!;
+        w.state.x = x;
+        w.state.z = z;
+        w.step(0.05); // the window refills on the jump
+        // Everything the picture depends on is set by hand, so two visits to one
+        // place are the same picture: the flight would otherwise have wandered
+        // a little further along a different heading by the time of the second.
+        w.state.y = h + 110;
+        w.state.heading = 0;
+        w.state.bank = 0;
+        w.state.pitch = 0;
+        w.state.vy = 0;
+        w.state.t = 100;
+        w.dayPhase = 0.3;
+        // One short step places the figure, the camera and the sky from the pose
+        // just written. Any more than that and the flight starts flying again --
+        // its own climb, its cloud schedule, its low pass -- and the second visit
+        // to a place is no longer the same picture as the first.
+        w.step(0.02);
+        const shot = await w.capture(96, 54);
+        if (!shot) return null;
+        // The mean colour of the bottom left corner: ground from this height,
+        // and far enough from the middle that the figure and its shadow are not
+        // in it -- their flutter is the one thing here that is not deterministic.
+        let r = 0,
+          g = 0,
+          b = 0,
+          n = 0;
+        for (let row = 40; row < 54; row++)
+          for (let col = 0; col < 24; col++) {
+            const i = (row * 96 + col) * 4;
+            r += shot.data[i]!;
+            g += shot.data[i + 1]!;
+            b += shot.data[i + 2]!;
+            n++;
+          }
+        return [r / n, g / n, b / n];
+      },
+      { x, z, h },
+    );
+  const shotA = await groundAt(STEPPE.x, STEPPE.z, a.h);
+  const shotAgain = await groundAt(STEPPE.x, STEPPE.z, a.h);
+  const shotB = await groundAt(WILDSONG.x, WILDSONG.z, b.h);
+  const apart = (x: number[] | null, y: number[] | null) =>
+    x && y ? x.reduce((s, v, i) => s + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  // The pixels come back 0..1, so these are small numbers on purpose. Measured
+  // at seed 42: steppe reads (0.29, 0.31, 0.11) and wildsong (0.17, 0.28, 0.08).
+  expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
+  expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
+  // no console errors anywhere above is the proof that ten branches of TSL compiled
   expect(errors).toEqual([]);
 });

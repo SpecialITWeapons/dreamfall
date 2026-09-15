@@ -167,6 +167,11 @@ export interface GroundCtx {
   params: Record<string, Node>;       // uniformy z biome.params
   noise(scale: number, salt: number): Node;
   hash(salt: number): Node;
+  // 2026-09-15: pomocniki silnika, żeby hak nie importował TSL i dał się
+  // przeczytać testem w Node na atrapie kontekstu (tak działa `layers`).
+  color(value: SceneryColor): Node;
+  mix(a: Node, b: Node, t: Node | number): Node;
+  ramp(v: Node, from: number, to: number): Node;
 }
 export interface GroundOut { albedo: Node; normalTilt?: Node; emissive?: Node }
 export type GroundHook = ((g: GroundCtx) => GroundOut) | GroundDescriptor;
@@ -306,10 +311,16 @@ barycentrycznie po diagonali siatki; `slopeAt` z różnic centralnych;
 
 Składany raz przy starcie i po każdej podmianie biomu (rekompilacja materiału
 jest akceptowalna: od ułamka sekundy do kilku sekund). Pozycja wierzchołka z
-`heightTex`, normalna z różnic centralnych, trzy próbki trójkąta w stopniu
-fragmentu jak w oryginale (kolor należy do trójkąta). Dla każdego biomu z
-rejestru: maska = suma pasujących slotów z trzech wierzchołków; `ground(ctx)`
-wywołane pod `If(mask > 0.01)`, wynik ważony maską i akumulowany. Na wierzchu
+`heightTex`, normalna z różnic centralnych. Dla każdego biomu z rejestru:
+maska = suma pasujących slotów **komórki fragmentu**; `ground(ctx)` wywołane
+pod `If(mask > 0.01)`, wynik ważony maską i akumulowany.
+
+Zmiana z 2026-09-15 wobec pierwotnego „trzy próbki trójkąta”: w v2 wagi liczy
+CPU i są własnością komórki, więc trzy rogi jednego trójkąta niosą te same trzy
+wagi — suma z nich byłaby tą samą liczbą za cenę trzech odczytów tekstury.
+Sprawdzone w locie nad czterema biomami: krawędzie komórek nie są widoczne, bo
+kolory wewnątrz biomu zmieniają się szumem i nachyleniem, nie komórką. Gdyby
+kiedyś było widać kwadraty 16 m, wracamy do wersji z trójkątem. Na wierzchu
 dwie warstwy świata: piasek przy poziomie morza i śnieg nad globalną linią
 śniegu (port reguły himalajskiej z bramkowaniem kosztu), obie wyłączalne
 parametrami `shore: false`, `snow: false`. Materiał to `litMaterial` z

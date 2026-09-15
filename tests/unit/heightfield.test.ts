@@ -7,10 +7,20 @@ const plane = (ax: number, az: number, c = 0): WorldSampler => ({
   seed: 0,
   seeds: { S1: 0, S2: 0, S3: 0 },
   sample(x, z, out) {
+    this.baseFields(x, z, out);
+  },
+  baseFields(x, z, out) {
     out[0] = ax * x + az * z + c;
     out[1] = 0.5;
     out[2] = 0.25;
     out[3] = 0.75;
+    out[4] = 0.5;
+  },
+  sampleWindow(x, z, out, slots) {
+    this.baseFields(x, z, out);
+    out[1] = 1;
+    out[2] = out[3] = 0;
+    slots[0] = slots[1] = slots[2] = 0;
   },
 });
 
@@ -21,7 +31,7 @@ describe('createHeightfield', () => {
     expect(hf.center).toEqual({ cx: 100, cz: -40 });
     expect(hf.texel(100, -40, 0)).toBeCloseTo(100 * CELL * 1 + -40 * CELL * 2);
     expect(hf.texel(107, -33, 0)).toBeCloseTo(107 * CELL + -33 * CELL * 2);
-    expect(hf.texel(107, -33, 2)).toBeCloseTo(0.25);
+    expect(hf.texel(107, -33, 1)).toBeCloseTo(1); // the whole cell is one biome here
     expect(hf.data.length).toBe(16 * 16 * 4);
   });
   it('refills only rows and columns on a small move and matches a fresh fill', () => {
@@ -61,10 +71,19 @@ describe('createHeightfield', () => {
       seed: 0,
       seeds: { S1: 0, S2: 0, S3: 0 },
       sample(x, z, out) {
+        this.baseFields(x, z, out);
+      },
+      baseFields(x, z, out) {
         const ix = Math.round(x / CELL),
           iz = Math.round(z / CELL);
         out[0] = (ix + iz) % 2 === 0 ? 100 : 0;
-        out[1] = out[2] = out[3] = 0;
+        out[1] = out[2] = out[3] = out[4] = 0;
+      },
+      sampleWindow(x, z, out, slots) {
+        this.baseFields(x, z, out);
+        out[1] = 1;
+        out[2] = out[3] = 0;
+        slots[0] = slots[1] = slots[2] = 0;
       },
     };
     const hf = createHeightfield(saddle, { size: 8 });
@@ -74,11 +93,57 @@ describe('createHeightfield', () => {
     expect(hf.heightAt(2, 2)).toBeCloseTo(75, 6);
     expect(hf.heightAt(14, 14)).toBeCloseTo(75, 6); // upper triangle spanned by h11, h01, h10
   });
-  it('measures slope from central differences and reads climate at the nearest cell', () => {
+  it('measures slope from central differences', () => {
     const hf = createHeightfield(plane(0.3, 0.4), { size: 16 });
     hf.fillAll(0, 0);
     expect(hf.slopeAt(10, 10)).toBeCloseTo(Math.hypot(0.3, 0.4), 6);
-    expect(hf.fieldAt(9, 9, 3)).toBeCloseTo(0.75);
+  });
+  it('carries the three biome slots of each cell, unlaced from the height', () => {
+    // a sampler whose climate swaps biomes across x = 0, and whose height is x
+    const swapping: WorldSampler = {
+      seed: 1,
+      seeds: { S1: 0, S2: 0, S3: 0 },
+      sample(x, z, out) {
+        this.baseFields(x, z, out);
+      },
+      baseFields(x, _z, out) {
+        out[0] = x;
+        out[1] = out[2] = out[3] = out[4] = 0;
+      },
+      sampleWindow(x, _z, out, slots) {
+        out[0] = x;
+        const east = x > 0;
+        out[1] = east ? 0.6 : 0.9;
+        out[2] = east ? 0.4 : 0.1;
+        out[3] = 0;
+        slots[0] = east ? 2 : 0;
+        slots[1] = east ? 3 : 1;
+        slots[2] = 0;
+      },
+    };
+    const hf = createHeightfield(swapping, { size: 32 });
+    hf.fillAll(0, 0);
+    const ids = new Uint8Array(3),
+      weights = new Float32Array(3);
+    hf.weightsAt(5 * CELL, 0, ids, weights);
+    expect([...ids]).toEqual([2, 3, 0]);
+    expect(weights[0]).toBeCloseTo(0.6, 6);
+    expect(weights[1]).toBeCloseTo(0.4, 6);
+    hf.weightsAt(-5 * CELL, 0, ids, weights);
+    expect([...ids]).toEqual([0, 1, 0]);
+    expect(weights[0]).toBeCloseTo(0.9, 6);
+    // the height still comes off channel zero, interpolated on the drawn triangle
+    expect(hf.heightAt(5 * CELL, 0)).toBeCloseTo(5 * CELL, 6);
+    expect(hf.slots.length).toBe(32 * 32 * 4);
+    // the spare byte is reserved for standing water and stays zero
+    expect(hf.slots[3]).toBe(0);
+  });
+  it('bumps one version for both arrays, so the presentation uploads them together', () => {
+    const hf = createHeightfield(plane(1, 1), { size: 16 });
+    hf.fillAll(0, 0);
+    const v = hf.version;
+    expect(hf.update(1000 * CELL, 1000 * CELL)).toBe('jump');
+    expect(hf.version).toBeGreaterThan(v);
   });
   it('defaults to the world window of N cells', () => {
     const hf = createHeightfield(plane(0, 0));
