@@ -4,6 +4,9 @@
 // region are the climate the biomes will read (M3). Everything is in meters.
 // In M3 the biome hooks (presence, height) are applied on top of these fields;
 // this module stays the single source of the base terrain.
+import type { Biome } from '../../../library/contract';
+import { resolveHeight, resolvePresence } from '../../../library/standard/index.js';
+import { createFields } from './Fields';
 import { fbm, hash2, pyramidPeaks, ridgedMulti, sstep } from './noise';
 
 /** Terrain sample spacing, m. */
@@ -15,6 +18,10 @@ export const DECK_Y = 520;
 export const PEAKS = { cell: 2400, radius: 850, power: 1.7, lift: 900, massif: 640 } as const;
 /** Width of the climate fields, m. */
 export const CLIMATE_SCALE = 12000;
+/** The most a biome's height hook may move the ground, m (spec 5.5). */
+export const MAX_HEIGHT_DELTA = 300;
+/** How many biomes mix in one point (spec 5.7). */
+export const SLOTS = 3;
 
 /** Somewhere to write the fields: the window uses Float32Array, the hooks Float64Array. */
 export type FieldsOut = Float32Array | Float64Array | number[];
@@ -30,6 +37,12 @@ export interface WorldSampler {
    * of this one -- its numbers are the golden values of seed 42.
    */
   baseFields(x: number, z: number, out: FieldsOut): void;
+  /**
+   * What the height window holds: the height every biome has had its say in,
+   * and who had it. `out` takes (height, w0, w1, w2) and `slots` takes the
+   * three registry indices those weights belong to.
+   */
+  sampleWindow(x: number, z: number, out: FieldsOut, slots: Uint8Array): void;
 }
 
 /** Three field seeds hashed from the seed rather than sliced from its bits, so small seeds do not share a climate. */
@@ -42,11 +55,15 @@ export function fieldSeeds(seed: number): { S1: number; S2: number; S3: number }
   };
 }
 
-export function createWorldSampler(seed: number): WorldSampler {
+export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}): WorldSampler {
   const seeds = fieldSeeds(seed);
   const { S1, S2, S3 } = seeds;
   const scratch = new Float64Array(5);
-  return {
+  const biomes = opts.biomes ?? [];
+  const presences = biomes.map((b) => resolvePresence(b.presence));
+  const heights = biomes.map((b) => (b.height ? resolveHeight(b.height) : null));
+  const raw = new Float64Array(biomes.length);
+  const sampler: WorldSampler = {
     seed: seed >>> 0,
     seeds,
     sample(x, z, out) {
@@ -92,5 +109,94 @@ export function createWorldSampler(seed: number): WorldSampler {
       out[3] = region;
       out[4] = cont;
     },
+    sampleWindow(x, z, out, slots) {
+      // No library is the world of M1: one slot, all of it, the base height.
+      if (biomes.length === 0) {
+        this.baseFields(x, z, scratch);
+        out[0] = scratch[0]!;
+        out[1] = 1;
+        out[2] = out[3] = 0;
+        slots[0] = slots[1] = slots[2] = 0;
+        return;
+      }
+      const f = fields.at(x, z);
+      // Presence: what each biome makes of this place, clipped to 0..1. The
+      // scale is nobody's business but the normalisation's -- a biome of code
+      // may answer on any scale, which is why the sharpening lives in the hook.
+      let sum = 0;
+      for (let i = 0; i < biomes.length; i++) {
+        const v = presences[i]!(f);
+        raw[i] = v > 1 ? 1 : v > 0 ? v : 0;
+        sum += raw[i]!;
+      }
+      // The three strongest, in one pass: this runs once per texel, and a full
+      // window is 313 600 of them, so nothing here sorts or allocates.
+      let i0 = -1,
+        i1 = -1,
+        i2 = -1,
+        w0 = -1,
+        w1 = -1,
+        w2 = -1;
+      for (let i = 0; i < biomes.length; i++) {
+        const v = raw[i]!;
+        if (v > w0) {
+          i2 = i1;
+          w2 = w1;
+          i1 = i0;
+          w1 = w0;
+          i0 = i;
+          w0 = v;
+        } else if (v > w1) {
+          i2 = i1;
+          w2 = w1;
+          i1 = i;
+          w1 = v;
+        } else if (v > w2) {
+          i2 = i;
+          w2 = v;
+        }
+      }
+      // Nobody claimed it: the first biome of the registry takes it, so no
+      // texel is ever painted by nothing.
+      if (!(sum > 0) || !(w0 > 0)) {
+        this.baseFields(x, z, scratch);
+        out[0] = scratch[0]!;
+        out[1] = 1;
+        out[2] = out[3] = 0;
+        slots[0] = slots[1] = slots[2] = 0;
+        return;
+      }
+      const kept = w0 + Math.max(0, w1) + Math.max(0, w2);
+      out[1] = w0 / kept;
+      out[2] = w1 > 0 ? w1 / kept : 0;
+      out[3] = w2 > 0 ? w2 / kept : 0;
+      // An empty slot repeats the strongest index at weight zero: zero is a
+      // real biome, and a repeat costs the shader nothing.
+      slots[0] = i0;
+      slots[1] = w1 > 0 ? i1 : i0;
+      slots[2] = w2 > 0 ? i2 : i0;
+      // Height: every modifier reads the base height, never a neighbour's
+      // answer, so the order of the registry cannot change the ground.
+      const base = f.baseHeight;
+      let h = base;
+      for (let k = 0; k < SLOTS; k++) {
+        const w = out[k + 1]!;
+        if (w <= 0) continue;
+        const hook = heights[slots[k]!];
+        if (!hook) continue;
+        const delta = hook(f, base) - base;
+        h +=
+          w *
+          (delta > MAX_HEIGHT_DELTA
+            ? MAX_HEIGHT_DELTA
+            : delta < -MAX_HEIGHT_DELTA
+              ? -MAX_HEIGHT_DELTA
+              : delta);
+      }
+      out[0] = h;
+    },
   };
+  // The fields read the sampler's own base fields, so they are built after it.
+  const fields = createFields(sampler);
+  return sampler;
 }
