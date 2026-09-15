@@ -1,4 +1,4 @@
-import type { Camera, Scene } from 'three';
+import { TimestampQuery, type Camera, type Scene } from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { renderScale } from './renderScale';
 
@@ -30,6 +30,8 @@ export interface Engine {
   readonly backend: 'webgpu' | 'webgl2';
   resize(width: number, height: number, dpr: number): void;
   render(scene: Scene, camera: Camera): void;
+  /** What the GPU spent on the last resolved frame, ms; zero unless `?profile=1` asked for it. */
+  readonly gpuMs: number;
   /** Routes render() through a post chain; null restores the plain renderer. */
   attachPost(post: PostLike | null): void;
   setLoop(fn: ((now: number) => void) | null): void;
@@ -65,11 +67,14 @@ export async function createEngine(
   opts: EngineOptions = {},
   deps: EngineDeps = {},
 ): Promise<Engine> {
+  const profiling = opts.profiling === true;
   const renderer = (deps.makeRenderer ?? defaultRenderer)(canvas, opts);
   const raf = deps.raf ?? ((cb: () => void) => requestAnimationFrame(() => cb()));
   await renderer.init();
   const backend = renderer.backend as unknown as BackendLike;
   const lostListeners: Array<() => void> = [];
+  let gpuMs = 0;
+  let resolving = false;
   const lost = () => {
     for (const cb of lostListeners) cb();
   };
@@ -92,6 +97,26 @@ export async function createEngine(
     render(scene, camera) {
       if (post) post.render();
       else renderer.render(scene, camera);
+      // Timestamps have to be collected, or the query pool fills and the
+      // renderer starts warning about it: trackTimestamp without a resolve is
+      // measurement nobody reads. One in flight at a time; the answer is a
+      // frame or two old, which is what a frame time is for anyway.
+      if (profiling && !resolving) {
+        resolving = true;
+        void renderer
+          .resolveTimestampsAsync(TimestampQuery.RENDER)
+          .then((ms) => {
+            if (typeof ms === 'number') gpuMs = ms;
+          })
+          // WebGL2 has no timestamps to give; asking is not an error worth having
+          .catch(() => {})
+          .finally(() => {
+            resolving = false;
+          });
+      }
+    },
+    get gpuMs() {
+      return gpuMs;
     },
     attachPost(next) {
       post = next;

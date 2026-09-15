@@ -21,15 +21,27 @@ const resume = validateResume(storedFlight, params.seed);
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 
 const veil = createVeil(document);
+// What the start spends its time on, in milliseconds from the module's first
+// line. The veil covers all of it, so nobody watches a blank page -- but how
+// long each step takes is worth knowing, and guessing at it from the outside is
+// how people end up optimising the wrong one. `?profile=1` prints them.
+const started = performance.now();
+const timings: Record<string, number> = {};
+const mark = (step: string) => (timings[step] = Math.round(performance.now() - started));
 const gate = createGate(document);
 const hud = createHud(document);
 hud.setShare(shareAddress(location.href, params.seed));
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
+await veil.stage('graphics');
 const engine = await createEngine(canvas, { forceWebGL: params.forceWebGL, profiling: params.profiling });
+mark('graphics');
 hud.setBackend(engine.backend);
 engine.resize(innerWidth, innerHeight, devicePixelRatio);
 
+await veil.stage('ground');
+// the window of ground fills here, and the materials are assembled: half a
+// second of blocking work, which is why the line above waits for a paint
 const world = createWorld({
   seed: params.seed,
   aspect: innerWidth / innerHeight,
@@ -43,6 +55,10 @@ const world = createWorld({
   muted: settings.muted,
   reducedMotion: motionPreference.matches,
 });
+mark('ground');
+// Said before the loop starts, because the frame it explains is the one that
+// compiles every shader in the scene, and nothing paints while it does.
+await veil.stage('sky');
 engine.attachPost(world.post);
 const { steering, audio } = world;
 hud.setView(steering.view);
@@ -66,9 +82,11 @@ let disposed = false;
 loop.onFirstFrame(async () => {
   await engine.waitForGpu();
   if (disposed) return;
+  mark('sky'); // the first frame, and with it every shader the scene compiles
   ready = true;
   veil.lift();
   gate.enable();
+  if (params.profiling) console.info('dreamfall start, ms:', { ...timings }, '· frame cost: __world.gpuMs');
 });
 
 const saveSettings = () =>
@@ -329,6 +347,12 @@ installDebug(window, {
   resumed: resume !== null,
   snapshot: () => world.snapshot(),
   saveFlight,
+  get timings() {
+    return { ...timings };
+  },
+  get gpuMs() {
+    return engine.gpuMs;
+  },
   get biomes() {
     return world.library.biomes.map((b) => b.id);
   },
