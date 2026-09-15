@@ -85,23 +85,32 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   expect(start.origin).toEqual({ x: 0, z: 0 });
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
-  // fly 16 km in simulated time (400 s): clearance must hold everywhere along the way,
-  // and net displacement must fall well short of the path length.
+  // fly 400 simulated seconds: the clearance must hold everywhere along the way,
+  // and every step must carry the figure its own airspeed forward.
   const flown = await page.evaluate(() => {
     const w = window.__world!;
-    let minClearance = Infinity;
+    let minClearance = Infinity,
+      path = 0,
+      worstStep = 0;
     for (let i = 0; i < 8000; i++) {
+      const x = w.state.x,
+        z = w.state.z;
       w.step(0.05);
+      const moved = Math.hypot(w.state.x - x, w.state.z - z);
+      path += moved;
+      worstStep = Math.max(worstStep, Math.abs(moved - w.state.speed * 0.05));
       minClearance = Math.min(minClearance, w.clearance);
     }
-    return { minClearance, origin: w.origin, x: w.state.x, z: w.state.z, t: w.state.t };
+    return { minClearance, origin: w.origin, x: w.state.x, z: w.state.z, t: w.state.t, path, worstStep };
   });
   // MIN_CLEARANCE of the flight controller; the figure hangs 0.3 m under that
   expect(flown.minClearance).toBeGreaterThanOrEqual(25 - 1e-6);
-  // Net displacement, not path length: the wander (verbatim-ported from fly-with-me) accumulates
-  // real heading drift with no scripted opening to hold it steady (deferred to a later
-  // milestone, see DayClock.ts's `rate` doc comment), so this is well under the 16 km path.
-  expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(3000);
+  // Ground covered per step is the airspeed, whatever the dive did to it: this
+  // holds for any seed and any path, unlike a net displacement, which depends on
+  // how much the wander happened to curl this particular flight around itself.
+  expect(flown.worstStep).toBeLessThan(0.01);
+  expect(flown.path).toBeGreaterThan(400 * 30);
+  expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(500);
   // The origin follows: proven directly and deterministically (push state.x past Origin's
   // 4000 m shift threshold, then take one step) rather than by waiting on the flight's own
   // stochastic wander to eventually cross it -- Origin's own shift/snap algorithm already

@@ -12,7 +12,7 @@ import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
-import { MIN_CLEARANCE } from './flight/FlightController';
+import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
 import { createPost, type Post } from './render/Post';
 import { createLitMaterial, createSoftShadow } from './render/SoftLighting';
@@ -148,7 +148,7 @@ export function createWorld(opts: WorldOptions): World {
     gust: 0,
     view: steering.view,
   };
-  const sample = { altitude: 0, vy: 0, gust: 0, t: 0, x: 0, z: 0 };
+  const sample = { altitude: 0, vy: 0, gust: 0, rush: 1, t: 0, x: 0, z: 0 };
   const toLocal = (v: Vector3) => v.set(origin.localX(v.x), v.y, origin.localZ(v.z));
   const place = (dt: number) => {
     origin.shiftFor(state.x, state.z);
@@ -201,6 +201,7 @@ export function createWorld(opts: WorldOptions): World {
     sample.altitude = state.y - Math.max(0, heightAt(state.x, state.z));
     sample.vy = state.vy;
     sample.gust = state.gust;
+    sample.rush = state.speed / SPEED;
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;

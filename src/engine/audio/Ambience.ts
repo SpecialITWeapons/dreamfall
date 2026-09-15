@@ -10,6 +10,8 @@ export interface AmbienceSample {
   altitude: number;
   vy: number;
   gust: number;
+  /** Airspeed against the speed of level flight; 1 is level. */
+  rush: number;
   t: number;
   x: number;
   z: number;

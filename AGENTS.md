@@ -49,7 +49,9 @@ subdirectory.
 - Any WebGPU `uncapturederror` is treated as a fatal device loss on
   purpose (fail loud); a shader that only warns must not ship.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
-- Interface text lives only in `index.html` and `src/page/Hud.ts`.
+- Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
+  sits outside the HUD pill on purpose, because the pill dims and "the autopilot
+  is off" must not.
 
 ## Terrain, sky and time
 
@@ -82,15 +84,27 @@ subdirectory.
   pulls, flight controller; `World.update` runs `steering.update`, then
   `sim.step`, then places everything. Nothing in the presentation writes
   flight state.
-- The flight never drops under `MIN_CLEARANCE` over ground and obstacle
-  tops -- a hard clamp on `y` after the move -- and its target altitude is
-  capped at `MAX_ALTITUDE` and braked as it nears either bound; `terrainAhead`
-  and `climbAhead` follow the arc of the current turn; `Obstacles` is a 64 m
-  hash grid and the only way scenery reaches the flight.
+- The envelope holds in every mode, autopilot or not: after the move `y` is
+  clamped down to `MAX_ALTITUDE` and then up to `MIN_CLEARANCE` over ground and
+  obstacle tops, in that order, so ground above the ceiling still gets its
+  clearance. `terrainAhead` and `climbAhead` follow the arc of the current turn
+  and reach in proportion to the airspeed; terrain that asks for more altitude
+  than the ceiling allows turns the figure aside (`escapeTurn`) -- the world has
+  no other edge. `Obstacles` is a 64 m hash grid and the only way scenery
+  reaches the flight.
+- Airspeed is state (`state.speed`): a dive buys it and a climb spends it, in
+  `AIRSPEED.min..max` about a second behind `vy`. Everything that measures the
+  path ahead reads it; the stick still asks for a climb rate, so `AIM.up` and
+  `AIM.down` stay tied to the nominal `SPEED`.
 - The pilot's stick: `steerBy` turns the figure whole on the next step,
   `aimBy` owns the vertical while held and for `AIM.release` seconds after;
-  the sky pulls let go the moment the pilot steers or nudges the course, not
-  merely aims or nudges the height.
+  the sky pulls let go the moment the pilot steers, not merely aims.
+- The arrow keys are not the stick: the first one down hands the flight to the
+  pilot (`fly(yaw, climb)`, autopilot off, sky pulls released, deck schedule and
+  low passes stopped), the keys turn and climb while held, and letting go holds
+  the course and the height. The vertical is inverted the way an aircraft's
+  stick is: `ArrowDown` raises the nose. Only `setAutopilot(true)` -- the HUD
+  button -- hands it back. A pause, a blur or a hidden tab releases the keys.
 - Headings grow counter-clockwise seen from above; rightward input subtracts;
   the figure's frame is x left, y up, z ahead; `bodyToWorld` and
   `Object3D.rotation` with order `'YXZ'` agree.

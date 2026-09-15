@@ -11,15 +11,27 @@ export interface WindInput {
   /** A burst of stronger flutter, 0..1. */
   gust: number;
   t: number;
+  /** Airspeed against the speed of level flight: 1 level, more in a dive, less in a climb. */
+  rush: number;
 }
 
-/** Wind that follows altitude, climb and gusts: the low-pass cutoff and the gain of the pink noise. */
-export function windParams({ altitude, vy, gust, t }: WindInput): { frequency: number; gain: number } {
+/**
+ * Wind that follows altitude, climb, gusts and how fast the figure is actually
+ * going: the low-pass cutoff and the gain of the pink noise. The rush is what
+ * a dive is heard as -- the air itself gets louder and brighter, not just the
+ * flutter it shakes out of the suit.
+ */
+export function windParams({ altitude, vy, gust, t, rush }: WindInput): {
+  frequency: number;
+  gain: number;
+} {
   const swell = 0.5 + 0.5 * Math.sin(t * 0.43) * Math.sin(t * 0.071 + 1.3);
   const g = Math.max(swell, gust);
+  const fast = Math.max(-0.25, Math.min(0.6, rush - 1));
   return {
-    frequency: 380 + Math.min(1, Math.max(0, altitude) / 700) * 700 + g * 260 + Math.abs(vy) * 18,
-    gain: 0.16 + 0.1 * g + 0.05 * Math.min(1, Math.abs(vy) / 10),
+    frequency:
+      380 + Math.min(1, Math.max(0, altitude) / 700) * 700 + g * 260 + Math.abs(vy) * 18 + fast * 420,
+    gain: 0.16 + 0.1 * g + 0.05 * Math.min(1, Math.abs(vy) / 10) + 0.09 * fast,
   };
 }
 

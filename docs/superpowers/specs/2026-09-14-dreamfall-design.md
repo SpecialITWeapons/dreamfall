@@ -21,7 +21,7 @@ Raport z rekonesansu fly-with-me: artefakt „Rekonesans Fly With Me”
 
 | Pytanie | Decyzja |
 | --- | --- |
-| Co fizycznie robi postać | Lot ze snu: poza spadochroniarza, stała prędkość, brak grawitacji, lot bez końca. Wysokością steruje autopilot; sterowanie w pionie jest opcją od pierwszego dnia, w granicach `minClearance`, `minAltitude`, `maxAltitude`. |
+| Co fizycznie robi postać | Lot ze snu: poza spadochroniarza, brak grawitacji, lot bez końca. Prędkość zmienia się z pochyleniem (nurkowanie ją kupuje, wznoszenie wydaje; 2026-09-15, zamiast pierwotnej stałej 40 m/s). Wysokością steruje autopilot; sterowanie w pionie jest opcją od pierwszego dnia, w granicach `minClearance`, `minAltitude`, `maxAltitude`. |
 | Co biom może definiować | Wszystko poza tym, co rozbija spójność świata: obecność jako funkcja, lokalny kształt terenu, własny kod koloru ziemi (TSL) wewnątrz jednego materiału, rozmieszczanie, stanowiska, tło dźwiękowe. Oświetlenie, mgła, cienie, post-process i normalizacja wag zostają w silniku. |
 | Kto wrzuca biomy | Na razie tylko autor, statycznie (plik plus linia w rejestrze). Kontrakt jest projektowany pod przyszły edytor parametrów i podmianę biomów w działającej aplikacji. |
 | Widok FPP | Zamiana kamery: kamera w oku postaci, ograniczone rozglądanie wracające do kursu, co najwyżej przedramiona na skraju kadru. Jeden kontroler lotu dla obu widoków. |
@@ -422,11 +422,15 @@ export interface Avatar {
 ```
 
 `ProceduralHuman`: tułów, miednica, głowa z kaskiem i goglami, ramiona i
-przedramiona w łuku do tyłu, uda i podudzia zgięte, buty; elipsoidy i walce
+przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty
+80°), uda odchylone do tyłu, kolana zgięte 57°, stopy na własnym zawiasie
+kostki (bez niego but jest tylko grubszą łydką); elipsoidy i walce
 w kolorach wierzchołków, budżet 4 000 trójkątów mierzony walidatorem.
-Zawiasy w barkach, łokciach, biodrach i kolanach falują od `windPhase` i
+Zawiasy w barkach, łokciach, biodrach, kolanach i kostkach falują od `windPhase` i
 wolnego szumu; `bank` obraca ciało, `pitch` je unosi lub opuszcza; w skręcie
-ręka po wewnętrznej stronie schodzi niżej; `gust` to krótka seria mocniejszego
+ręka po wewnętrznej stronie schodzi niżej; kąt wznoszenia odchyla ręce (w
+nurkowaniu do tyłu jak w tracku, przy wznoszeniu do przodu i szerzej);
+`gust` to krótka seria mocniejszego
 falowania (zastępuje machnięcia skrzydeł i napędza dźwięk łopotu). W FPP
 ciało jest ukryte poza opcjonalnymi przedramionami (`fppHands`, domyślnie
 włączone).
@@ -451,8 +455,20 @@ m` nad ziemią i przeszkodami, `minAltitude` bezwzględne domyślnie brak,
   ostatnie 100 s wysoko), niskie przeloty nad łagodnym terenem, szum
   wysokości. Podłoga: `Obstacles.floorAt + minClearance + bounds.below`.
 - Sterowanie w pionie: port `aim` i `aimHold` (prawy przycisk i dotyk), w tych
-  samych granicach; przyszłe klawisze do wysokości to drugie źródło dla tego
-  samego `aim`.
+  samych granicach.
+- Prędkość: `speed` jest stanem, `clamp(SPEED − 1,2·vy, 30, 62)` z opóźnieniem
+  około sekundy. Zasięg `terrainAhead` i `climbAhead` skaluje się z nią, żeby
+  szybszy lot patrzył proporcjonalnie dalej; drążek nadal prosi o prędkość
+  wznoszenia, więc końce `aim` zostają przy nominalnym `SPEED`.
+- Tryb ręczny (2026-09-15): strzałki wyłączają autopilota (przyciągania puszczają,
+  harmonogram pokładu i niskie przeloty stoją), trzymane skręcają i wznoszą,
+  puszczone trzymają kurs i wysokość; pion odwrócony jak w drążku samolotu
+  (`ArrowDown` podnosi nos). Wraca tylko przyciskiem HUD. To nie jest „pełny
+  lot ręczny” z §16: koperta (prześwit, sufit, ucieczka przed ścianą) działa
+  w obu trybach.
+- Ucieczka: gdy `climbAhead` żąda więcej niż sufit, lot skręca w stronę tańszą
+  z dwóch sond (±0,7 rad). To jedyna „krawędź świata”, jaka istnieje — teren
+  jest nieskończony, a okno wysokości jedzie z postacią.
 - Pozycja: przechył wyprzedza skręt, pochylenie podąża za wznoszeniem (port).
 
 ## 11. Kamera (`ChaseCamera`)
@@ -471,8 +487,9 @@ zapamiętane w ustawieniach, przełączenie natychmiastowe.
   `prefers-reduced-motion`.
 
 Sterowanie: lewy przycisk orbita (TPP) lub rozglądanie (FPP); prawy przycisk
-i dotyk sterują kursem i pionem; kółko dystans (TPP); strzałki szturchnięcia
-kursu i wysokości z zanikaniem; spacja pauza; `V` widok. Konwencje i
+i dotyk sterują kursem i pionem; kółko dystans (TPP); strzałki to tryb ręczny
+z §10 (nie szturchnięcia — te zniknęły razem z `nudgeYaw` i `nudgeAlt`);
+spacja pauza; `V` widok. Konwencje i
 współczynniki z fly-with-me (0,004 rad na piksel).
 
 ## 12. Strona
@@ -575,7 +592,9 @@ wersją.
 
 ## 16. Poza zakresem
 
-Pełny lot ręczny jako tryb, spadochron i lądowanie, VR, wielu użytkowników,
+Pełny lot ręczny jako tryb (rozumiany jako lot poza kopertą: przeciągnięcie,
+zwrot o pełnej mocy, lądowanie; tryb ręczny z §10 zostaje w kopercie),
+spadochron i lądowanie, VR, wielu użytkowników,
 tunele i nawisy (niemożliwe na heightfieldzie), wnętrza, telemetria
 użytkowników, drugi wygląd na stronie. Mosty i rzeki nie są poza zakresem,
 tylko odłożone do M6.
@@ -662,6 +681,8 @@ osady; razem z mostami w M6.
 | `SEA_LEVEL`, `DECK_Y` | 0, 520 m |
 | `DAY_SECONDS`, `NIGHT_SHARE` | 600 s, 0,25 |
 | `SPEED`, `CLIMB`, `DESCENT` | 40, 11, 16 m/s |
+| `AIRSPEED` (min, max, na m/s wznoszenia) | 30, 62, 1,2 |
+| `MANUAL.turn`, `ESCAPE` (margines, sonda) | 0,35 rad/s; 120 m, 0,7 rad |
 | `minClearance`, `maxAltitude` | 25 m, 1 400 m |
 | `TREE_CELL`, `TREE_RADIUS` | 96 m, 1 900 m |
 | `CROWN_FADE`, `RING_FADE` | 540..680 m, 1 680..1 850 m |
