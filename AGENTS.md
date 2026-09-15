@@ -25,8 +25,15 @@ subdirectory.
 - Shader time is simulation time.
 - The veil lifts only after `engine.waitForGpu()` following the first
   frame; there is no loop behind the gate; pause and a hidden tab stop the
-  loop; `dispose` releases the renderer, and a test checks that GPU memory
-  returns to zero.
+  loop; `dispose` releases the renderer, and disposing the world releases
+  what it allocated -- the browser test asserts the drop in the renderer's
+  memory counters, not a return to zero (the renderer itself still owns
+  some GPU state).
+- `Renderer.init()` starts an internal animation tick that
+  `setAnimationLoop(null)` does not stop, so "no loop behind the gate"
+  means no rendering and no simulation, not no callbacks.
+- Any WebGPU `uncapturederror` is treated as a fatal device loss on
+  purpose (fail loud); a shader that only warns must not ship.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
 - Interface text lives only in `index.html` and `src/page/Hud.ts`.
 

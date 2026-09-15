@@ -17,6 +17,11 @@ export interface World {
 /** Distance fog density from fly-with-me after grading (0.00018 x 0.82). */
 const FOG_DENSITY = 0.00018 * 0.82;
 
+/** A 0x0 viewport at start-up (or any other degenerate size) yields a NaN aspect; hold 1 instead. */
+function clampAspect(aspect: number): number {
+  return Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+}
+
 /**
  * M0 world: one sky, one fog in the same color, checkered ground, and a
  * straight-flight simulation. Everything hangs off this object; no
@@ -24,7 +29,7 @@ const FOG_DENSITY = 0.00018 * 0.82;
  */
 export function createWorld(opts: { seed: number; aspect: number }): World {
   const scene = new Scene();
-  const camera = new PerspectiveCamera(55, opts.aspect, 0.5, 14_000);
+  const camera = new PerspectiveCamera(55, clampAspect(opts.aspect), 0.5, 14_000);
   // Horizon color from fly-with-me's noon preset; background and fog are one uniform.
   const horizon = uniform(new Color(0x96bdcd));
   scene.backgroundNode = horizon;
@@ -55,12 +60,12 @@ export function createWorld(opts: { seed: number; aspect: number }): World {
       place();
     },
     resize(aspect) {
-      camera.aspect = aspect;
+      camera.aspect = clampAspect(aspect);
       camera.updateProjectionMatrix();
     },
     dispose() {
       ground.geometry.dispose();
-      (ground.material as { dispose(): void }).dispose();
+      ground.material.dispose();
       scene.clear();
     },
   };

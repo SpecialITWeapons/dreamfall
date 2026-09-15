@@ -16,6 +16,11 @@ describe('createSimulation', () => {
     for (const dt of [0, -0.01, NaN, Infinity, MAX_STEP + 0.001]) expect(sim.step(dt)).toBe(false);
     expect(sim.state.t).toBe(0);
   });
+  it('accepts a step exactly at MAX_STEP, the boundary the loop clamps to', () => {
+    const sim = createSimulation({ seed: 1 });
+    expect(sim.step(MAX_STEP)).toBe(true);
+    expect(sim.state.t).toBe(MAX_STEP);
+  });
   it('takes its heading from the seed, deterministically', () => {
     expect(createSimulation({ seed: 42 }).state.heading).toBe(headingFromSeed(42));
     expect(headingFromSeed(42)).toBe(headingFromSeed(42));

@@ -15,6 +15,6 @@ Working agreements for Claude Code and any other agent working in this repositor
 
 ## Where the rules live
 
-- `AGENTS.md` (created in M0, Task 10): the engine's rules for anyone changing `src/`.
+- `AGENTS.md`: the engine's rules for anyone changing `src/`.
 - `docs/superpowers/specs/2026-09-14-dreamfall-design.md`: the approved design.
 - `docs/superpowers/plans/`: one implementation plan per milestone.

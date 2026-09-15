@@ -11,7 +11,7 @@ export const GROUND_CELL = 32;
  * shifting the mesh under the camera doesn't move the pattern. Replaced by
  * the height-field terrain in M1.
  */
-export function createGroundPlane(size = 24_000): Mesh {
+export function createGroundPlane(size = 24_000): Mesh<PlaneGeometry, MeshBasicNodeMaterial> {
   const geometry = new PlaneGeometry(size, size, 1, 1);
   geometry.rotateX(-Math.PI / 2);
   const material = new MeshBasicNodeMaterial();
