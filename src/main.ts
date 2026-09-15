@@ -22,7 +22,8 @@ const engine = await createEngine(canvas, { forceWebGL: params.forceWebGL, profi
 hud.setBackend(engine.backend);
 engine.resize(innerWidth, innerHeight, devicePixelRatio);
 
-const world = createWorld({ seed: params.seed, aspect: innerWidth / innerHeight });
+const world = createWorld({ seed: params.seed, aspect: innerWidth / innerHeight, renderer: engine.renderer });
+engine.attachPost(world.post);
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => world.update(dt),
