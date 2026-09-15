@@ -1,0 +1,204 @@
+// The sky: a painted gradient keyed by time of day, dawn and dusk bands, a
+// sun, a moon with its own face, hashed stars and painted clouds. The dome
+// only ever reads a direction, so its radius is free; it sits beyond the far
+// corner of the streamed terrain and draws last among the opaque objects, so
+// the depth test throws away every fragment the world already covers. The
+// Milky Way plugs in through `galaxy` in M5. Ported from fly-with-me.
+import { BackSide, Mesh, SphereGeometry, type Vector3 } from 'three';
+import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
+import {
+  Fn,
+  abs,
+  acos,
+  cameraPosition,
+  clamp,
+  cross,
+  dot,
+  exp,
+  float,
+  fract,
+  hash,
+  length,
+  max,
+  mix,
+  mx_noise_float,
+  normalize,
+  positionWorld,
+  pow,
+  select,
+  sign,
+  sin,
+  smoothstep,
+  sqrt,
+  step,
+  vec2,
+  vec3,
+} from 'three/tsl';
+import type { Horizon } from './Fog';
+import type { SkyUniforms } from './SkyUniforms';
+
+const VENUS = vec3(0.86, 0.46, 0.52);
+const SPARSE_STAR_AXIS = normalize(vec3(0.36, 0.5, -0.79));
+export const SKY_RADIUS = 12_000;
+
+export function createSkyDome(
+  u: SkyUniforms,
+  horizon: Horizon,
+  opts: { galaxy?: (dir: Node<'vec3'>) => Node<'vec3'> } = {},
+) {
+  const galaxy = opts.galaxy ?? (() => vec3(0));
+  // Shared by the dome and (in M5) the star catalog: clouds occlude all celestial detail once, with the same shape.
+  const paintedClouds = Fn(([dir]: [Node<'vec3'>]) => {
+    const p = dir.xz
+      .div(dir.y.max(0.025).add(0.19))
+      .mul(vec2(2.8, 6))
+      .add(vec2(u.time.mul(0.001), 0));
+    const mass = mx_noise_float(p.mul(0.3).add(vec2(3, 12)))
+      .mul(0.28)
+      .add(mx_noise_float(p).mul(0.6))
+      .add(mx_noise_float(p.mul(2.1).add(8)).mul(0.3))
+      .add(mx_noise_float(p.mul(5.8)).mul(0.16))
+      .add(mx_noise_float(p.mul(15)).mul(0.06));
+    // The night ceiling opens into clear windows, while the low cloud banks keep their opacity.
+    const opening = smoothstep(0.045, 0.22, dir.y).mul(u.uNight).mul(0.35);
+    const mask = smoothstep(
+      u.uNight.mul(0.14).sub(0.14).add(opening),
+      u.uNight.mul(0.08).add(0.34).add(opening),
+      mass,
+    ).mul(smoothstep(0.014, 0.15, dir.y));
+    return vec2(mass, mask);
+  });
+  const celestialVisibility = Fn(([dir]: [Node<'vec3'>]) =>
+    u.uNight
+      .mul(float(1).sub(u.uMoonLight.mul(0.45)))
+      .mul(smoothstep(0.0, 0.15, dir.y))
+      .mul(float(1).sub(u.uWhiteout)),
+  );
+  // Sparse hashed stars: one cell grid per layer, brightness and tint per star.
+  const starField = Fn(([dir, scale, threshold]: [Node<'vec3'>, Node<'float'>, Node<'float'>]) => {
+    const sc = dir.mul(scale);
+    const cellId = sc.floor(),
+      cf = fract(sc);
+    const seedA = dot(cellId, vec3(1.0, 57.0, 113.0));
+    const center = vec3(hash(seedA), hash(seedA.add(11.0)), hash(seedA.add(29.0)));
+    const dd = length(cf.sub(center));
+    const isStar = step(threshold, hash(seedA.add(3.0)));
+    const bright = hash(seedA.add(17.0));
+    const dotv = smoothstep(0.2, 0.02, dd)
+      .mul(isStar)
+      .mul(mix(0.45, 1.7, bright.mul(bright)));
+    const twinkle = sin(u.time.mul(1.3).add(hash(seedA.add(5.0)).mul(40.0)))
+      .mul(0.3)
+      .add(0.7);
+    const tint = mix(vec3(0.76, 0.83, 1.0), vec3(1.0, 0.9, 0.78), hash(seedA.add(41.0)));
+    return tint.mul(dotv).mul(twinkle);
+  });
+  const skyColor = Fn(([dir]: [Node<'vec3'>]) => {
+    const y = dir.y;
+    const sunUp = smoothstep(-0.14, 0.02, u.uSunDir.y);
+    const s = max(dot(dir, u.uSunDir), 0.0).mul(sunUp);
+    const align = horizon.azimuthAlign(dir, u.uSunDir);
+    const anti = horizon.azimuthAlign(dir, u.uSunDir.negate());
+    const horizonColor = horizon.horizonTint(dir);
+    // sun-side warmth climbs higher the closer to the sun's azimuth
+    const warmUpper = mix(u.uUpper, u.uUpperWarm, pow(align, 3.5).mul(0.8).add(pow(s, 5).mul(0.2)));
+    const skyUp = mix(warmUpper, u.uZenith, smoothstep(0.1, 0.85, y));
+    const aboveH = mix(horizonColor, skyUp, smoothstep(0.0, 0.4, y));
+    const belowH = mix(horizonColor, u.uBelow, smoothstep(0.0, -0.25, y));
+    const col = select(y.greaterThan(0.0), aboveH, belowH).toVar();
+    // dawn and dusk: a thin saturated band along the sun-side horizon
+    const band = pow(align, 3)
+      .mul(exp(abs(y).div(0.07).negate()))
+      .mul(u.uGlowI);
+    col.assign(mix(col, u.uGlow, band.mul(0.8)));
+    // the belt of Venus: a rose band opposite a low sun, over the earth's blue shadow
+    const venusShape = exp(y.sub(0.07).div(0.06).pow(2).negate());
+    const venus = pow(anti, 2).mul(venusShape).mul(u.uVenusI);
+    col.assign(mix(col, VENUS, venus.mul(0.35)));
+    const earthShadow = pow(anti, 2)
+      .mul(smoothstep(0.06, 0.0, y))
+      .mul(smoothstep(-0.05, 0.01, y))
+      .mul(u.uVenusI);
+    col.assign(mix(col, col.mul(vec3(0.78, 0.84, 1.0)), earthShadow.mul(0.5)));
+    // the sun: a disc, a tight glow, and a broad warm halo when it sits low
+    const ang = acos(clamp(s, 0.0, 1.0));
+    const disc = smoothstep(0.03, 0.024, ang);
+    const sunCol = mix(u.uSunColor, u.uGlow, u.uLowSun.mul(0.6));
+    const glow = pow(s, 30).mul(0.12).add(pow(s, 500).mul(0.6)).add(pow(s, 4).mul(u.uLowSun).mul(0.35));
+    col.addAssign(sunCol.mul(glow.add(disc.mul(mix(1.2, 0.8, u.uLowSun)))).mul(smoothstep(-0.02, 0.0, y)));
+    // the moon: a lit gibbous face with maria and limb darkening, a soft halo
+    const m = max(dot(dir, u.uMoonDir), 0.0);
+    const moonRight = normalize(cross(u.uMoonDir, vec3(0, 1, 0)));
+    const moonUpV = cross(moonRight, u.uMoonDir);
+    const MOON_R = 0.025;
+    const mu = dot(dir, moonRight).div(MOON_R),
+      mv = dot(dir, moonUpV).div(MOON_R);
+    const rr = length(vec2(mu, mv));
+    const discM = smoothstep(1.0, 0.9, rr).mul(step(0.0, m));
+    const maria = mx_noise_float(vec2(mu, mv).mul(2.2).add(vec2(5.3, 1.7)))
+      .mul(0.5)
+      .add(mx_noise_float(vec2(mu, mv).mul(5.5).add(vec2(9.0, 3.0))).mul(0.3));
+    const albedo = float(1).sub(smoothstep(0.05, 0.45, maria).mul(0.32));
+    const limb = float(1).sub(rr.mul(rr).mul(0.25));
+    const chord = sqrt(max(float(1).sub(mv.mul(mv)), 0.0001));
+    const litSide = sign(dot(u.uSunDir, moonRight).add(0.0001));
+    const lit = smoothstep(-0.8, -0.55, mu.mul(litSide).div(chord));
+    const moonSurface = albedo.mul(limb).mul(mix(0.06, 1.0, lit));
+    const moonNight = vec3(0.98, 0.97, 0.92).mul(moonSurface).mul(1.35);
+    const moonDay = col
+      .mul(1.12)
+      .add(vec3(0.05))
+      .mul(mix(0.55, 1.0, moonSurface));
+    col.assign(mix(col, mix(moonDay, moonNight, u.uNight), discM.mul(u.uMoonUp)));
+    const halo = pow(m, 250).mul(0.35).add(pow(m, 30).mul(0.06));
+    col.addAssign(vec3(0.75, 0.8, 0.95).mul(halo).mul(u.uNight).mul(u.uMoonUp).mul(float(1).sub(discM)));
+    // painted clouds: their mass and mask come first so stars can hide behind them
+    const cloud = paintedClouds(dir),
+      mass = cloud.x,
+      mask = cloud.y;
+    // stars (and the Milky Way when plugged in), only at night, fading into the horizon haze
+    const sparseBand = exp(dot(dir, SPARSE_STAR_AXIS).div(0.15).pow(2).negate());
+    const stars = starField(dir, float(90.0), float(0.955))
+      .add(starField(dir, float(200.0), float(0.975).sub(sparseBand.mul(0.05))).mul(0.5))
+      .add(galaxy(dir));
+    col.addAssign(stars.mul(celestialVisibility(dir)));
+    // clouds: lit toward the sun, on fire at sunset, blushing opposite it, moonlit at night
+    const shade = mix(u.uUpper.mul(0.85), horizonColor, 0.28);
+    const light = mix(u.uCloudWhite, sunCol, pow(s, 4).mul(0.75)).toVar();
+    light.assign(mix(light, u.uGlow, u.uLowSun.mul(pow(align, 1.5)).mul(0.7)));
+    light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(anti, 1.5)).mul(0.6)));
+    light.addAssign(vec3(0.5, 0.55, 0.7).mul(pow(m, 6)).mul(u.uMoonLight).mul(0.35));
+    col.assign(mix(col, mix(light, shade, smoothstep(0.02, 0.36, mass)), mask.mul(mix(0.6, 0.94, u.uNight))));
+    const edge = smoothstep(-0.18, 0.08, mass).mul(float(1).sub(smoothstep(0.08, 0.24, mass)));
+    col.addAssign(
+      sunCol
+        .mul(edge)
+        .mul(pow(s, 15))
+        .mul(0.7)
+        .mul(smoothstep(0.025, 0.12, y)),
+    );
+    return col;
+  });
+  const material = new MeshBasicNodeMaterial();
+  material.side = BackSide;
+  material.depthWrite = false;
+  material.fog = false;
+  material.colorNode = skyColor(normalize(positionWorld.sub(cameraPosition)));
+  const mesh = new Mesh(new SphereGeometry(SKY_RADIUS, 48, 24), material);
+  mesh.renderOrder = 1;
+  mesh.frustumCulled = false;
+  return {
+    mesh,
+    paintedClouds,
+    celestialVisibility,
+    /** The dome rides on the camera, so its far corner is always beyond the streamed terrain. */
+    follow(cameraLocal: Vector3) {
+      mesh.position.copy(cameraLocal);
+    },
+    dispose() {
+      mesh.geometry.dispose();
+      material.dispose();
+    },
+  };
+}
+export type SkyDome = ReturnType<typeof createSkyDome>;
