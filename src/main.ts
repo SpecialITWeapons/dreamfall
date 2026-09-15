@@ -93,8 +93,12 @@ const begin = () => {
   audio.start();
   hud.setMuted(audio.muted, audio.available);
   hud.enable();
-  // the preference for reduced motion starts the flight paused
-  if (motionPreference.matches) loop.setPaused(true);
+  // the preference for reduced motion starts the flight paused, with the audio
+  // context suspended right along with it -- same as pausing by hand does
+  if (motionPreference.matches) {
+    loop.setPaused(true);
+    audio.suspend(true);
+  }
   hud.setPaused(loop.paused);
   canvas.removeAttribute('inert');
   canvas.focus({ preventScroll: true });
@@ -128,6 +132,10 @@ hud.onView(() => setView(steering.view === 'tpp' ? 'fpp' : 'tpp'));
 
 // Pointer input follows the steering's conventions; the canvas captures the pointer so a drag may leave it.
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// The pointer/button pair actually driving the current drag (-1 when none), so an
+// overlapping button's -- or finger's -- own release can't end someone else's drag.
+let activePointerId = -1;
+let activeButton = -1;
 canvas.addEventListener('pointerdown', (e) => {
   if (!loop.running || disposed) return;
   // a drag already owns the stick: a second button going down (e.g. the left
@@ -137,6 +145,8 @@ canvas.addEventListener('pointerdown', (e) => {
   // the stick forever (bug found in review of Task 4's Steering.pointerDown).
   if (steering.dragging) return;
   if (!steering.pointerDown(e.button, e.clientX, e.clientY, e.pointerType === 'touch')) return;
+  activePointerId = e.pointerId;
+  activeButton = e.button;
   try {
     canvas.setPointerCapture(e.pointerId);
   } catch {
@@ -145,10 +155,17 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => steering.pointerMove(e.clientX, e.clientY));
 const endDrag = () => {
+  activePointerId = -1;
+  activeButton = -1;
   if (steering.pointerUp()) saveSettings();
 };
-for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const)
-  canvas.addEventListener(type, endDrag);
+canvas.addEventListener('pointerup', (e) => {
+  // the overlapping button ignored above fires its own pointerup too, once released;
+  // only the pointer/button that is actually driving the drag may end it
+  if (e.pointerId !== activePointerId || e.button !== activeButton) return;
+  endDrag();
+});
+for (const type of ['pointercancel', 'lostpointercapture'] as const) canvas.addEventListener(type, endDrag);
 addEventListener('blur', endDrag);
 canvas.addEventListener(
   'wheel',

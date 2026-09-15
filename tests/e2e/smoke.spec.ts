@@ -139,3 +139,55 @@ test('the day turns: the sky is bright at noon and dark at midnight, and the sun
   expect(await page.evaluate(() => window.__world!.dayPhase)).toBeCloseTo(0.0, 3);
   expect(errors).toEqual([]);
 });
+
+test('an overlapping button releasing first does not end the drag the other button still owns', async ({
+  page,
+}) => {
+  // Real Chromium mouse input coalesces a second button pressed while the first
+  // is still held into a plain pointermove with an updated `buttons` bitmask --
+  // it never fires a second pointerdown/pointerup for the overlapping button
+  // (verified empirically: page.mouse.down for a second button never produced a
+  // pointerdown here). A second touch finger is not coalesced this way -- each
+  // gets its own pointerId and its own genuine pointerdown/pointerup pair -- so
+  // this dispatches the events by hand, at the exact shape a second finger (or,
+  // per the plan brief's own framing of the bug, a second mouse button on a
+  // browser that does fire it) would produce, to exercise the fix directly and
+  // deterministically: down-right, down-left (ignored), up-left (must survive),
+  // then up-right (must end it) -- exactly the sequence the review asked for.
+  const errors = await openWorld(page, 'seed=11&webgl=1');
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  const result = await page.evaluate(() => {
+    const c = document.getElementById('c')!;
+    const fire = (type: string, init: PointerEventInit) =>
+      c.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, ...init }));
+    const pitch = () => window.__world!.orbit.pitch;
+    fire('pointerdown', { button: 2, clientX: 400, clientY: 300 }); // right button: starts steering
+    fire('pointerdown', { button: 0, clientX: 400, clientY: 300 }); // overlapping left button: must be ignored
+    fire('pointerup', { button: 0, clientX: 400, clientY: 300 }); // the OTHER button releases first
+    const pitchBefore = pitch();
+    fire('pointermove', { clientX: 400, clientY: 450 }); // dy=150: still steers if the drag survived
+    const pitchDuring = pitch();
+    fire('pointerup', { button: 2, clientX: 400, clientY: 450 }); // the button actually driving it releases
+    const pitchAfterEnd = pitch();
+    fire('pointermove', { clientX: 400, clientY: 600 }); // must now be a no-op: dragging has ended
+    return { pitchBefore, pitchDuring, pitchAfterEnd, pitchAfterIgnored: pitch() };
+  });
+  // the right-button drag survived the left button's own release: the move still steered (orbit.pitch changed)
+  expect(result.pitchDuring).not.toBeCloseTo(result.pitchBefore, 5);
+  // releasing the button that actually drives the drag correctly ends it: the next move is ignored
+  expect(result.pitchAfterIgnored).toBeCloseTo(result.pitchAfterEnd, 5);
+  expect(errors).toEqual([]);
+});
+
+test('prefers-reduced-motion starts the flight paused with the audio context suspended', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const errors = await openWorld(page, 'seed=13&webgl=1');
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.paused)).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__world!.audio.state), { timeout: 5_000 })
+    .toBe('suspended');
+  expect(errors).toEqual([]);
+});
