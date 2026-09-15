@@ -89,7 +89,15 @@ subdirectory.
 - The sky dome draws last among the opaque objects (`renderOrder 1`), writes
   no depth, and rides on the camera.
 - Only the scene pass is multisampled; everything past tone mapping is
-  eight-bit; `capture` renders before the display chain.
+  eight-bit; `capture` renders before the display chain. It renders straight to
+  its own target, so the scene compiles a second time for that configuration:
+  the first capture costs seconds and the rest a fifth of one, provided the loop
+  is paused -- a running loop puts a pipeline frame between two captures and
+  buys the recompile again. A browser test that captures pauses first.
+- The renderer's tone mapping stays `NoToneMapping` and the display chain names
+  ACES itself: a node program is keyed on the renderer's tone mapping, so
+  flipping that global recompiles every material in the scene. Exposure is a
+  uniform and is free to move every frame.
 - TSL is strictly typed in `@types/three`: annotate `Fn` parameters with the
   node type (`Node<'vec3'>`, `Node<'float'>`); a bare `Node` has no operator
   methods, so never cast to it.

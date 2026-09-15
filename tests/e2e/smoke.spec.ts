@@ -380,6 +380,11 @@ test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
 test('the clouds move with the wind: sixty simulated seconds change the sky under the same sun', async ({
   page,
 }) => {
+  // The first capture compiles the whole scene a second time, for the capture's
+  // own target: about 5 s here and several times that on a CI runner with no
+  // GPU. Everything after it is a fifth of a second -- as long as the loop is
+  // paused, which is why the pause below is not only about the wind.
+  test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const sky = async () =>
