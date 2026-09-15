@@ -42,6 +42,8 @@ export interface WorldDebug {
   saveFlight(): void;
   /** What each step of the start cost, ms from the module's first line. */
   readonly timings: Record<string, number>;
+  /** GPU milliseconds of the last resolved frame; zero unless `?profile=1` asked for them. */
+  readonly gpuMs: number;
   /** The registry, in the order the window's slot indices point into. */
   readonly biomes: string[];
   /** The three biome slots of the cell a world point falls in, by name. */

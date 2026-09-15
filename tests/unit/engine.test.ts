@@ -9,6 +9,7 @@ function fakeRenderer(backend: Record<string, unknown>) {
     setPixelRatio: vi.fn(),
     setSize: vi.fn(),
     render: vi.fn(),
+    resolveTimestampsAsync: vi.fn(async () => 4.5),
     setAnimationLoop: vi.fn(),
     dispose: vi.fn(),
     backend,
@@ -20,6 +21,39 @@ const canvas = {} as HTMLCanvasElement;
 const raf = (cb: () => void) => cb();
 
 describe('createEngine', () => {
+  it('collects the timestamps profiling asks for, one in flight at a time', async () => {
+    const r = fakeRenderer({ isWebGPUBackend: true });
+    const engine = await createEngine(canvas, { profiling: true }, { makeRenderer: () => r, raf });
+    expect(engine.gpuMs).toBe(0);
+    engine.render({} as never, {} as never);
+    expect(r.resolveTimestampsAsync).toHaveBeenCalledTimes(1);
+    // a second frame while the first resolve is still out asks for nothing new
+    engine.render({} as never, {} as never);
+    expect(r.resolveTimestampsAsync).toHaveBeenCalledTimes(1);
+    // the whole then/catch/finally chain, not just the first tick of it
+    await new Promise((done) => setTimeout(done, 0));
+    expect(engine.gpuMs).toBe(4.5);
+    engine.render({} as never, {} as never);
+    expect(r.resolveTimestampsAsync).toHaveBeenCalledTimes(2);
+  });
+  it('asks for no timestamps at all without the profiling flag', async () => {
+    const r = fakeRenderer({ isWebGPUBackend: true });
+    const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });
+    engine.render({} as never, {} as never);
+    engine.render({} as never, {} as never);
+    expect(r.resolveTimestampsAsync).not.toHaveBeenCalled();
+    expect(engine.gpuMs).toBe(0);
+  });
+  it('survives a backend with no timestamps to give', async () => {
+    const r = fakeRenderer({ isWebGPUBackend: false });
+    r.resolveTimestampsAsync = vi.fn(async () => {
+      throw new Error('no timestamp support');
+    });
+    const engine = await createEngine(canvas, { profiling: true }, { makeRenderer: () => r, raf });
+    engine.render({} as never, {} as never);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(engine.gpuMs).toBe(0);
+  });
   it('initializes the renderer once and names the backend', async () => {
     const r = fakeRenderer({ isWebGPUBackend: true });
     const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });

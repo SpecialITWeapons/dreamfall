@@ -86,7 +86,7 @@ loop.onFirstFrame(async () => {
   ready = true;
   veil.lift();
   gate.enable();
-  if (params.profiling) console.info('dreamfall start, ms:', { ...timings });
+  if (params.profiling) console.info('dreamfall start, ms:', { ...timings }, '· frame cost: __world.gpuMs');
 });
 
 const saveSettings = () =>
@@ -349,6 +349,9 @@ installDebug(window, {
   saveFlight,
   get timings() {
     return { ...timings };
+  },
+  get gpuMs() {
+    return engine.gpuMs;
   },
   get biomes() {
     return world.library.biomes.map((b) => b.id);
