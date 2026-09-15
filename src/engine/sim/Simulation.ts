@@ -1,80 +1,127 @@
-// Flight simulation: pure CPU, no Three.js and no DOM, so it can be tested in
-// Node and someday moved to a worker thread. In M1 the figure flies straight
-// at a constant speed and holds a height over the ground it is given; the
-// full controller (look-ahead along the turn, cloud schedule, steering)
-// arrives in M2 and replaces the altitude rule below.
+// The simulation: the CPU aggregate the world steps once per frame. It owns
+// the day clock, the sky pulls that read it and the flight controller that
+// reads both; the presentation reads the state and never writes it. A
+// snapshot of it is what the page remembers, and what a resumed flight
+// continues from. Pure CPU, no Three.js beyond the math classes, no DOM.
+import {
+  MAX_STEP,
+  SPEED,
+  createFlightController,
+  type FlightController,
+  type FlightState,
+  type LowPass,
+} from '../flight/FlightController';
+import { createSkyPulls, type SkyPulls } from '../flight/SkyPulls';
+import type { Obstacles } from '../scenery/Obstacles';
+import { createDayClock, type DayClock } from '../time/DayClock';
 
-export interface FlightState {
-  t: number;
+export { MAX_STEP };
+export type { FlightState };
+
+/** A remembered flight: place, course, time of day and the schedules that hang off the clock. */
+export interface ResumeState {
+  seed: number;
   x: number;
   y: number;
   z: number;
+  t: number;
   heading: number;
+  vy: number;
+  bank: number;
+  pitch: number;
+  yawRate: number;
+  dayPhase: number;
+  cloudSchedule: number;
+  cloudOrigin: number;
+  low: LowPass;
+  released: boolean;
 }
 
 export interface Simulation {
+  readonly seed: number;
   readonly state: FlightState;
   readonly speed: number;
+  readonly clock: DayClock;
+  readonly pulls: SkyPulls;
+  readonly flight: FlightController;
   /** Advances the world by dt seconds; false when the step is invalid and was skipped. */
   step(dt: number): boolean;
-}
-
-/** Longest simulation step; a longer frame is clamped by the loop. */
-export const MAX_STEP = 0.05;
-/** Height above sea level the flight settles at over low ground, m. */
-export const CRUISE_ALTITUDE = 120;
-/** How far ahead along the heading the ground is read, m. */
-export const LOOK_AHEAD = 300;
-/** Clearance over the ground ahead and here, and the hard floor, m. */
-export const CLEAR_AHEAD = 90;
-export const CLEAR_HERE = 60;
-export const FLOOR = 30;
-/** How quickly the height eases toward its target, 1/s. */
-export const FOLLOW_RATE = 1.2;
-
-/** Starting heading from the seed: different worlds fly in different directions, the same world always the same. */
-export function headingFromSeed(seed: number): number {
-  return ((Math.imul(seed >>> 0, 0x9e3779b1) >>> 0) / 0x1_0000_0000) * Math.PI * 2;
+  /** Everything a later visit needs to continue this flight. */
+  snapshot(): ResumeState;
 }
 
 export interface SimulationOptions {
   seed: number;
-  speed?: number;
-  altitude?: number;
-  heading?: number;
-  /** Ground height at a world point; without it the flight keeps a constant altitude. */
-  groundAt?: (x: number, z: number) => number;
+  groundAt: (x: number, z: number) => number;
+  obstacles?: Obstacles;
+  /** How far the figure hangs under its center, m. */
+  below?: number;
+  /** A remembered flight to continue; a fresh one starts in the morning at the origin. */
+  resume?: ResumeState | null;
+  random?: () => number;
 }
 
 export function createSimulation(opts: SimulationOptions): Simulation {
-  const speed = opts.speed ?? 40;
-  const altitude = opts.altitude ?? CRUISE_ALTITUDE;
-  const groundAt = opts.groundAt;
-  const state: FlightState = {
-    t: 0,
-    x: 0,
-    y: altitude,
-    z: 0,
-    heading: opts.heading ?? headingFromSeed(opts.seed),
-  };
+  const resume = opts.resume ?? null;
+  const clock = createDayClock({ phase: resume ? resume.dayPhase : 0.3 });
+  const pulls = createSkyPulls(clock);
+  pulls.restore(resume?.released ?? false);
+  const flight = createFlightController({
+    seed: opts.seed,
+    groundAt: opts.groundAt,
+    obstacles: opts.obstacles,
+    pulls,
+    dayPhase: () => clock.phase,
+    below: opts.below,
+    start: resume
+      ? {
+          x: resume.x,
+          y: resume.y,
+          z: resume.z,
+          t: resume.t,
+          heading: resume.heading,
+          vy: resume.vy,
+          bank: resume.bank,
+          pitch: resume.pitch,
+          yawRate: resume.yawRate,
+          cloudSchedule: resume.cloudSchedule,
+          cloudOrigin: resume.cloudOrigin,
+          low: { ...resume.low },
+        }
+      : undefined,
+    random: opts.random,
+  });
+  const state = flight.state;
   return {
+    seed: opts.seed >>> 0,
     state,
-    speed,
+    speed: SPEED,
+    clock,
+    pulls,
+    flight,
     step(dt) {
-      if (!Number.isFinite(dt) || dt <= 0 || dt > MAX_STEP) return false;
-      state.t += dt;
-      const fx = Math.sin(state.heading);
-      const fz = Math.cos(state.heading);
-      state.x += fx * speed * dt;
-      state.z += fz * speed * dt;
-      if (groundAt) {
-        const here = groundAt(state.x, state.z);
-        const ahead = groundAt(state.x + fx * LOOK_AHEAD, state.z + fz * LOOK_AHEAD);
-        const target = Math.max(CRUISE_ALTITUDE, here + CLEAR_HERE, ahead + CLEAR_AHEAD);
-        state.y += (target - state.y) * Math.min(1, dt * FOLLOW_RATE);
-        state.y = Math.max(state.y, here + FLOOR);
-      }
+      if (!flight.step(dt)) return false;
+      clock.advance(dt);
       return true;
+    },
+    snapshot() {
+      return {
+        seed: opts.seed >>> 0,
+        x: state.x,
+        y: state.y,
+        z: state.z,
+        t: state.t,
+        heading: state.heading,
+        vy: state.vy,
+        bank: state.bank,
+        pitch: state.pitch,
+        yawRate: state.yawRate,
+        dayPhase: clock.phase,
+        cloudSchedule: state.cloudSchedule,
+        cloudOrigin: state.cloudOrigin,
+        low: { ...state.low },
+        released: pulls.released,
+      };
     },
   };
 }

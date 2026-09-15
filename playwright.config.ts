@@ -28,6 +28,7 @@ export default defineConfig({
             '--use-angle=swiftshader',
             '--enable-unsafe-swiftshader',
             '--ignore-gpu-blocklist',
+            '--autoplay-policy=no-user-gesture-required',
           ],
         },
       },

@@ -40,18 +40,20 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
     fog: false,
   });
   material.opacityNode = u.uAbove.mul(0.94);
-  // World-space folds: the local frame moves with the floating origin, the heap must not.
+  // World-space folds: the local frame moves with the floating origin, the
+  // heap must not; the wind carries it, and its two scales boil at their own pace.
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
+  const advected = worldXZ.sub(u.uWind.mul(u.time));
   const heapAt = (p: Node<'vec2'>) =>
-    mx_noise_float(p.mul(0.0016).add(u.time.mul(0.003)))
+    mx_noise_float(p.mul(0.0016).add(u.time.mul(0.009)))
       .mul(38.0)
-      .add(mx_noise_float(p.mul(0.006).sub(u.time.mul(0.004))).mul(14.0));
-  const heap = heapAt(worldXZ);
+      .add(mx_noise_float(p.mul(0.006).sub(u.time.mul(0.012))).mul(14.0));
+  const heap = heapAt(advected);
   const STEP = 10;
-  const slopeX = heapAt(worldXZ.add(vec2(STEP, 0)))
+  const slopeX = heapAt(advected.add(vec2(STEP, 0)))
       .sub(heap)
       .div(STEP),
-    slopeZ = heapAt(worldXZ.add(vec2(0, STEP)))
+    slopeZ = heapAt(advected.add(vec2(0, STEP)))
       .sub(heap)
       .div(STEP);
   const n = normalize(vec3(slopeX.negate().mul(3.5), 1, slopeZ.negate().mul(3.5)));

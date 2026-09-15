@@ -1,6 +1,8 @@
 import type { MemorySnapshot } from '../engine/Engine';
+import type { KeyAction, Orbit, View } from '../engine/flight/Steering';
 import type { Capture } from '../engine/render/Post';
-import type { FlightState } from '../engine/sim/Simulation';
+import type { FlightState, ResumeState } from '../engine/sim/Simulation';
+import type { Wind } from '../engine/sky/Wind';
 
 /** GPU counters taken right before and right after `world.dispose()`, to prove dispose actually frees things. */
 export interface DisposeReport {
@@ -28,6 +30,22 @@ export interface WorldDebug {
   /** Height of the flyer over the terrain under it, m. */
   readonly clearance: number;
   capture(width?: number, height?: number): Promise<Capture | null>;
+  readonly view: View;
+  setView(view: View): void;
+  readonly cameraFov: number;
+  readonly orbit: Orbit;
+  readonly wind: Wind;
+  readonly audio: { available: boolean; state: string; gain: number; muted: boolean; volume: number };
+  /** The page continued a remembered flight. */
+  readonly resumed: boolean;
+  snapshot(): ResumeState;
+  saveFlight(): void;
+  key(code: string): KeyAction;
+  readonly pointer: {
+    down(button: number, x: number, y: number, touch?: boolean): boolean;
+    move(x: number, y: number): void;
+    up(): boolean;
+  };
 }
 
 declare global {

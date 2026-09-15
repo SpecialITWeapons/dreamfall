@@ -33,6 +33,7 @@ import {
 } from 'three/tsl';
 import type { Look } from '../render/ColorGrade';
 import type { LitMaterial } from '../render/SoftLighting';
+import { createCloudShadow } from '../sky/CloudShadow';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
 import { CELL } from './WorldSampler';
@@ -136,8 +137,13 @@ export function createTerrain(deps: {
     .mul(0.04)
     .add(mx_noise_float(worldXZ.mul(0.13)).mul(0.015))
     .add(1);
+  const cloudShadow = createCloudShadow(u);
   // Shore masks use the actual fragment height, never interpolated corner colors.
-  const material = litMaterial(mix(palette.sand, colorNode, smoothstep(1.5, 7.5, h)).mul(brush));
+  const material = litMaterial(
+    mix(palette.sand, colorNode, smoothstep(1.5, 7.5, h))
+      .mul(brush)
+      .mul(cloudShadow(worldXZ)),
+  );
   material.positionNode = vec3(positionLocal.x, hv, positionLocal.z);
   material.normalNode = transformNormalToView(normalV);
   const mesh = new Mesh(buildGrid(TERRAIN_CELLS, CELL), material);

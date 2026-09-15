@@ -85,22 +85,38 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   expect(start.origin).toEqual({ x: 0, z: 0 });
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
-  // fly 4.5 km in simulated time: the origin must have shifted and clearance must hold everywhere
+  // fly 16 km in simulated time (400 s): clearance must hold everywhere along the way,
+  // and net displacement must fall well short of the path length.
   const flown = await page.evaluate(() => {
     const w = window.__world!;
     let minClearance = Infinity;
-    for (let i = 0; i < 2250; i++) {
+    for (let i = 0; i < 8000; i++) {
       w.step(0.05);
       minClearance = Math.min(minClearance, w.clearance);
     }
     return { minClearance, origin: w.origin, x: w.state.x, z: w.state.z, t: w.state.t };
   });
-  expect(flown.minClearance).toBeGreaterThanOrEqual(30 - 1e-6);
-  expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(4400);
-  expect(Math.hypot(flown.origin.x, flown.origin.z)).toBeGreaterThan(0);
+  // MIN_CLEARANCE of the flight controller; the figure hangs 0.3 m under that
+  expect(flown.minClearance).toBeGreaterThanOrEqual(25 - 1e-6);
+  // Net displacement, not path length: the wander (verbatim-ported from fly-with-me) accumulates
+  // real heading drift with no scripted opening to hold it steady (deferred to a later
+  // milestone, see DayClock.ts's `rate` doc comment), so this is well under the 16 km path.
+  expect(Math.hypot(flown.x, flown.z)).toBeGreaterThan(3000);
+  // The origin follows: proven directly and deterministically (push state.x past Origin's
+  // 4000 m shift threshold, then take one step) rather than by waiting on the flight's own
+  // stochastic wander to eventually cross it -- Origin's own shift/snap algorithm already
+  // has its own unit test (tests/unit/origin.test.ts); this only needs to prove the
+  // World -> Origin wiring, independent of seed 42's particular flight path.
+  const shifted = await page.evaluate((origin) => {
+    const w = window.__world!;
+    w.state.x = origin.x + 6000;
+    w.step(0.05);
+    return w.origin;
+  }, flown.origin);
+  expect(shifted).not.toEqual(flown.origin);
   // Math.abs: a negative multiple of 16 gives -0, which toBe(0) rejects
-  expect(Math.abs(flown.origin.x % 16)).toBe(0);
-  expect(Math.abs(flown.origin.z % 16)).toBe(0);
+  expect(Math.abs(shifted.x % 16)).toBe(0);
+  expect(Math.abs(shifted.z % 16)).toBe(0);
   expect(errors).toEqual([]);
 });
 
@@ -137,5 +153,204 @@ test('the day turns: the sky is bright at noon and dark at midnight, and the sun
   expect(midnight!.mean).toBeLessThan(noon!.mean * 0.2);
   // the day clock ran: after the pause the phase is what we set
   expect(await page.evaluate(() => window.__world!.dayPhase)).toBeCloseTo(0.0, 3);
+  expect(errors).toEqual([]);
+});
+
+test('an overlapping button releasing first does not end the drag the other button still owns', async ({
+  page,
+}) => {
+  // Real Chromium mouse input coalesces a second button pressed while the first
+  // is still held into a plain pointermove with an updated `buttons` bitmask --
+  // it never fires a second pointerdown/pointerup for the overlapping button
+  // (verified empirically: page.mouse.down for a second button never produced a
+  // pointerdown here). A second touch finger is not coalesced this way -- each
+  // gets its own pointerId and its own genuine pointerdown/pointerup pair -- so
+  // this dispatches the events by hand, at the exact shape a second finger (or,
+  // per the plan brief's own framing of the bug, a second mouse button on a
+  // browser that does fire it) would produce, to exercise the fix directly and
+  // deterministically: down-right, down-left (ignored), up-left (must survive),
+  // then up-right (must end it) -- exactly the sequence the review asked for.
+  const errors = await openWorld(page, 'seed=11&webgl=1');
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  const result = await page.evaluate(() => {
+    const c = document.getElementById('c')!;
+    const fire = (type: string, init: PointerEventInit) =>
+      c.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, ...init }));
+    const pitch = () => window.__world!.orbit.pitch;
+    fire('pointerdown', { button: 2, clientX: 400, clientY: 300 }); // right button: starts steering
+    fire('pointerdown', { button: 0, clientX: 400, clientY: 300 }); // overlapping left button: must be ignored
+    fire('pointerup', { button: 0, clientX: 400, clientY: 300 }); // the OTHER button releases first
+    const pitchBefore = pitch();
+    fire('pointermove', { clientX: 400, clientY: 450 }); // dy=150: still steers if the drag survived
+    const pitchDuring = pitch();
+    fire('pointerup', { button: 2, clientX: 400, clientY: 450 }); // the button actually driving it releases
+    const pitchAfterEnd = pitch();
+    fire('pointermove', { clientX: 400, clientY: 600 }); // must now be a no-op: dragging has ended
+    return { pitchBefore, pitchDuring, pitchAfterEnd, pitchAfterIgnored: pitch() };
+  });
+  // the right-button drag survived the left button's own release: the move still steered (orbit.pitch changed)
+  expect(result.pitchDuring).not.toBeCloseTo(result.pitchBefore, 5);
+  // releasing the button that actually drives the drag correctly ends it: the next move is ignored
+  expect(result.pitchAfterIgnored).toBeCloseTo(result.pitchAfterEnd, 5);
+  expect(errors).toEqual([]);
+});
+
+test('prefers-reduced-motion starts the flight paused with the audio context suspended', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const errors = await openWorld(page, 'seed=13&webgl=1');
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.paused)).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__world!.audio.state), { timeout: 5_000 })
+    .toBe('suspended');
+  expect(errors).toEqual([]);
+});
+
+const begun = async (page: Page, query: string) => {
+  const errors = await openWorld(page, query);
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  return errors;
+};
+const paused = async (page: Page) => {
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
+};
+const turn = (a: number, b: number) => {
+  const d = (((b - a) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2);
+  return d - Math.PI;
+};
+
+test('V switches to the eye and back, the HUD and the memory follow', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  expect(await page.evaluate(() => window.__world!.view)).toBe('tpp');
+  expect(await page.evaluate(() => window.__world!.cameraFov)).toBe(55);
+  await page.keyboard.press('KeyV');
+  await expect.poll(() => page.evaluate(() => window.__world!.view)).toBe('fpp');
+  await expect(page.locator('#viewBtn')).toHaveText('view: eyes');
+  // the projection follows on the next frame
+  await expect.poll(() => page.evaluate(() => window.__world!.cameraFov), { timeout: 15_000 }).toBe(75);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).view)).toBe('fpp');
+  await page.click('#viewBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.view)).toBe('tpp');
+  await expect.poll(() => page.evaluate(() => window.__world!.cameraFov), { timeout: 15_000 }).toBe(55);
+  expect(errors).toEqual([]);
+});
+
+test('the right button steers, the left button orbits, the wheel zooms, and the framing is remembered', async ({
+  page,
+}) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page); // the flight's own wander must not move the numbers
+  const heading0 = await page.evaluate(() => window.__world!.state.heading);
+  await page.mouse.move(400, 300);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(500, 300, { steps: 4 });
+  await page.mouse.up({ button: 'right' });
+  // 100 px to the right is a 0.4 rad right turn, applied whole on the next step
+  expect(await page.evaluate(() => window.__world!.state.steer)).toBeCloseTo(-0.4, 3);
+  await page.evaluate(() => window.__world!.step(0.05));
+  const heading1 = await page.evaluate(() => window.__world!.state.heading);
+  expect(Math.abs(turn(heading0, heading1) + 0.4)).toBeLessThan(0.05);
+  await page.mouse.move(400, 300);
+  await page.mouse.down({ button: 'left' });
+  await page.mouse.move(300, 300, { steps: 4 });
+  await page.mouse.up({ button: 'left' });
+  expect((await page.evaluate(() => window.__world!.orbit)).yaw).toBeCloseTo(0.4, 3);
+  await page.mouse.wheel(0, 300);
+  const orbit = await page.evaluate(() => window.__world!.orbit);
+  expect(orbit.dist).toBeCloseTo(10 * Math.exp(300 * 0.0012), 3);
+  const remembered = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('dreamfall-settings')!).camera,
+  );
+  expect(remembered.dist).toBeCloseTo(orbit.dist, 6);
+  expect(remembered.yaw).toBeCloseTo(0.4, 3);
+  expect(errors).toEqual([]);
+});
+
+test('the flight resumes on the same seed from the remembered place and time of day', async ({ page }) => {
+  await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const before = await page.evaluate(() => {
+    const w = window.__world!;
+    for (let i = 0; i < 200; i++) w.step(0.05);
+    w.saveFlight();
+    return { t: w.state.t, x: w.state.x, dayPhase: w.dayPhase, resumed: w.resumed };
+  });
+  expect(before.resumed).toBe(false);
+  expect(before.t).toBeGreaterThan(9.9);
+  await page.reload();
+  await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 60_000 });
+  const after = await page.evaluate(() => {
+    const w = window.__world!;
+    return { t: w.state.t, x: w.state.x, dayPhase: w.dayPhase, resumed: w.resumed, seed: w.seed };
+  });
+  expect(after.resumed).toBe(true);
+  expect(after.seed).toBe(42);
+  expect(after.t).toBeCloseTo(before.t, 3);
+  expect(after.x).toBeCloseTo(before.x, 3);
+  expect(after.dayPhase).toBeCloseTo(before.dayPhase, 6);
+  // another seed starts fresh
+  await openWorld(page, 'seed=7&webgl=1');
+  expect(
+    await page.evaluate(() => ({ resumed: window.__world!.resumed, t: window.__world!.state.t })),
+  ).toEqual({
+    resumed: false,
+    t: 0,
+  });
+});
+
+test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  const audio = await page.evaluate(() => window.__world!.audio);
+  expect(audio.available).toBe(true);
+  await expect(page.locator('#muteBtn')).toHaveText('sound on');
+  // headless Chromium may keep a context suspended without an output device; the gain checks need it running
+  const running = await page
+    .waitForFunction(() => window.__world!.audio.state === 'running', null, { timeout: 6_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (running)
+    await expect
+      .poll(() => page.evaluate(() => window.__world!.audio.gain), { timeout: 8_000 })
+      .toBeGreaterThan(0.1);
+  await page.click('#muteBtn');
+  await expect(page.locator('#muteBtn')).toHaveText('sound off');
+  expect((await page.evaluate(() => window.__world!.audio)).muted).toBe(true);
+  if (running)
+    await expect
+      .poll(() => page.evaluate(() => window.__world!.audio.gain), { timeout: 8_000 })
+      .toBeLessThan(0.05);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).muted)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the clouds move with the wind: sixty simulated seconds change the sky under the same sun', async ({
+  page,
+}) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const sky = async () =>
+    page.evaluate(async () => {
+      const shot = await window.__world!.capture(96, 54);
+      return shot ? Array.from(shot.data.subarray(0, 18 * 96 * 4)) : null;
+    });
+  const wind = await page.evaluate(() => window.__world!.wind);
+  expect(wind.speed).toBeGreaterThanOrEqual(10);
+  const phase = await page.evaluate(() => window.__world!.dayPhase);
+  const a = await sky();
+  const again = await sky();
+  await page.evaluate((p) => {
+    const w = window.__world!;
+    for (let i = 0; i < 1200; i++) w.step(0.05);
+    w.dayPhase = p; // the same sun, so only the wind has moved anything
+  }, phase);
+  const b = await sky();
+  const diff = (x: number[] | null, y: number[] | null) =>
+    x && y ? x.reduce((s, v, i) => s + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  expect(diff(a, again)).toBeLessThan(1e-4);
+  expect(diff(a, b)).toBeGreaterThan(0.01);
   expect(errors).toEqual([]);
 });

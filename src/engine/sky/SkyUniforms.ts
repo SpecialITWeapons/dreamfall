@@ -43,6 +43,8 @@ export function createSkyUniforms(look: Look) {
     uCloudBodies: uniform(0),
     /** World position of the local frame's origin (the floating origin), for shaders that read the world. */
     uWorldOrigin: uniform(new Vector2(0, 0)),
+    /** The world's wind, m/s; every cloud layer drifts with it. */
+    uWind: uniform(new Vector2(0, 0)),
     cloudWhite,
     moonColor: new Color(look.moon.color),
     fogDensity: look.fogDensity,

@@ -13,6 +13,14 @@ Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
 `?profile=1` arms frame profiling, `?dev=1` loads the developer panel (M5).
 `?seed=42` opens the reference world (the same terrain as fly-with-me's seed 42).
 
+## Controls
+
+The flight flies itself. Right button or a finger: steer and aim. Left button:
+orbit the camera, or look around in the first-person view. Wheel: distance.
+Arrows: nudge the course and the height. `V`: switch the view. Space: pause.
+Settings and the flight are remembered in this browser; `?seed=<n>` opens a
+world, and reopening the same seed continues where it was.
+
 ## Documents
 
 - `VISION.md`: why this page exists and what it doesn't do.
@@ -24,3 +32,4 @@ Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
 
 M0 Skeleton: engine, empty world, veil and gate, tests, CI, Pages.
 M1 World: heightfield terrain, water, sky and day cycle, floating origin, display chain.
+M2 Flight and figure: flight controller with clearance and ceiling, steering, third- and first-person camera, procedural human, memory and resume, synthesized sound, wind in the clouds.
