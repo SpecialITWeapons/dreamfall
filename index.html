@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Dreamfall</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%232b3050%27/%3E%3Ccircle cx=%2732%27 cy=%2720%27 r=%276%27 fill=%27%23f3c2a0%27/%3E%3Cpath d=%27M10 34 L28 28 L36 28 L54 34 L34 40 L30 40 Z%27 fill=%27%23f3c2a0%27/%3E%3C/svg%3E"
+    />
+    <meta
+      name="description"
+      content="A person gliding over an endless procedural world. Calm, generated fresh every time."
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #fff;
+        color: #e9e4dc;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        overflow: hidden;
+      }
+      #c {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        touch-action: none;
+      }
+      /* The veil: white with one small line until the first frame is on screen. */
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.6rem;
+        background: #fff;
+        color: #8c8780;
+        transition: opacity 2.2s ease;
+        z-index: 10;
+      }
+      #loading.gone {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loadingText {
+        margin: 0;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 0.72rem;
+        letter-spacing: 0.4em;
+        text-indent: 0.4em;
+        text-transform: uppercase;
+        text-align: center;
+        line-height: 1.8;
+        animation: breathe 4.4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 0.45;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      #loading.failed #loadingText {
+        animation: none;
+        opacity: 1;
+        letter-spacing: 0.12em;
+        text-indent: 0.12em;
+        text-transform: none;
+        font-size: 0.9rem;
+        max-width: 36ch;
+      }
+      #retryLink[hidden] {
+        display: none;
+      }
+      #retryLink {
+        color: inherit;
+        font-size: 0.78rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        text-underline-offset: 5px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+      }
+      /* The gate: the world stands still behind one button and one line of help. */
+      #begin {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 0 24px 14vh;
+        opacity: 0;
+        transition: opacity 1.6s ease 0.9s;
+        z-index: 5;
+      }
+      #begin.ready {
+        opacity: 1;
+      }
+      #begin.gone {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 1.4s ease;
+      }
+      #begin .hint {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        bottom: max(9vh, calc(env(safe-area-inset-bottom) + 4rem));
+        margin: 0;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        line-height: 1.9;
+        text-align: center;
+        color: #f1ece3;
+        opacity: 0.86;
+        text-shadow:
+          0 1px 14px rgba(8, 18, 26, 0.75),
+          0 0 3px rgba(8, 18, 26, 0.6);
+      }
+      #begin button {
+        font: inherit;
+        font-size: 1rem;
+        letter-spacing: 0.34em;
+        text-indent: 0.34em;
+        text-transform: uppercase;
+        padding: 0.95rem 2.5rem;
+        border-radius: 999px;
+        border: 1px solid rgba(241, 236, 227, 0.6);
+        background: rgba(14, 26, 34, 0.28);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        color: #f6f2ea;
+        cursor: pointer;
+        text-shadow: 0 1px 8px rgba(8, 18, 26, 0.6);
+        transition:
+          background 0.3s,
+          border-color 0.3s;
+      }
+      #begin button:hover {
+        background: rgba(241, 236, 227, 0.16);
+        border-color: rgba(241, 236, 227, 0.95);
+      }
+      #begin button[disabled] {
+        opacity: 0.35;
+        cursor: default;
+      }
+      /* The controls line: one glass pill in the corner. */
+      #hud {
+        position: fixed;
+        left: max(1rem, env(safe-area-inset-left));
+        bottom: max(0.7rem, env(safe-area-inset-bottom));
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.15rem 0.85rem;
+        align-items: center;
+        padding: 0 1.15rem;
+        border-radius: 999px;
+        border: 1px solid rgba(241, 236, 227, 0.42);
+        background: rgba(14, 26, 34, 0.3);
+        backdrop-filter: blur(14px) saturate(1.15);
+        -webkit-backdrop-filter: blur(14px) saturate(1.15);
+        font-size: 0.74rem;
+        letter-spacing: 0.16em;
+        text-transform: lowercase;
+        color: #f6f2ea;
+        text-shadow: 0 1px 10px rgba(8, 18, 26, 0.55);
+        z-index: 3;
+      }
+      #hud a,
+      #hud button {
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        background: none;
+        border: none;
+        padding: 0;
+        min-height: 44px;
+        min-width: 44px;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        text-decoration: none;
+        text-underline-offset: 5px;
+      }
+      #hud a {
+        text-decoration: underline;
+        text-decoration-color: rgba(241, 236, 227, 0.38);
+        text-decoration-thickness: 1px;
+      }
+      #hud .dim {
+        opacity: 0.62;
+        letter-spacing: 0.2em;
+        font-size: 0.68rem;
+      }
+      #hud[inert] {
+        visibility: hidden;
+      }
+      :focus-visible {
+        outline: 2px solid #f1e5b8;
+        outline-offset: 5px;
+      }
+      #c:focus-visible {
+        outline-offset: -4px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="c"
+      inert
+      tabindex="0"
+      role="img"
+      aria-label="A person gliding over an endless world. Space pauses or resumes."
+    ></canvas>
+    <div id="begin">
+      <button id="beginBtn" disabled>begin</button>
+      <p class="hint">
+        <span>A flight across an endless world. It flies itself; there is nothing to do.</span>
+      </p>
+    </div>
+    <div id="loading">
+      <p id="loadingText" role="status">waking the world</p>
+      <a id="retryLink" hidden>try WebGL2</a>
+      <noscript>JavaScript is needed to create this world.</noscript>
+    </div>
+    <div id="hud" inert>
+      <a id="shareLink" href="#" title="A link to this exact world">share this world</a>
+      <button id="pauseBtn" aria-label="Pause flight" title="Pause flight" aria-pressed="false" disabled>
+        pause
+      </button>
+      <span id="backendLabel" class="dim"></span>
+    </div>
+
+    <script>
+      // Catches failures before the module can install its lifecycle, including import errors.
+      window.dreamfallFailure = () => {
+        if (window.dreamfallFailed) return;
+        window.dreamfallFailed = true;
+        window.__world?.dispose?.();
+        const veil = document.getElementById('loading');
+        veil.classList.remove('gone');
+        veil.classList.add('failed');
+        for (const id of ['begin', 'hud', 'c']) document.getElementById(id).setAttribute('inert', '');
+        document.getElementById('begin').classList.add('gone');
+        document.getElementById('loadingText').textContent = window.__world
+          ? 'The view was interrupted. Try starting it again.'
+          : 'The view could not start. Check your connection or try again.';
+        const link = document.getElementById('retryLink'),
+          url = new URL(location.href);
+        link.textContent = url.searchParams.get('webgl') === '1' ? 'restart view' : 'try WebGL2';
+        url.searchParams.set('webgl', '1');
+        link.href = url;
+        link.hidden = false;
+      };
+      addEventListener('error', window.dreamfallFailure, true);
+      addEventListener('unhandledrejection', window.dreamfallFailure);
+      setTimeout(() => {
+        if (!window.__world && !window.dreamfallFailed)
+          document.getElementById('loadingText').textContent = 'still waking. this page needs a connection';
+      }, 20000);
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
