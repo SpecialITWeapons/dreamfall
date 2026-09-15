@@ -105,8 +105,8 @@ subdirectory.
   suspend the context; `AmbienceModel` holds the arithmetic so it is tested
   in Node.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
-  cloud shadows and the water's waves; shader time is still simulation time,
-  so pause freezes the wind too.
+  cloud shadows, and the clouds reflected in the water; shader time is still
+  simulation time, so pause freezes the wind too.
 
 ## Checking
 

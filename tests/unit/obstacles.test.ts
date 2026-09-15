@@ -16,7 +16,7 @@ describe('createObstacles', () => {
     o.add(tree(104, 100, 55, 3));
     expect(o.size).toBe(2);
     expect(o.floorAt(100, 100)).toBe(55);
-    expect(o.floorAt(112, 100, 5)).toBe(55); // 104 + 3 + 5 = 112 is just outside; 111.9 inside
+    expect(o.floorAt(112, 100, 5)).toBe(55); // 104 + 3 + 5 = 112 is exactly the boundary — included, since discs are inclusive; 111.9 is comfortably inside
     expect(o.floorAt(111.9, 100, 5)).toBe(55);
     expect(o.floorAt(100, 111, 5)).toBe(40);
     expect(o.floorAt(200, 200)).toBe(-Infinity);

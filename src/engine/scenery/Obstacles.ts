@@ -36,6 +36,7 @@ export function createObstacles(opts: { cell?: number } = {}): Obstacles {
   const cellOf = (v: number) => Math.floor(v / cell);
   const key = (cx: number, cz: number) => `${cx},${cz}`;
   const scan = (x: number, z: number, reach: number, visit: (o: Obstacle) => void) => {
+    if (size === 0) return;
     const span = reach + maxRadius;
     const x0 = cellOf(x - span),
       x1 = cellOf(x + span),

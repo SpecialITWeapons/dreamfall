@@ -21,9 +21,10 @@ describe('createSimulation', () => {
   it('snapshots the flight and resumes from the snapshot, phase and release included', () => {
     const a = createSimulation({ seed: 7, groundAt: () => 0 });
     // 6000 steps (300 s) carries the day clock from its 0.3 start into the
-    // moonrise pull's window (~[271 s, 369 s) from that start), so there is an
-    // actual event for release() to act on; fewer steps land in broad
-    // daylight, where release() is a no-op (see plan-defects.md, Task 3).
+    // moonrise pull's window (~[270.60 s, 324.45 s) from that start, followed
+    // immediately by sunset's ~[324.45 s, 368.60 s)), so there is an actual
+    // event for release() to act on; fewer steps land in broad daylight,
+    // where release() is a no-op (see plan-defects.md, Task 3).
     for (let i = 0; i < 6000; i++) a.step(0.05);
     a.pulls.release();
     const memory = a.snapshot();
