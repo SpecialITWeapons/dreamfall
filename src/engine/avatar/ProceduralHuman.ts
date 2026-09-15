@@ -1,7 +1,11 @@
 // The first figure: a skydiver's arch from ellipsoids and capsules with
 // vertex colors on the world's lit material, hinged at the shoulders,
-// elbows, hips and knees. The hinges flutter with the wind and a slow noise,
-// a gust is a burst of stronger flutter, the inner arm drops in a turn.
+// elbows, hips, knees and ankles. The rest pose is the box position a belly-
+// to-earth jumper holds: upper arms out and forward, elbows squared, thighs
+// spread back, knees folded so the feet ride above the hips, toes pointed.
+// The hinges flutter with the wind and a slow noise, a gust is a burst of
+// stronger flutter, the inner arm drops in a turn, and the climb angle sweeps
+// the arms: back into a track in a dive, forward and wide in a climb.
 // Nothing here is a skeleton: the Avatar interface lets a skinned model
 // replace it without touching the engine. Budget: 4 000 triangles.
 import {
@@ -36,19 +40,26 @@ type Swatch = Exclude<keyof Outfit, 'id'>;
 
 const UP = new Vector3(0, 1, 0),
   AXIS_X = new Vector3(1, 0, 0),
+  AXIS_Y = new Vector3(0, 1, 0),
   AXIS_Z = new Vector3(0, 0, 1);
 
-// The arch, in the figure's frame (x left, y up, z ahead): joints and limb directions.
+// The arch, in the figure's frame (x left, y up, z ahead): joints and limb
+// directions. The elbow bends 80 degrees and the knee 57, so both read as
+// joints rather than as one stiff limb; the hands end up ahead of the eye and
+// the feet above the back.
 const SHOULDER = new Vector3(0.24, 0.03, 0.26),
   HIP = new Vector3(0.1, -0.02, -0.42);
 const UPPER = { r: 0.055, len: 0.3 },
   FORE = { r: 0.045, len: 0.27 },
   THIGH = { r: 0.075, len: 0.42 },
   SHIN = { r: 0.055, len: 0.4 };
-const upperDir = (side: number) => new Vector3(side * 0.78, 0.28, -0.56).normalize();
-const foreDir = (side: number) => new Vector3(side * 0.25, 0.2, -0.95).normalize();
-const thighDir = (side: number) => new Vector3(side * 0.15, 0.32, -0.94).normalize();
-const shinDir = (side: number) => new Vector3(side * 0.05, 0.85, -0.53).normalize();
+/** The boot: half width, half length and half thickness, m. */
+const FOOT = { rx: 0.055, ry: 0.115, rz: 0.045 };
+const upperDir = (side: number) => new Vector3(side * 0.78, -0.08, 0.62).normalize();
+const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normalize();
+const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
+const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
+const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
 
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
 function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
@@ -83,7 +94,7 @@ interface Hinge {
   /** Orientation in the figure's frame, for the child hinge's rest. */
   world: Quaternion;
   side: 1 | -1;
-  kind: 'shoulder' | 'elbow' | 'hip' | 'knee';
+  kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
 }
 
 export function createProceduralHuman(
@@ -135,9 +146,14 @@ export function createProceduralHuman(
   const head = new Group();
   head.position.set(0, 0.02, 0.42);
   body.add(head);
-  part('head', ellipsoid(0.11, 0.11, 0.11, 12, 8), 'skin', head, 0, 0, 0.05);
-  part('helmet', ellipsoid(0.125, 0.125, 0.125), 'helmet', head, 0, 0.01, 0.03);
-  part('goggles', ellipsoid(0.09, 0.035, 0.05, 12, 8), 'goggles', head, 0, -0.06, 0.12);
+  // The helmet is a shell over the skull and the back of the head, sized so the
+  // face stays outside it; the goggles are a band wider than the shell and the
+  // peak sits proud above them, so from behind and from the side the head reads
+  // as a helmet rather than as one more ball.
+  part('head', ellipsoid(0.105, 0.105, 0.105, 12, 8), 'skin', head, 0, -0.01, 0.055);
+  part('helmet', ellipsoid(0.125, 0.115, 0.125), 'helmet', head, 0, 0.02, 0);
+  part('visor', ellipsoid(0.113, 0.026, 0.05, 12, 8), 'helmet', head, 0, 0.062, 0.105);
+  part('goggles', ellipsoid(0.115, 0.042, 0.075, 12, 8), 'goggles', head, 0, 0.005, 0.085);
   const hinges: Hinge[] = [];
   const hinge = (
     kind: Hinge['kind'],
@@ -188,9 +204,22 @@ export function createProceduralHuman(
     part('thigh', limb(THIGH.r, THIGH.len), 'suit', hip.pivot);
     const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
     part('shin', limb(SHIN.r, SHIN.len), 'suit', knee.pivot);
-    part('boot', ellipsoid(0.06, 0.13, 0.05, 12, 8), 'boots', knee.pivot, 0, SHIN.len + 0.06, 0);
+    // The foot breaks 29 degrees away from the shin at the ankle: without a
+    // hinge of its own a boot on the shin's axis is only a thicker shin, which
+    // is what the figure had.
+    const ankle = hinge(
+      'ankle',
+      `ankle${s}`,
+      knee.pivot,
+      new Vector3(0, SHIN.len, 0),
+      footDir(side),
+      knee,
+      side,
+    );
+    part('boot', ellipsoid(FOOT.rx, FOOT.ry, FOOT.rz, 12, 8), 'boots', ankle.pivot, 0, FOOT.ry * 0.8, 0);
   }
   const qx = new Quaternion(),
+    qy = new Quaternion(),
     qz = new Quaternion();
   let time = 0;
   let view: FlightPose['view'] | null = null;
@@ -209,28 +238,40 @@ export function createProceduralHuman(
       const flutter = 0.05 + 0.09 * pose.gust;
       const slow = perlin2(time * 0.15, 0.37, 11) * 0.05;
       const w = pose.windPhase;
+      // The air the figure meets: a dive sweeps the arms back into a track and
+      // straightens the knees, a climb spreads the arms forward and wide. Both
+      // are rotations around the figure's own up axis, so the arms travel in
+      // the plane of the shoulders instead of flapping.
+      const sweep = pose.pitch < 0 ? Math.min(-pose.pitch, 0.5) * 0.75 : -Math.min(pose.pitch, 0.6) * 0.32;
       for (const h of hinges) {
         const phase = h.side > 0 ? 0 : 2.1;
         let swing = 0,
-          drop = 0;
+          drop = 0,
+          back = 0;
         switch (h.kind) {
           case 'shoulder':
             swing = Math.sin(w + phase) * flutter + slow;
             drop = Math.max(0, -pose.bank * h.side) * 0.5;
+            back = sweep;
             break;
           case 'elbow':
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
+            back = sweep * 0.5;
             break;
           case 'hip':
             swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
             break;
           case 'knee':
-            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
+            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4 - sweep * 0.3;
+            break;
+          case 'ankle':
+            swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
         h.pivot.quaternion
           .copy(h.rest)
           .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * drop))
+          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * back))
           .premultiply(qx.setFromAxisAngle(AXIS_X, swing));
       }
       if (pose.view !== view) {

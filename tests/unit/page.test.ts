@@ -113,6 +113,27 @@ describe('hud controls', () => {
     view.click();
     expect(onView).toHaveBeenCalledTimes(1);
   });
+  it('says when the flight is by hand and offers it back', () => {
+    const hud = createHud(document);
+    const onAutopilot = vi.fn();
+    hud.onAutopilot(onAutopilot);
+    const button = document.getElementById('autopilotBtn') as HTMLButtonElement,
+      note = document.getElementById('manual')!;
+    // the notice starts hidden in the markup, for a flight that starts on the autopilot
+    expect(note.hasAttribute('hidden')).toBe(true);
+    hud.setAutopilot(false);
+    expect(button.textContent).toBe('resume autopilot');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(note.hasAttribute('hidden')).toBe(false);
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.textContent).toContain('autopilot off');
+    hud.setAutopilot(true);
+    expect(button.textContent).toBe('autopilot on');
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(note.hasAttribute('hidden')).toBe(true);
+    button.click();
+    expect(onAutopilot).toHaveBeenCalledTimes(1);
+  });
   it('dims after a while without the pointer and wakes on hover, never while inert', () => {
     vi.useFakeTimers();
     try {

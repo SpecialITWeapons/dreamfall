@@ -41,6 +41,10 @@ export interface WorldDebug {
   snapshot(): ResumeState;
   saveFlight(): void;
   key(code: string): KeyAction;
+  keyUp(code: string): boolean;
+  /** The flight flies itself; an arrow key takes it off and this hands it back. */
+  readonly autopilot: boolean;
+  setAutopilot(on: boolean): void;
   readonly pointer: {
     down(button: number, x: number, y: number, touch?: boolean): boolean;
     move(x: number, y: number): void;

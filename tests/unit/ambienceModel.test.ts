@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { PENTA, chimeNote, waterAmount, windParams } from '../../src/engine/audio/AmbienceModel';
 
 describe('windParams', () => {
-  it('rises with altitude, climb and gusts', () => {
-    const low = windParams({ altitude: 0, vy: 0, gust: 0, t: 0 }),
-      high = windParams({ altitude: 1000, vy: 0, gust: 0, t: 0 }),
-      gusty = windParams({ altitude: 0, vy: 0, gust: 1, t: 0 }),
-      climbing = windParams({ altitude: 0, vy: 10, gust: 0, t: 0 });
+  it('rises with altitude, climb, gusts and the rush of a dive', () => {
+    const level = { altitude: 0, vy: 0, gust: 0, t: 0, rush: 1 };
+    const low = windParams(level),
+      high = windParams({ ...level, altitude: 1000 }),
+      gusty = windParams({ ...level, gust: 1 }),
+      climbing = windParams({ ...level, vy: 10 });
     expect(high.frequency - low.frequency).toBeCloseTo(700, 9);
     expect(gusty.frequency).toBeGreaterThan(low.frequency);
     expect(gusty.gain).toBeGreaterThan(low.gain);
@@ -14,7 +15,17 @@ describe('windParams', () => {
     expect(climbing.frequency).toBeCloseTo(low.frequency + 180, 9);
     expect(low.gain).toBeGreaterThan(0.15);
     expect(gusty.gain).toBeLessThanOrEqual(0.31);
-    expect(windParams({ altitude: -50, vy: 0, gust: 0, t: 0 }).frequency).toBe(low.frequency);
+    expect(windParams({ ...level, altitude: -50 }).frequency).toBe(low.frequency);
+    // the air itself: a dive is louder and brighter, a climb quieter, both bounded
+    const diving = windParams({ ...level, rush: 59 / 40 }),
+      soaring = windParams({ ...level, rush: 27 / 40 });
+    expect(diving.frequency).toBeGreaterThan(low.frequency + 150);
+    expect(diving.gain).toBeGreaterThan(low.gain + 0.03);
+    expect(soaring.frequency).toBeLessThan(low.frequency - 90);
+    expect(soaring.gain).toBeLessThan(low.gain - 0.02);
+    // and neither end runs away with it
+    expect(windParams({ ...level, rush: 4 }).gain).toBeCloseTo(low.gain + 0.09 * 0.6, 9);
+    expect(windParams({ ...level, rush: 0 }).gain).toBeCloseTo(low.gain - 0.09 * 0.25, 9);
   });
 });
 

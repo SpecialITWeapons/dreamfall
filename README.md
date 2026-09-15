@@ -15,11 +15,16 @@ Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
 
 ## Controls
 
-The flight flies itself. Right button or a finger: steer and aim. Left button:
-orbit the camera, or look around in the first-person view. Wheel: distance.
-Arrows: nudge the course and the height. `V`: switch the view. Space: pause.
-Settings and the flight are remembered in this browser; `?seed=<n>` opens a
-world, and reopening the same seed continues where it was.
+The flight flies itself until you take it. Right button or a finger: steer and
+aim. Left button: orbit the camera, or look around in the first-person view.
+Wheel: distance. Arrow keys fly it yourself: left and right turn, and the
+vertical is inverted the way an aircraft's stick is -- down raises the nose.
+The first arrow switches the autopilot off and the page says so; let the keys
+go and it holds that course and height until the HUD hands the flight back.
+Diving is faster than climbing, and the ground, the ceiling and a range too
+tall to climb are held against you whichever way you fly. `V`: switch the view.
+Space: pause. Settings and the flight are remembered in this browser;
+`?seed=<n>` opens a world, and reopening the same seed continues where it was.
 
 ## Documents
 
@@ -32,4 +37,4 @@ world, and reopening the same seed continues where it was.
 
 M0 Skeleton: engine, empty world, veil and gate, tests, CI, Pages.
 M1 World: heightfield terrain, water, sky and day cycle, floating origin, display chain.
-M2 Flight and figure: flight controller with clearance and ceiling, steering, third- and first-person camera, procedural human, memory and resume, synthesized sound, wind in the clouds.
+M2 Flight and figure: flight controller with clearance and ceiling, steering, third- and first-person camera, procedural human, memory and resume, synthesized sound, wind in the clouds. Then: airspeed that follows the dive, an autopilot the arrow keys switch off, and a figure that holds a skydiver's arch.

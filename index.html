@@ -158,6 +158,31 @@
         opacity: 0.35;
         cursor: default;
       }
+      /* Flying by hand: a line at the top that never dims, because it says the
+         world is no longer flying itself. */
+      #manual {
+        position: fixed;
+        top: max(0.9rem, env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        margin: 0;
+        padding: 0.4rem 1.1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(241, 229, 184, 0.5);
+        background: rgba(14, 26, 34, 0.32);
+        backdrop-filter: blur(14px) saturate(1.15);
+        -webkit-backdrop-filter: blur(14px) saturate(1.15);
+        color: #f1e5b8;
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+        text-transform: lowercase;
+        text-align: center;
+        text-shadow: 0 1px 10px rgba(8, 18, 26, 0.55);
+        z-index: 3;
+      }
+      #manual[hidden] {
+        display: none;
+      }
       /* The controls line: one glass pill in the corner. */
       #hud {
         position: fixed;
@@ -293,8 +318,8 @@
       <p class="hint">
         <span>A flight across an endless world. It flies itself.</span><br />
         <span
-          >Drag with the right button or a finger to steer, the left button looks around, V changes the
-          view.</span
+          >Drag with the right button or a finger to steer, the left button looks around, V changes the view.
+          Arrow keys fly it yourself.</span
         >
       </p>
     </div>
@@ -303,6 +328,7 @@
       <a id="retryLink" hidden>try WebGL2</a>
       <noscript>JavaScript is needed to create this world.</noscript>
     </div>
+    <p id="manual" role="status" hidden>autopilot off &mdash; arrows fly the figure</p>
     <div id="hud" inert>
       <a id="shareLink" href="#" title="A link to this exact world">share this world</a>
       <button id="muteBtn" aria-label="Mute sound" title="Toggle sound" aria-pressed="false">sound on</button>
@@ -318,6 +344,14 @@
       />
       <button id="pauseBtn" aria-label="Pause flight" title="Pause flight" aria-pressed="false" disabled>
         pause
+      </button>
+      <button
+        id="autopilotBtn"
+        aria-label="Hand the flight back to the autopilot"
+        title="Autopilot (any arrow key takes it off)"
+        aria-pressed="true"
+      >
+        autopilot on
       </button>
       <button
         id="viewBtn"

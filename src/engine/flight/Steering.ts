@@ -12,7 +12,11 @@ import { wrapAngle } from './angles';
 import type { FlightController } from './FlightController';
 
 export const TURN_PER_PIXEL = 0.004;
-export const ORBIT = { dist: 10, minDist: 5, maxDist: 30, pitch: 0.3, minPitch: -0.5, maxPitch: 1.2 };
+// Distance to the figure, m. The close end is 3 m rather than 5: at 5 the
+// figure is about a tenth of the frame seen from behind, where its own length
+// is foreshortened away, and the whole point of the near end is to look at it.
+// TPP.near is 0.5 m, so nothing clips.
+export const ORBIT = { dist: 7, minDist: 3, maxDist: 30, pitch: 0.3, minPitch: -0.5, maxPitch: 1.2 };
 export const LOOK = { yaw: (110 * Math.PI) / 180, pitch: (60 * Math.PI) / 180, returnSeconds: 1.5 };
 
 export type View = 'tpp' | 'fpp';
@@ -27,7 +31,9 @@ export interface Look {
   yaw: number;
   pitch: number;
 }
-export type KeyAction = 'pause' | 'view' | 'nudge' | null;
+export type KeyAction = 'pause' | 'view' | 'fly' | null;
+/** Arrow keys, inverted in the vertical the way a stick is: pulling back raises the nose. */
+export const FLIGHT_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
 
 export interface Steering {
   view: View;
@@ -39,13 +45,21 @@ export interface Steering {
   readonly dragButton: -1 | 0 | 2;
   /** The pilot holds the stick. */
   readonly held: boolean;
+  /** The flight flies itself; an arrow key takes it away, the HUD hands it back. */
+  readonly autopilot: boolean;
+  setAutopilot(on: boolean): void;
   /** A press; false when the button is not one this page uses. */
   pointerDown(button: number, x: number, y: number, touch?: boolean): boolean;
   pointerMove(x: number, y: number): void;
   /** Ends a drag; true when the framing may have changed and is worth remembering. */
   pointerUp(): boolean;
   wheel(deltaY: number): void;
+  /** A key going down. */
   key(code: string): KeyAction;
+  /** A key coming up; true when it was one of the flight keys. */
+  keyUp(code: string): boolean;
+  /** Everything let go at once: a blur, a pause, a lost focus. */
+  releaseKeys(): void;
   toggleView(): View;
   /** Per frame, before the simulation step: steering from the camera's point of view, and the look's return. */
   update(dt: number): void;
@@ -64,6 +78,17 @@ export function createSteering(
     dist: clamp(opts.orbit?.dist ?? ORBIT.dist, ORBIT.minDist, ORBIT.maxDist),
   };
   const look: Look = { yaw: 0, pitch: 0 };
+  /** Arrow keys currently down. */
+  const keys = new Set<string>();
+  // Left turns the figure left (headings grow counter-clockwise from above),
+  // and the vertical is inverted the way an aircraft's stick is: pulling back
+  // -- ArrowDown -- raises the nose. Holding nothing holds the course and the
+  // height, which is what the flight does with the autopilot off.
+  const flyKeys = () =>
+    flight.fly(
+      (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0),
+      (keys.has('ArrowDown') ? 1 : 0) - (keys.has('ArrowUp') ? 1 : 0),
+    );
   let dragging = false;
   let dragButton: -1 | 0 | 2 = -1;
   let lastX = 0,
@@ -137,30 +162,34 @@ export function createSteering(
     wheel(deltaY) {
       orbit.dist = clamp(orbit.dist * Math.exp(deltaY * 0.0012), ORBIT.minDist, ORBIT.maxDist);
     },
+    get autopilot() {
+      return flight.autopilot;
+    },
+    setAutopilot(on) {
+      if (on) keys.clear();
+      flight.setAutopilot(on);
+      if (!on) flyKeys();
+    },
     key(code) {
-      switch (code) {
-        case 'Space':
-          return 'pause';
-        case 'KeyV':
-          toggleView();
-          return 'view';
-        case 'ArrowLeft':
-          flight.release();
-          flight.nudge(0.4, 0);
-          return 'nudge';
-        case 'ArrowRight':
-          flight.release();
-          flight.nudge(-0.4, 0);
-          return 'nudge';
-        case 'ArrowUp':
-          flight.nudge(0, 200);
-          return 'nudge';
-        case 'ArrowDown':
-          flight.nudge(0, -180);
-          return 'nudge';
-        default:
-          return null;
+      if (code === 'Space') return 'pause';
+      if (code === 'KeyV') {
+        toggleView();
+        return 'view';
       }
+      if (!(FLIGHT_KEYS as readonly string[]).includes(code)) return null;
+      keys.add(code);
+      flyKeys();
+      return 'fly';
+    },
+    keyUp(code) {
+      if (!keys.delete(code)) return false;
+      flyKeys();
+      return true;
+    },
+    releaseKeys() {
+      if (keys.size === 0) return;
+      keys.clear();
+      flyKeys();
     },
     toggleView,
     update(dt) {

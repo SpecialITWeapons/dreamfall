@@ -100,6 +100,7 @@ const begin = () => {
     audio.suspend(true);
   }
   hud.setPaused(loop.paused);
+  hud.setAutopilot(steering.autopilot);
   canvas.removeAttribute('inert');
   canvas.focus({ preventScroll: true });
 };
@@ -107,6 +108,8 @@ gate.onBegin(begin);
 
 const togglePause = () => {
   if (!loop.running || disposed) return;
+  // whatever was held is not held through a pause
+  steering.releaseKeys();
   loop.togglePause();
   hud.setPaused(loop.paused);
   audio.suspend(loop.paused);
@@ -129,6 +132,11 @@ const setView = (view: View) => {
   if (loop.running) loop.renderOnce();
 };
 hud.onView(() => setView(steering.view === 'tpp' ? 'fpp' : 'tpp'));
+const showAutopilot = () => hud.setAutopilot(steering.autopilot);
+hud.onAutopilot(() => {
+  steering.setAutopilot(true);
+  showAutopilot();
+});
 
 // Pointer input follows the steering's conventions; the canvas captures the pointer so a drag may leave it.
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -166,7 +174,11 @@ canvas.addEventListener('pointerup', (e) => {
   endDrag();
 });
 for (const type of ['pointercancel', 'lostpointercapture'] as const) canvas.addEventListener(type, endDrag);
-addEventListener('blur', endDrag);
+addEventListener('blur', () => {
+  endDrag();
+  // a key held while the window goes away never sends its keyup
+  steering.releaseKeys();
+});
 canvas.addEventListener(
   'wheel',
   (e) => {
@@ -192,10 +204,15 @@ addEventListener('keydown', (e) => {
   if (!loop.running) return;
   if (e.key.startsWith('Arrow')) e.preventDefault();
   if (loop.paused) return;
-  if (steering.key(e.code) === 'view') {
+  const action = steering.key(e.code);
+  if (action === 'view') {
     hud.setView(steering.view);
     saveSettings();
-  }
+  } else if (action === 'fly') showAutopilot();
+});
+addEventListener('keyup', (e) => {
+  if (e.key.startsWith('Arrow')) e.preventDefault();
+  steering.keyUp(e.code);
 });
 motionPreference.addEventListener('change', (e) => {
   world.reducedMotion = e.matches;
@@ -209,6 +226,7 @@ addEventListener('resize', () => {
   loop.renderOnce();
 });
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) steering.releaseKeys();
   loop.suspend(document.hidden);
   audio.suspend(document.hidden || loop.paused);
   if (document.hidden) saveFlight();
@@ -312,6 +330,14 @@ installDebug(window, {
   snapshot: () => world.snapshot(),
   saveFlight,
   key: (code) => steering.key(code),
+  keyUp: (code) => steering.keyUp(code),
+  get autopilot() {
+    return steering.autopilot;
+  },
+  setAutopilot(on: boolean) {
+    steering.setAutopilot(on);
+    showAutopilot();
+  },
   pointer: {
     down: (button, x, y, touch = false) => steering.pointerDown(button, x, y, touch),
     move: (x, y) => steering.pointerMove(x, y),
