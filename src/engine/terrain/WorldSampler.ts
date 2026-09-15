@@ -16,11 +16,20 @@ export const PEAKS = { cell: 2400, radius: 850, power: 1.7, lift: 900, massif: 6
 /** Width of the climate fields, m. */
 export const CLIMATE_SCALE = 12000;
 
+/** Somewhere to write the fields: the window uses Float32Array, the hooks Float64Array. */
+export type FieldsOut = Float32Array | Float64Array | number[];
+
 export interface WorldSampler {
   readonly seed: number;
   readonly seeds: { S1: number; S2: number; S3: number };
   /** Writes height (m), temperature, moisture and region for a world point. */
-  sample(x: number, z: number, out: Float32Array | number[]): void;
+  sample(x: number, z: number, out: FieldsOut): void;
+  /**
+   * The same four, plus continentalness in the fifth slot: the biomes' hooks
+   * read it, and it is already computed in here. `sample` is the frozen face
+   * of this one -- its numbers are the golden values of seed 42.
+   */
+  baseFields(x: number, z: number, out: FieldsOut): void;
 }
 
 /** Three field seeds hashed from the seed rather than sliced from its bits, so small seeds do not share a climate. */
@@ -36,10 +45,18 @@ export function fieldSeeds(seed: number): { S1: number; S2: number; S3: number }
 export function createWorldSampler(seed: number): WorldSampler {
   const seeds = fieldSeeds(seed);
   const { S1, S2, S3 } = seeds;
+  const scratch = new Float64Array(5);
   return {
     seed: seed >>> 0,
     seeds,
     sample(x, z, out) {
+      this.baseFields(x, z, scratch);
+      out[0] = scratch[0]!;
+      out[1] = scratch[1]!;
+      out[2] = scratch[2]!;
+      out[3] = scratch[3]!;
+    },
+    baseFields(x, z, out) {
       const wx = x + 700 * fbm(x / 2200 + 31.7, z / 2200 - 12.3, S3, 3);
       const wz = z + 700 * fbm(x / 2200 - 54.1, z / 2200 + 77.9, S3 + 7, 3);
       const cont = fbm(wx / 3400, wz / 3400, S1, 4) * 0.5 + 0.5; // continentalness
@@ -73,6 +90,7 @@ export function createWorldSampler(seed: number): WorldSampler {
       out[1] = temp - Math.max(0, h) / 2600; // colder with altitude
       out[2] = moist;
       out[3] = region;
+      out[4] = cont;
     },
   };
 }

@@ -7,10 +7,14 @@ const plane = (ax: number, az: number, c = 0): WorldSampler => ({
   seed: 0,
   seeds: { S1: 0, S2: 0, S3: 0 },
   sample(x, z, out) {
+    this.baseFields(x, z, out);
+  },
+  baseFields(x, z, out) {
     out[0] = ax * x + az * z + c;
     out[1] = 0.5;
     out[2] = 0.25;
     out[3] = 0.75;
+    out[4] = 0.5;
   },
 });
 
@@ -61,10 +65,13 @@ describe('createHeightfield', () => {
       seed: 0,
       seeds: { S1: 0, S2: 0, S3: 0 },
       sample(x, z, out) {
+        this.baseFields(x, z, out);
+      },
+      baseFields(x, z, out) {
         const ix = Math.round(x / CELL),
           iz = Math.round(z / CELL);
         out[0] = (ix + iz) % 2 === 0 ? 100 : 0;
-        out[1] = out[2] = out[3] = 0;
+        out[1] = out[2] = out[3] = out[4] = 0;
       },
     };
     const hf = createHeightfield(saddle, { size: 8 });
