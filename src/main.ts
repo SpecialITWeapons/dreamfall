@@ -124,4 +124,21 @@ installDebug(window, {
   begin,
   dispose,
   memory: () => engine.memory(),
+  heightAt: (x, z) => world.heightAt(x, z),
+  get dayPhase() {
+    return world.clock.phase;
+  },
+  set dayPhase(v: number) {
+    world.clock.phase = v;
+    world.clock.evalPalette();
+    world.update(0.000001);
+    loop.renderOnce();
+  },
+  get origin() {
+    return { x: world.origin.x, z: world.origin.z };
+  },
+  get clearance() {
+    return world.sim.state.y - world.heightAt(world.sim.state.x, world.sim.state.z);
+  },
+  capture: (w, h) => world.post.capture(w, h),
 });
