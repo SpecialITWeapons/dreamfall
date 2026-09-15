@@ -40,6 +40,8 @@ import type { SkyUniforms } from './SkyUniforms';
 const VENUS = vec3(0.86, 0.46, 0.52);
 const SPARSE_STAR_AXIS = normalize(vec3(0.36, 0.5, -0.79));
 export const SKY_RADIUS = 12_000;
+/** Units of the sky projection per meter the wind carries the field. */
+export const CLOUD_DRIFT = 0.0012;
 
 export function createSkyDome(
   u: SkyUniforms,
@@ -49,14 +51,16 @@ export function createSkyDome(
   const galaxy = opts.galaxy ?? (() => vec3(0));
   // Shared by the dome and (in M5) the star catalog: clouds occlude all celestial detail once, with the same shape.
   const paintedClouds = Fn(([dir]: [Node<'vec3'>]) => {
-    const p = dir.xz
-      .div(dir.y.max(0.025).add(0.19))
-      .mul(vec2(2.8, 6))
-      .add(vec2(u.time.mul(0.001), 0));
+    const p0 = dir.xz.div(dir.y.max(0.025).add(0.19)).mul(vec2(2.8, 6));
+    // The wind carries the field across the sky; a slow warp boils the shapes
+    // as they go, and the finer octave drifts at its own pace, so nothing
+    // merely slides.
+    const drift = u.uWind.mul(u.time).mul(CLOUD_DRIFT);
+    const p = p0.sub(drift).add(mx_noise_float(p0.mul(0.5).add(u.time.mul(0.02))).mul(0.15));
     const mass = mx_noise_float(p.mul(0.3).add(vec2(3, 12)))
       .mul(0.28)
       .add(mx_noise_float(p).mul(0.6))
-      .add(mx_noise_float(p.mul(2.1).add(8)).mul(0.3))
+      .add(mx_noise_float(p.mul(2.1).add(8).sub(drift.mul(0.35))).mul(0.3))
       .add(mx_noise_float(p.mul(5.8)).mul(0.16))
       .add(mx_noise_float(p.mul(15)).mul(0.06));
     // The night ceiling opens into clear windows, while the low cloud banks keep their opacity.

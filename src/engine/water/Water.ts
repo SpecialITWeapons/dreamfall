@@ -28,7 +28,9 @@ import {
   vec3,
 } from 'three/tsl';
 import type { LitMaterial } from '../render/SoftLighting';
+import { createCloudShadow } from '../sky/CloudShadow';
 import type { Horizon } from '../sky/Fog';
+import { CLOUD_DRIFT } from '../sky/SkyDome';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import {
   WATER_CELL,
@@ -97,10 +99,7 @@ export function createWater(deps: {
     const warm = mix(u.uUpper, u.uUpperWarm, alignment.mul(0.8));
     const top = mix(warm, u.uZenith, smoothstep(0.1, 0.85, r.y));
     const color = mix(horizon.horizonTint(r), top, smoothstep(0, 0.4, r.y)).toVar();
-    const q = r.xz
-      .div(r.y.max(0.025).add(0.19))
-      .mul(vec2(2.8, 6))
-      .add(vec2(u.time.mul(0.001), 0));
+    const q = r.xz.div(r.y.max(0.025).add(0.19)).mul(vec2(2.8, 6)).sub(u.uWind.mul(u.time).mul(CLOUD_DRIFT));
     const mass = mx_noise_float(q.mul(0.3).add(vec2(3, 12)))
       .mul(0.28)
       .add(mx_noise_float(q).mul(0.6));
@@ -137,7 +136,8 @@ export function createWater(deps: {
   const strokeVisible = float(1).sub(smoothstep(0.8, 2.8, fwidth(strokePhase)));
   const strokes = mix(0.38, smoothstep(0.1, 0.8, sin(strokePhase)), strokeVisible);
   const sheen = smoothstep(0.28, 0.88, glint).mul(strokes).mul(0.32).add(glint.mul(0.065));
-  const material = litMaterial(base);
+  const cloudShadow = createCloudShadow(u);
+  const material = litMaterial(base.mul(cloudShadow(p)));
   material.positionNode = vec3(positionLocal.x, wave.mul(0.18).add(SEA_LEVEL), positionLocal.z);
   material.normalNode = transformNormalToView(n);
   material.emissiveNode = reflection

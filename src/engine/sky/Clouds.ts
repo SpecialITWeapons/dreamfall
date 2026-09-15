@@ -12,9 +12,11 @@ import {
   float,
   length,
   mix,
+  mx_noise_float,
   normalLocal,
   normalWorld,
   normalize,
+  positionLocal,
   positionWorld,
   pow,
   smoothstep,
@@ -58,6 +60,10 @@ export function createClouds(seed: number, u: SkyUniforms) {
     .mul(0.8)
     .mul(u.uCloudBodies)
     .mul(float(1).sub(smoothstep(2300, 2900, length(positionWorld.sub(cameraPosition)))));
+  // The puffs breathe: a slow noise pushes the surface in and out along its normal.
+  material.positionNode = positionLocal.add(
+    normalLocal.mul(mx_noise_float(positionLocal.mul(0.9).add(u.time.mul(0.12))).mul(0.08)),
+  );
   const mesh = new InstancedMesh(puffGeometry(seed), material, CLOUDS);
   mesh.frustumCulled = false;
   const base: Array<{ x: number; z: number; y: number; s: number; rot: number; drift: number }> = [];
@@ -77,14 +83,22 @@ export function createClouds(seed: number, u: SkyUniforms) {
     s3 = new Vector3();
   return {
     mesh,
-    update(bx: number, bz: number, t: number, cameraLocal: Vector3, originX: number, originZ: number) {
+    update(
+      bx: number,
+      bz: number,
+      t: number,
+      cameraLocal: Vector3,
+      originX: number,
+      originZ: number,
+      wind: { x: number; z: number },
+    ) {
       const cx = cameraLocal.x + originX,
         cy = cameraLocal.y,
         cz = cameraLocal.z + originZ;
       for (let i = 0; i < CLOUDS; i++) {
         const c = base[i]!;
-        let x = c.x + t * 4.0 * c.drift - bx,
-          z = c.z - bz;
+        let x = c.x + t * wind.x * c.drift - bx,
+          z = c.z + t * wind.z * c.drift - bz;
         x = (((x % CLOUD_FIELD) + CLOUD_FIELD * 1.5) % CLOUD_FIELD) - CLOUD_FIELD / 2;
         z = (((z % CLOUD_FIELD) + CLOUD_FIELD * 1.5) % CLOUD_FIELD) - CLOUD_FIELD / 2;
         const px = bx + x,
