@@ -228,7 +228,8 @@ export interface GroundCtx {
   noise(scale: number, salt: number): Node<'float'>;
   hash(salt: number): Node<'float'>;
   color(value: SceneryColor): Node<'vec3'>;
-  mix(a: Node<'vec3'>, b: Node<'vec3'>, t: Node<'float'>): Node<'vec3'>;
+  /** t may be a plain number: a mask that is always one costs nothing that way. */
+  mix(a: Node<'vec3'>, b: Node<'vec3'>, t: Node<'float'> | number): Node<'vec3'>;
   ramp(v: Node<'float'>, from: number, to: number): Node<'float'>;
 }
 export interface GroundOut {

@@ -6,11 +6,15 @@
  */
 export { CLIMATE, climatePoint, heightBand, mul, max } from './presence.js';
 export { offset, terraces } from './height.js';
+export { layers } from './ground.js';
 
 import { resolve as presence } from './presence.js';
 import { resolve as height } from './height.js';
+import { resolve as ground } from './ground.js';
 
 /** @type {(hook: import('../contract').Presence) => (f: import('../contract').Fields) => number} */
 export const resolvePresence = presence;
 /** @type {(hook: import('../contract').HeightHook) => (f: import('../contract').Fields, base: number) => number} */
 export const resolveHeight = height;
+/** @type {(hook: import('../contract').GroundHook) => (ctx: import('../contract').GroundCtx) => import('../contract').GroundOut} */
+export const resolveGround = ground;
