@@ -366,17 +366,31 @@ describe('the library itself', () => {
     expect(library.props).toHaveLength(2);
     expect(validateLibrary(library)).toEqual([]);
     const baked = new Set(library.species!.map((s) => s.id));
-    // Every biome that grows anything grows something baked; the settlement
-    // grows nothing, which is how its ground stays a village and not a wood.
-    const growing = library.biomes.filter((b) => !b.sites);
-    expect(growing).toHaveLength(10);
-    for (const biome of growing) {
+    // Every biome grows something baked, the settlements included. They used to
+    // grow nothing, on the theory that it was what kept their ground a village
+    // and not a wood; what it actually kept was a disc of bare paint as wide as
+    // the presence, because a settlement's own weight crowds the country's
+    // biomes out of the ground it stands on and then sows nothing there.
+    for (const biome of library.biomes) {
       const sown = biome.populate as ScatterSpec;
       expect(sown.type).toBe('scatter');
       expect(Object.keys(sown.species).length).toBeGreaterThan(0);
       for (const id of Object.keys(sown.species)) expect(baked.has(id)).toBe(true);
+      for (const id of Object.keys(sown.props ?? {}))
+        expect(library.props!.some((p) => p.id === id)).toBe(true);
     }
-    for (const biome of library.biomes) if (biome.sites) expect(biome.populate).toBeUndefined();
+    // and a settlement grows less than the country: it is a place people cleared
+    const settled = library.biomes.filter((b) => b.sites);
+    expect(settled.map((b) => b.id)).toEqual(['village']);
+    const wildest = Math.max(
+      ...library.biomes.filter((b) => !b.sites).map((b) => (b.populate as ScatterSpec).density),
+    );
+    for (const biome of settled) {
+      expect((biome.populate as ScatterSpec).density).toBeLessThan(wildest);
+      // and the grass is the half of it that shows: without one, the ground a
+      // settlement claims is balder than the meadow it was cut out of
+      expect((biome.populate as ScatterSpec).grass!.density).toBeGreaterThan(0);
+    }
     // one species grows its own way, so the bake hook has a live example
     expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
     // and every crown fits the budget the baker will enforce again at bake time

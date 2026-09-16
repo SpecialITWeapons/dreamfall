@@ -142,6 +142,16 @@ export const TOWN = {
    */
   storeys: { cottage: [1, 3], barn: [1, 2], mill: [3, 4] },
   /**
+   * What grows on the ground a town claims, and much less of it than a village
+   * has: a town paves what it walks on, and its lots leave less ground over.
+   * The species are the ones that stand in a row where somebody put them.
+   */
+  scenery: {
+    species: { cypress: 1, oak: 0.5 },
+    density: 0.2,
+    grass: { tint: 'grassCool', density: 0.4 },
+  },
+  /**
    * A town's whitewash. Paler and more uniform than the village's on purpose:
    * the village is a handful of farms that painted themselves, the town is a
    * street that agreed. Three whites in six means half its buildings are

@@ -43,6 +43,39 @@ export const VILLAGE = {
   /** Relative weights by structure id; the validator checks them against the registry. */
   buildings: { cottage: 1, barn: 0.3, mill: 0.05 },
   /**
+   * Orchards: a hedge around a plot out on the fringe, with nothing inside it.
+   * A line claims no ground by contract, so the village's own trees grow in
+   * there on their own -- the hedge says which trees were planted on purpose,
+   * and costs a ribbon rather than a scatter of its own.
+   *
+   * `tries` and not `count`: a plot that lands on the houses or on a slope is
+   * dropped, and a village crowded to its edge simply has fewer orchards. They
+   * are drawn last of everything, so adding them moved not one house.
+   */
+  /** @type {{ tries: number, band: [number, number], size: [number, number], maxSlope: number }} */
+  orchards: { tries: 5, band: [0.55, 0.92], size: [34, 26], maxSlope: 0.32 },
+  /**
+   * What grows on the ground a village claims. Without it the village is a
+   * disc of painted clay 420 m across -- radius plus feather -- with two
+   * hundred metres of houses in the middle of it and nothing at all around
+   * them, because a settlement's own weight crowds the country's biomes out of
+   * the fragment and then sows nothing in their place. The owner's words for
+   * it were that the ground around the houses is empty and looks odd.
+   *
+   * It needs no thinning toward the edge: the lots' own reservations already
+   * refuse a tree where the houses are, so the same density over the whole disc
+   * comes out sparse in the built part and full at the fringe by itself. The
+   * grass is the bigger half of the fix -- a village had strictly less grass
+   * than the meadow around it, which is exactly backwards for trodden ground
+   * with gardens on it.
+   */
+  scenery: {
+    species: { oak: 1, blossom: 0.7, birch: 0.4 },
+    density: 0.55,
+    props: { cairns: 0.25 },
+    grass: { tint: 'grassGold', density: 0.85 },
+  },
+  /**
    * What a house is tinted with. A tint multiplies the colours its recipe
    * painted, so these are pale and warm on purpose: a village of three recipes
    * needs to read as a village of houses rather than three houses repeated, and

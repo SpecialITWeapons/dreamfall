@@ -31,6 +31,7 @@ import { defineBiome } from '../contract';
  * @property {{ land: number, minTemp: number, maxSlope: number, maxCut?: number }} ground
  * @property {Record<string, number>} buildings
  * @property {string} [landmark] The one building placed by name rather than drawn by weight.
+ * @property {{ species: Record<string, number>, density: number, props?: Record<string, number>, grass?: { tint: import('../contract').SceneryColor, density: number } }} [scenery] What grows on the ground it claims.
  * @property {import('../contract').SceneryColor[]} [palette]
  * @property {{ base: import('../contract').SceneryColor, alt: import('../contract').SceneryColor, rock: import('../contract').SceneryColor }} [paint]
  */
@@ -75,6 +76,12 @@ export function settlement(params, plan) {
       feather: params.plateau.feather,
       strength: params.plateau.strength,
     },
+    // What grows on it. A settlement that sows nothing is a disc of bare paint
+    // as wide as its presence, because its own weight is what crowds the
+    // country's biomes -- and their trees and their grass -- out of the ground
+    // it stands on. The lots' reservations do the thinning: the same density
+    // over the whole disc comes out sparse where the houses are.
+    populate: params.scenery ? { type: 'scatter', ...params.scenery } : undefined,
     // Earth where people walk, with the grass of the country around it coming
     // back at the edges through the weight of the biome.
     ground: {
