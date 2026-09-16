@@ -1,5 +1,15 @@
 # TODO właściciela: widoczność drzew i forma trawy (2026-09-16)
 
+> **Zrobione tego samego dnia.** Właściciel rozstrzygnął oba punkty: przy
+> drzewach „wygaszać + większy pierścień" (pełna naprawa), przy trawie
+> „zasięg zostawiamy, forma na losowe". Co poszło i ile kosztuje — w
+> `docs/perf-notes.md`, sekcja „The ring reaches further, and the grass is
+> tufts". Poniższa diagnoza zostaje jako zapis tego, skąd się to wzięło.
+>
+> Jedna rzecz z punktu 2 **nie** została ruszona świadomie: zasięg trawy. Nadal
+> stoi na `GRASS_FADE = [120, 190]`, bo okno przyrostowe to wciąż przebudowa
+> portu, a właściciel powiedział, żeby zostawić.
+
 Dwie uwagi wizualne zgłoszone po obejrzeniu M3b/M4a na Pages. Nie są zaplanowane
 w żadnym etapie; to jest ich zapis wraz z tym, co kod naprawdę dziś robi, żeby
 ten, kto je weźmie, nie zaczynał od zgadywania.

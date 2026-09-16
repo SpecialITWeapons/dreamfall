@@ -32,10 +32,26 @@ import type { Site, Sites } from './Sites';
 
 /** The side of one streaming cell, m. */
 export const TREE_CELL = 96;
-/** How far the ring reaches, m. */
-export const TREE_RADIUS = 1900;
-/** Trees the whole ring may hold; the pools are allocated for it. */
+/**
+ * How far the ring reaches, m. The edge is where a tree fades out, so this is
+ * also how far a tree may be seen: at 1900 m, where the original left it, the
+ * fog covers a quarter of what stands there and the fade is plain to watch.
+ */
+export const TREE_RADIUS = 2600;
+/**
+ * Trees of one species a pool may hold; the pools are allocated for it, nine
+ * species times three meshes, so it is the one that costs memory.
+ */
 export const MAX_TREES = 4000;
+/**
+ * Trees the whole ring may place. Not the same number as the pool's: the ring
+ * fills cell by cell in row order and stops dead when it hits this, so a ring
+ * that hits it is a forest with one side missing. Measured over fourteen places
+ * of seed 42, the densest ring at this radius holds 3335 -- so this is the
+ * headroom over that, and the pools never see it because no one species takes
+ * more than about half of a ring.
+ */
+export const MAX_RING_TREES = 6000;
 /** A biome with less than this share of a cell does not get to populate it (spec 7). */
 export const POPULATE_FLOOR = 0.05;
 /** Ground above this is land, in the only sense the scenery cares about. */
@@ -164,7 +180,7 @@ export function createRing(deps: RingDeps): Ring {
   const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sites, sink, propKit } = deps;
   const size = deps.cell ?? TREE_CELL;
   const radius = deps.radius ?? TREE_RADIUS;
-  const maxTrees = deps.maxTrees ?? MAX_TREES;
+  const maxTrees = deps.maxTrees ?? MAX_RING_TREES;
 
   const biomes = library.biomes;
   const sown = biomes.map((biome) => (biome.populate ? resolvePopulate(biome.populate) : null));

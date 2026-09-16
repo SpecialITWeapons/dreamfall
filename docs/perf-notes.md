@@ -183,3 +183,56 @@ What the settlements did not cost: nothing was added to the bake. Three
 buildings at two storey counts each is six more baked geometries inside the
 `scenery` stage that already bakes nine species, and it did not move the stage
 out of its own noise.
+
+## The ring reaches further, and the grass is tufts
+
+Two visual complaints from the owner, both measured before anything moved.
+
+**Trees did not appear at the edge of the ring -- they grew out of it.**
+`ringScale` scaled every vertex about the tree's own base over 1680..1850 m, so
+a tree at the edge was a point in the ground and reached full height 170 m
+later: two and a half to four seconds of visible sprouting at this world's
+speeds. It was not hidden by distance either -- at 1850 m the fog covers 24 %
+of what stands there, and less than that from altitude.
+
+They now stand at full height and fade through opacity, and the ring reaches
+2600 m instead of 1900 so the fade lands where less is worth watching. What
+the radius costs, measured over the densest ring found in fourteen places of
+seed 42:
+
+|                           | 1900 m | 2600 m           |
+| ------------------------- | ------ | ---------------- |
+| trees in the ring         | 2190   | 3193 (peak 3335) |
+| cells swept               | 1108   | 1729             |
+| rebuild, median of twelve | 7.9 ms | 9.0 ms           |
+
+One millisecond on the worst ground in the world, for 900 more trees. The fade
+itself costs nothing at all: the same instances, one more multiply in three
+materials. Nothing was allocated -- 3335 is still well under the pools' 4000 a
+species, and the ring's own ceiling was split off at 6000 so that a denser
+world than this one truncates nothing.
+
+**Grass read as lines because a blade was one card 2.6 m wide and 1 m tall**,
+turned about the vertical: from above, a streak. A tuft is now three painted
+cards crossed about its axis, in four baked forms:
+
+|                               | one card     | tuft of three |
+| ----------------------------- | ------------ | ------------- |
+| triangles an instance         | 2            | 6             |
+| triangles, full window        | 40,000       | 120,000       |
+| triangles, a real flight      | 10,584       | 31,752        |
+| painted blade tips            | 0.50..1.24 m | 0.78..1.79 m  |
+| alpha-tested area an instance | 2.485 m²     | 2.982 m²      |
+| draw calls                    | 1            | 4             |
+
+Tripling the triangles costs **20 %** more alpha-tested area, because three
+narrow cards paint less than one wide one -- and that 20 % is the extra height,
+not the crossing. Against the terrain's 557,568 triangles in the same frame,
+grass at a real flight is 5.7 %. The extra roll per attempt adds 0.03 ms to a
+6.9 ms window write.
+
+Left alone, and worth knowing: only 52 of the window's 121 tiles fall inside
+`REACH`, so a rebuild can never write more than **13,312** of the 20,000
+instances the meshes hold. A third of that allocation is unreachable and has
+been since the port. `SPAN` is the knob, and it changes how much grass there is
+rather than only what it costs, so it is not a free win.
