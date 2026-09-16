@@ -120,6 +120,12 @@ export const BUDGET = {
   propTriangles: 6000,
   propInstances: 2000,
   siteInstances: 4,
+  /**
+   * Distinct floor counts one structure may be baked at. A building is
+   * instanced whole, so every count in `floors` gets its own bake and its own
+   * pool: a recipe spanning twenty storeys would bake twenty buildings at load.
+   */
+  floorSpan: 4,
   speciesScale: 3,
 } as const;
 
@@ -765,6 +771,10 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       errors.push(`${where}.floors: needs a [min, max] of whole floors`);
     else if (floors[1] < floors[0])
       errors.push(`${where}.floors: [${floors[0]}, ${floors[1]}] does not rise`);
+    else if (floors[1] - floors[0] + 1 > BUDGET.floorSpan)
+      errors.push(
+        `${where}.floors: ${floors[1] - floors[0] + 1} storey counts, the budget is ${BUDGET.floorSpan}`,
+      );
     if (!ROOFS.has(entry?.roof)) errors.push(`${where}.roof: unknown roof "${String(entry?.roof)}"`);
     for (const role of ['wall', 'roof', 'trim', 'window'] as const) {
       const value = entry?.palette?.[role];

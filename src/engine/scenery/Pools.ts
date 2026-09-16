@@ -20,7 +20,9 @@ import {
   InstancedInterleavedBuffer,
   InstancedMesh,
   InterleavedBufferAttribute,
+  Group,
   Matrix4,
+  Mesh,
   Quaternion,
   Vector3,
   type BufferGeometry,
@@ -45,9 +47,12 @@ import {
   type Library,
   type Prop,
   type PropKit,
+  type SitePlan,
 } from '../../../library/contract';
 import type { Origin } from '../sim/Origin';
+import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32, sstep } from '../terrain/noise';
+import { buildRoads } from './RoadKit';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { SceneryMaterials, PaintedTextures } from './Painted';
 import {
@@ -142,6 +147,8 @@ export interface Pools {
   /** What a prop's bake() and place() are handed; the ring passes it on. */
   readonly propKit: PropKit;
   readonly meshes: InstancedMesh[];
+  /** The road ribbons of the sites the ring is covering, one child per plan. */
+  readonly roads: Group;
   dispose(): void;
 }
 
@@ -151,8 +158,10 @@ export function createPools(deps: {
   materials: SceneryMaterials;
   uniforms: SkyUniforms;
   origin: Origin;
+  /** The ground a road ribbon is laid on; the CPU field, as everywhere else. */
+  heightfield: Heightfield;
 }): Pools {
-  const { library, textures, materials, uniforms, origin } = deps;
+  const { library, textures, materials, uniforms, origin, heightfield } = deps;
   const meshes: InstancedMesh[] = [];
   const materialsMade: Material[] = [];
 
@@ -268,7 +277,10 @@ export function createPools(deps: {
     .mul(uniforms.uNight);
   const structures = new Map<string, StructurePool>();
   for (const entry of library.structures ?? []) {
-    for (const floors of new Set(entry.floors)) {
+    // Every count in the range, not just its ends: a plan is free to ask for a
+    // two-storey house out of a [1, 3] recipe, and a bake it never got is a
+    // house that quietly does not appear. The validator caps the span.
+    for (let floors = entry.floors[0]; floors <= entry.floors[1]; floors++) {
       const baked = bakeStructure(entry, floors, structureKit);
       const capacity = BUDGET.propInstances;
       const mesh = pool(baked.geometry, buildingMaterial, capacity);
@@ -319,13 +331,44 @@ export function createPools(deps: {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   };
 
+  // The roads of the sites the ring is covering. A road is not instanced -- one
+  // site, one ribbon, built once out of its plan -- so it is a mesh of its own,
+  // hung in the local frame at its site's centre. The rebuild that stops
+  // offering a plan is the one that drops its ribbon.
+  const roads = new Group();
+  roads.name = 'roads';
+  const roadMaterial = materials.prop();
+  materialsMade.push(roadMaterial);
+  const ribbons = new Map<string, Mesh>();
+  const offered = new Set<string>();
+
   const sink: ScenerySink = {
     begin(x, z) {
       flyerX = x;
       flyerZ = z;
+      offered.clear();
       for (const record of species.values()) record.count = record.near = record.far = 0;
       for (const record of props.values()) record.count = 0;
       for (const record of structures.values()) record.count = 0;
+    },
+    site(plan: SitePlan) {
+      offered.add(plan.id);
+      let ribbon = ribbons.get(plan.id);
+      if (!ribbon) {
+        const geometry = buildRoads(plan.roads, {
+          heightAt: (x, z) => heightfield.heightAt(x, z),
+          site: plan.id,
+          at: [plan.x, plan.z],
+        });
+        if (!geometry) return;
+        ribbon = new Mesh(geometry, roadMaterial);
+        ribbon.receiveShadow = true;
+        ribbons.set(plan.id, ribbon);
+        roads.add(ribbon);
+      }
+      // Written every rebuild rather than once: a rebuild is what an origin
+      // jump forces, and the jump is the only thing that moves this.
+      ribbon.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
     },
     tree(tree: TreeInstance) {
       const record = species.get(tree.species);
@@ -414,6 +457,12 @@ export function createPools(deps: {
         if (record.distant) commit(record.distant, record.far);
       }
       for (const record of props.values()) commit(record.mesh, record.count);
+      for (const [id, ribbon] of ribbons)
+        if (!offered.has(id)) {
+          roads.remove(ribbon);
+          ribbon.geometry.dispose();
+          ribbons.delete(id);
+        }
     },
   };
 
@@ -434,11 +483,15 @@ export function createPools(deps: {
     metrics,
     propKit,
     meshes,
+    roads,
     dispose() {
       for (const mesh of meshes) {
         mesh.geometry.dispose();
         mesh.dispose();
       }
+      for (const ribbon of ribbons.values()) ribbon.geometry.dispose();
+      ribbons.clear();
+      roads.clear();
       for (const material of new Set(materialsMade)) material.dispose();
       meshes.length = 0;
     },

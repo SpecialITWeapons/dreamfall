@@ -197,6 +197,23 @@ describe('createSites', () => {
     const never = village({}, 'village', { type: 'lattice', cell: CELL, salt: SALT, radius: 250, odds: 0 });
     expect(sites(library([never])).near(0, 0, 9000, [])).toEqual([]);
   });
+  it('tells the plan at once when it asks for a building nobody baked', () => {
+    // The queue is not the render loop, so this is the one place it is safe to
+    // be loud -- and the alternative is a house that silently does not appear.
+    const wrong = village({
+      build: (site, kit: SiteKit) => kit.structure('manor', site.x, site.z, { floors: 1 }),
+    });
+    const s = sites(library([wrong]));
+    s.near(0, 0, 3000, []);
+    expect(() => s.work(100)).toThrow(/unknown structure "manor"/);
+
+    const tall = village({
+      build: (site, kit: SiteKit) => kit.structure('cottage', site.x, site.z, { floors: 5 }),
+    });
+    const t = sites(library([tall]));
+    t.near(0, 0, 3000, []);
+    expect(() => t.work(100)).toThrow(/cottage has no 5-storey bake, only 1\.\.2/);
+  });
   it('builds no plan until it is given the time, and then keeps it', () => {
     const s = sites(library([village()]));
     const found = s.near(0, 0, 3000, []);

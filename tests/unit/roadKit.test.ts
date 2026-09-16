@@ -37,6 +37,35 @@ const widths = (geometry: BufferGeometry): number[] => {
 };
 
 describe('buildRoads', () => {
+  it('measures its vertices from where it is told, and still reads the ground in the world', () => {
+    // The scene is in the local frame of a floating origin, so a road is built
+    // around its own site and hung there; the ground under it is a world
+    // question and stays one.
+    const asked: Array<[number, number]> = [];
+    const ramp = (x: number, z: number) => {
+      asked.push([x, z]);
+      return x / 100;
+    };
+    const road: RoadSpec = {
+      points: [
+        [1000, 2000],
+        [1040, 2000],
+      ],
+      width: 8,
+    };
+    const there = buildRoads([road], { heightAt: ramp, at: [1000, 2000] })!;
+    const here = buildRoads([road], { heightAt: ramp })!;
+    const a = there.getAttribute('position'),
+      b = here.getAttribute('position');
+    expect(a.count).toBe(b.count);
+    for (let i = 0; i < a.count; i++) {
+      expect(a.getX(i)).toBeCloseTo(b.getX(i) - 1000, 4);
+      expect(a.getZ(i)).toBeCloseTo(b.getZ(i) - 2000, 4);
+      // the height is the same one: it was asked of the world either way
+      expect(a.getY(i)).toBeCloseTo(b.getY(i), 6);
+    }
+    expect(asked.every(([x]) => x >= 900)).toBe(true);
+  });
   it('samples a straight road every four metres and lays it exactly above the ground', () => {
     expect(ROAD_SAMPLE).toBe(4);
     expect(ROAD_LIFT).toBe(0.15);

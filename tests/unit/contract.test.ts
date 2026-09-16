@@ -239,6 +239,9 @@ describe('validateLibrary: structures and the sites that place them', () => {
         structure({ id: 'odd', roof: 'dome' as Structure['roof'] }),
         structure({ id: 'neon', palette: { wall: '#00ff00', roof: 'terracotta' } }),
         structure({ id: 'huge', budget: { triangles: 9000 } }),
+        // every storey count is its own bake and its own pool, so the range is
+        // a budget and not a preference
+        structure({ id: 'tower', floors: [1, 9] }),
       ],
     });
     const all = errors.join('\n');
@@ -247,6 +250,7 @@ describe('validateLibrary: structures and the sites that place them', () => {
     expect(all).toContain('structure odd.roof: unknown roof "dome"');
     expect(all).toContain('structure neon.palette.wall: #00ff00 is outside the palette envelope');
     expect(all).toContain(`structure huge.budget.triangles: 9000, the budget is ${BUDGET.propTriangles}`);
+    expect(all).toContain(`structure tower.floors: 9 storey counts, the budget is ${BUDGET.floorSpan}`);
   });
   it('names a structure the settlement asks for and nobody baked', () => {
     const errors = validateLibrary({

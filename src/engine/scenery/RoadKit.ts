@@ -45,6 +45,13 @@ export interface RoadDeps {
   triangles?: number;
   /** The site the roads belong to, so an overrun says whose it is. */
   site?: string;
+  /**
+   * What the geometry is measured from, in the world. The ground is still read
+   * at world coordinates; only the vertices move, so the mesh can be hung at
+   * this point in the scene's local frame and an origin jump costs a position
+   * rather than a rebuild. Defaults to the world origin.
+   */
+  at?: [number, number];
 }
 
 /** One sample along a polyline: where it is, and which way the ribbon spreads from it. */
@@ -146,6 +153,7 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
   const lift = deps.lift ?? ROAD_LIFT,
     cap = deps.triangles ?? ROAD_TRIANGLES,
     site = deps.site ?? 'unnamed';
+  const [ox, oz] = deps.at ?? [0, 0];
 
   // A road too short to sample drops out here, with its spec: what is left
   // keeps its own width and its own colour, whatever fell out before it.
@@ -174,9 +182,9 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
     const gz = (deps.heightAt(x, z + NORMAL_PROBE) - deps.heightAt(x, z - NORMAL_PROBE)) / (2 * NORMAL_PROBE);
     const length = Math.hypot(gx, 1, gz);
     return {
-      x,
+      x: x - ox,
       y: deps.heightAt(x, z) + lift,
-      z,
+      z: z - oz,
       nx: -gx / length,
       ny: 1 / length,
       nz: -gz / length,

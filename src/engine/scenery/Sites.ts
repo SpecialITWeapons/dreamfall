@@ -92,6 +92,8 @@ export function createSites(deps: {
       salt: biome.sites.salt ?? LATTICE_SALT,
     }));
   const fields = createFields(sampler);
+  // What was actually baked, so a plan naming something else is told at once.
+  const structures = new Map((library.structures ?? []).map((entry) => [entry.id, entry]));
   // What the lattice carries, by cell: a site, or nothing. Nothing is worth
   // remembering too -- it is the answer to the same question.
   const found = new Map<string, Site | null>();
@@ -169,12 +171,22 @@ export function createSites(deps: {
         reservations.push({ x, z, radius });
       },
       structure: (kindId, x, z, opts) => {
+        // Said here, where it is safe to say: the queue is not the render loop,
+        // and a lot naming a building nobody baked would otherwise be dropped
+        // without a word when the ring came to raise it.
+        const kind = structures.get(kindId);
+        if (!kind) throw new Error(`scenery library: site ${site.id}: unknown structure "${kindId}"`);
+        const floors = opts?.floors ?? kind.floors[0];
+        if (floors < kind.floors[0] || floors > kind.floors[1])
+          throw new Error(
+            `scenery library: site ${site.id}: ${kindId} has no ${floors}-storey bake, only ${kind.floors[0]}..${kind.floors[1]}`,
+          );
         lots.push({
           x,
           z,
           yaw: opts?.yaw ?? 0,
           structure: kindId,
-          floors: opts?.floors ?? 1,
+          floors,
           tint: opts?.tint,
         });
       },

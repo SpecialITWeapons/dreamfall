@@ -17,6 +17,7 @@ import {
   type PropKit,
   type Prop,
   type SceneryKit,
+  type SitePlan,
   type Species,
 } from '../../../library/contract';
 import { CELL_TREES, resolvePopulate } from '../../../library/standard/index.js';
@@ -103,6 +104,12 @@ export interface ScenerySink {
   tree(tree: TreeInstance): boolean;
   prop(prop: PropInstance): boolean;
   structure(building: StructureInstance): boolean;
+  /**
+   * A plan whose ground this rebuild covers, offered whole before its lots are.
+   * Its roads are not instances -- one site, one ribbon -- so the sink keeps a
+   * mesh per plan and drops the ones a rebuild stopped offering.
+   */
+  site(plan: SitePlan): void;
   end(): void;
 }
 
@@ -400,6 +407,7 @@ export function createRing(deps: RingDeps): Ring {
     for (const site of sites.near(x, z, radius, nearby)) {
       const plan = sites.planFor(site);
       if (!plan) continue;
+      sink.site(plan);
       for (const lot of plan.lots) {
         if (Math.hypot(lot.x - x, lot.z - z) > radius) continue;
         const y = heightfield.heightAt(lot.x, lot.z);

@@ -81,7 +81,8 @@ const metrics: SceneryMetrics = {
 const collector = (capacity = Infinity) => {
   const trees: TreeInstance[] = [],
     props: PropInstance[] = [],
-    buildings: StructureInstance[] = [];
+    buildings: StructureInstance[] = [],
+    plans: SitePlan[] = [];
   let begun = 0,
     ended = 0;
   const sink: ScenerySink = {
@@ -90,6 +91,7 @@ const collector = (capacity = Infinity) => {
       trees.length = 0;
       props.length = 0;
       buildings.length = 0;
+      plans.length = 0;
     },
     tree(t) {
       if (trees.length >= capacity) return false;
@@ -104,11 +106,14 @@ const collector = (capacity = Infinity) => {
       buildings.push({ ...b, tint: b.tint.clone() });
       return true;
     },
+    site(plan) {
+      plans.push(plan);
+    },
     end() {
       ended++;
     },
   };
-  return { sink, trees, props, buildings, counts: () => ({ begun, ended }) };
+  return { sink, trees, props, buildings, plans, counts: () => ({ begun, ended }) };
 };
 
 /** A biome that asks instead of planting: what does the ground say about these points? */
@@ -431,6 +436,18 @@ describe('the streamed ring', () => {
     // the flight is told about a house the way it is told about a tree: by its top
     const shape = metrics.structure('cottage', here.floors)!;
     expect(r.obstacles.floorAt(here.x, here.z, 0)).toBeCloseTo(raised.y + shape.top, 6);
+  });
+  it('offers a plan whole, once a rebuild, before any of its lots', () => {
+    // The roads of a site are one ribbon built out of the plan, not instances,
+    // so the sink needs the plan itself and needs it exactly as often as the
+    // ring covers it.
+    const plan = planOf({ x: 0, z: 0, lots: [lotAt(40, -20)] });
+    const r = ring(library([everywhere('woods', 0)]), { sites: oneSite(plan), radius: 300 });
+    r.ring.update(0, 0, false);
+    expect(r.plans).toEqual([plan]);
+    // left behind, the plan is not offered and the ribbon is free to go
+    r.ring.update(4000, 4000, false);
+    expect(r.plans).toEqual([]);
   });
   it('leaves a house it has no geometry for on the plan, unbuilt and unblocking', () => {
     const r = ring(library([everywhere('woods', 0)]), {

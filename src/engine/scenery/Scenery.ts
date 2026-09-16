@@ -82,10 +82,11 @@ export function createScenery(deps: {
     uniforms: deps.uniforms,
     textures,
   });
-  const pools = createPools({ library, textures, materials, uniforms: deps.uniforms, origin });
+  const pools = createPools({ library, textures, materials, uniforms: deps.uniforms, origin, heightfield });
   const grass = createGrass({ seed, library, heightfield, materials, shade, uniforms: deps.uniforms });
   const bakeMs = Math.round(performance.now() - bakeStarted);
   for (const mesh of pools.meshes) scene.add(mesh);
+  scene.add(pools.roads);
   scene.add(grass.mesh);
 
   // The shade sheet is painted from the trees the ring just placed, so the
@@ -118,6 +119,7 @@ export function createScenery(deps: {
     },
     prop: (prop) => pools.sink.prop(prop),
     structure: (building) => pools.sink.structure(building),
+    site: (plan) => pools.sink.site(plan),
     end() {
       pools.sink.end();
       shadeRecords.length = shadeCount;
@@ -192,6 +194,7 @@ export function createScenery(deps: {
     sample: (i) => samples[i] ?? null,
     dispose() {
       for (const mesh of pools.meshes) scene.remove(mesh);
+      scene.remove(pools.roads);
       scene.remove(grass.mesh);
       pools.dispose();
       grass.dispose();
