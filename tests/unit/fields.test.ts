@@ -116,6 +116,29 @@ describe('createFields', () => {
     const deep = walkTo((h) => h < -40);
     expect(f.at(deep, 0).shore).toBe(0);
   });
+  it('gives every lattice cell a stream of its own, unbiased', () => {
+    const f = createFields(createWorldSampler(42));
+    const keys = new Set<string>();
+    let below = 0,
+      sum = 0;
+    const n = 30;
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const hit = f.at((i + 0.5) * 6000, (j + 0.5) * 6000).lattice(6000, 0x5117);
+        // two cells may share a centre only by sharing an index, which they cannot
+        keys.add(`${hit.u(0)},${hit.u(1)}`);
+        sum += hit.u(0);
+        if (hit.u(0) < 0.5) below++;
+      }
+    expect(keys.size).toBe(n * n);
+    // Keyed on the rounded centre instead of the index, this read 0.43 and 0.63:
+    // the key collided with the neighbour's and correlated with the jitter hash.
+    expect(sum / (n * n)).toBeGreaterThan(0.45);
+    expect(sum / (n * n)).toBeLessThan(0.55);
+    expect(below / (n * n)).toBeGreaterThan(0.42);
+    expect(below / (n * n)).toBeLessThan(0.58);
+  });
+
   it('carries the height of the lattice centre, sampled once per cell', () => {
     const sampler = createWorldSampler(42);
     const f = createFields(sampler);

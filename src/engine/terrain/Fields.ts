@@ -40,17 +40,24 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   let atX = NaN,
     atZ = NaN,
     centreHeight = 0;
-  const hit: LatticeHit & { cell: number; salt: number } = {
+  const hit: LatticeHit & { cell: number; salt: number; ix: number; iz: number } = {
     cx: 0,
     cz: 0,
     d: 0,
     h: 0,
     cell: 0,
     salt: 0,
+    ix: 0,
+    iz: 0,
+    // Keyed on the cell's own index, never on the jittered centre. Rounding the
+    // centre back to an index looks equivalent and is not: the centre is the
+    // index plus a half plus a jitter of up to a third, so it rounds to this
+    // cell or the next one depending on the *sign of the jitter* -- which is
+    // the very hash the stream then reads. Measured on seed 42 before the fix:
+    // a third of cells shared their whole stream with a neighbour, and u(0) came
+    // up below a half 63 % of the time.
     u(k: number) {
-      return (
-        hash2(Math.round(this.cx / this.cell), Math.round(this.cz / this.cell), this.salt + k * 977) / u32
-      );
+      return hash2(this.ix, this.iz, this.salt + k * 977) / u32;
     },
   };
   const fields: Fields = {
@@ -75,6 +82,8 @@ export function createFields(sampler: WorldSampler): FieldsReader {
         cz = Math.floor(fields.z / cell);
       const jx = (hash2(cx, cz, salted(salt)) / u32 - 0.5) * LATTICE_JITTER * 2,
         jz = (hash2(cx, cz, salted(salt + 31)) / u32 - 0.5) * LATTICE_JITTER * 2;
+      hit.ix = cx;
+      hit.iz = cz;
       hit.cx = (cx + 0.5 + jx) * cell;
       hit.cz = (cz + 0.5 + jz) * cell;
       hit.d = Math.hypot(hit.cx - fields.x, hit.cz - fields.z);
