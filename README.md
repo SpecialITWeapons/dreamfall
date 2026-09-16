@@ -4,6 +4,35 @@ A flight from a dream: a person in a free-fall pose glides over an endless,
 procedural world. A page meant to stay open next to your work. The pattern
 and source of the ported modules is [fly-with-me](https://github.com/kunchenguid/fly-with-me) (MIT).
 
+## Why this repository exists
+
+The page is real and I want it to work. But the reason I started it is that I
+wanted to find out how far an agent can carry a codebase on its own, and this is
+the experiment: Claude Code working in a cloud session, on a repository it does
+not share a machine with, for as long as it can keep the thread.
+
+What I am actually watching:
+
+- **Git as the interface.** Branches, commits, pull requests, CI, review. Not
+  "can it write a function" but can it land one -- keep its own history legible,
+  get a red build green, and say plainly when it cannot.
+- **The port.** The first half of the work is taking someone else's finished
+  application, fly-with-me, and carrying its parts across faithfully. That half
+  has a right answer to be measured against. The second half is growing a line of
+  my own from it, where nothing does.
+- **Memory across sessions.** A session ends when its context fills. The specs,
+  the plans and the notes in `docs/` are there so the next one does not start by
+  reading a chat log. When that hand-off fails, it fails visibly.
+- **The models.** What each one can hold in its head at once, what it plans
+  before it types, what it finishes, and what it quietly leaves out.
+
+The rules I run it by: the agent writes the code, the specifications, the plans
+and the commit messages; I read them and decide. Anything it measured, it had to
+measure -- the numbers in `docs/perf-notes.md` are readings, not estimates. When
+it broke something, the history says so, because a green build at the end is not
+the interesting part. `VISION.md` is about the page; this section is about the
+repository.
+
 ## Running it
 
     npm install

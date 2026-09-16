@@ -6,6 +6,8 @@ import { DEFAULT_OUTFIT, DEFAULT_PATTERN, outfitById } from '../../src/engine/av
 import {
   HUMAN_BOUNDS,
   HUMAN_TRIANGLE_BUDGET,
+  TORSO,
+  UPPER,
   createProceduralHuman,
 } from '../../src/engine/avatar/ProceduralHuman';
 
@@ -46,7 +48,84 @@ const meshes = (root: Object3D) => {
   return out;
 };
 
+/** Hold a pose until the joints have caught up: the limbs have weight, so one frame is not the answer. */
+const hold = (
+  human: ReturnType<typeof createProceduralHuman>,
+  over: Partial<FlightPose> = {},
+  seconds = 0.6,
+) => {
+  for (let t = 0; t < seconds; t += 0.05) human.update(pose(over), 0.05);
+};
+
 describe('createProceduralHuman', () => {
+  /** A point of the figure in the figure's own frame, whatever the flight is doing to it. */
+  const inBody = (human: ReturnType<typeof createProceduralHuman>, name: string) =>
+    human.object.worldToLocal(parts(human.object, name)[0]!.clone());
+
+  it('carries its limbs with weight: the far joints arrive after the near ones', () => {
+    const human = createProceduralHuman(lit);
+    human.update(pose(), 0); // placed, not flown: dt <= 0 means "be there now"
+    const joint = (name: string) => human.object.getObjectByName(name)!.quaternion.clone();
+    const shoulder = joint('shoulderL'),
+      elbow = joint('elbowL');
+    human.update(pose({ pitch: -0.5 }), 0.05); // one frame into a dive
+    const movedShoulder = shoulder.angleTo(joint('shoulderL')),
+      movedElbow = elbow.angleTo(joint('elbowL'));
+    expect(movedShoulder).toBeGreaterThan(0.02);
+    expect(movedElbow).toBeLessThan(movedShoulder);
+
+    // and given the time, the same pose arrives in full: a lag, not a limit
+    const settled = createProceduralHuman(lit);
+    settled.update(pose({ pitch: -0.5 }), 0);
+    hold(human, { pitch: -0.5 }, 2);
+    for (const name of ['shoulderL', 'elbowL', 'kneeL']) {
+      const there = settled.object.getObjectByName(name)!.quaternion;
+      expect(joint(name).angleTo(there)).toBeLessThan(0.05);
+    }
+  });
+
+  it('folds into a track in a dive: the arms come back along the body and straighten', () => {
+    const human = createProceduralHuman(lit);
+    human.update(pose(), 0);
+    const boxHand = inBody(human, 'hand');
+    const shoulder = inBody(human, 'shoulderL');
+    const bend = (h: ReturnType<typeof createProceduralHuman>) => {
+      const s = inBody(h, 'shoulderL'),
+        e = inBody(h, 'elbowL'),
+        hand = inBody(h, 'hand');
+      return e.clone().sub(s).angleTo(hand.clone().sub(e));
+    };
+    // in the box the hands are out in front, and the elbow is well bent
+    expect(boxHand.z).toBeGreaterThan(shoulder.z);
+    expect(bend(human)).toBeGreaterThan(1.2);
+
+    human.update(pose({ pitch: -0.5 }), 0); // full dive
+    const trackHand = inBody(human, 'hand');
+    // the hands come back past the shoulder, in toward the hips, and the arm
+    // straightens, which together is what a track looks like
+    expect(trackHand.z).toBeLessThan(shoulder.z);
+    expect(Math.abs(trackHand.x)).toBeLessThan(Math.abs(boxHand.x));
+    expect(bend(human)).toBeLessThan(0.7);
+
+    human.update(pose({ pitch: 0.6 }), 0); // a climb spreads them again
+    expect(inBody(human, 'hand').z).toBeGreaterThan(boxHand.z);
+  });
+
+  it('hangs the arms on the torso rather than beside it', () => {
+    const human = createProceduralHuman(lit);
+    for (const side of ['shoulderL', 'shoulderR']) {
+      const joint = world(human.object, side);
+      // Where the torso's surface is in the direction of the joint: the
+      // ellipsoid's own radius at that bearing. A joint further out than the
+      // arm is thick leaves daylight between the arm and the body, which is
+      // exactly what it used to do (8.3 cm of it).
+      const local = joint.clone().sub(TORSO.at);
+      const reach = Math.hypot(local.x / TORSO.rx, local.y / TORSO.ry, local.z / TORSO.rz);
+      const gap = local.length() * (1 - 1 / reach);
+      expect(gap).toBeLessThan(UPPER.r);
+    }
+  });
+
   it('stays inside the triangle budget, casts shadows, and has an eye ahead of the chest', () => {
     const human = createProceduralHuman(lit);
     expect(human.triangles).toBeLessThanOrEqual(HUMAN_TRIANGLE_BUDGET);
@@ -57,7 +136,7 @@ describe('createProceduralHuman', () => {
     expect(HUMAN_BOUNDS.below).toBeGreaterThan(0);
     expect(HUMAN_BOUNDS.radius).toBeGreaterThan(0.8);
     const all = meshes(human.object);
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(20);
     expect(all.every((m) => m.castShadow)).toBe(true);
   });
   it('holds the box position: elbows and knees bent, hands ahead of the eye, feet above the back', () => {
@@ -105,7 +184,7 @@ describe('createProceduralHuman', () => {
     const level = shoulderL.quaternion.clone();
     // read the arm in the figure's own frame: the object's own pitch must not count
     const armIn = (p: Partial<FlightPose>) => {
-      human.update(pose(p), 0.05);
+      hold(human, p);
       const q = shoulderL.quaternion.clone();
       return new Vector3(0, 1, 0).applyQuaternion(q);
     };
@@ -145,16 +224,20 @@ describe('createProceduralHuman', () => {
     human.update(pose({ windPhase: 0 }), 0.05);
     const restL = shoulderL.quaternion.clone(),
       restR = shoulderR.quaternion.clone();
-    human.update(pose({ windPhase: 0, bank: -0.4 }), 0.05);
-    expect(restL.angleTo(shoulderL.quaternion)).toBeGreaterThan(0.1);
-    expect(restR.angleTo(shoulderR.quaternion)).toBeLessThan(0.01);
+    hold(human, { windPhase: 0, bank: -0.4 });
+    const droppedL = restL.angleTo(shoulderL.quaternion),
+      droppedR = restR.angleTo(shoulderR.quaternion);
+    expect(droppedL).toBeGreaterThan(0.1);
+    expect(droppedR).toBeLessThan(droppedL / 4);
   });
-  it('hides the body in the first person and keeps the forearms, unless told not to', () => {
+  it('hides the body in the first person and keeps the whole arm, unless told not to', () => {
     const human = createProceduralHuman(lit);
     human.update(pose({ view: 'fpp' }), 0.05);
     const visible = meshes(human.object).filter((m) => m.visible);
-    expect(visible.length).toBe(4);
-    expect(visible.every((m) => m.name === 'forearm' || m.name === 'hand')).toBe(true);
+    // both arms, shoulder cap to glove: forearms alone hung in the air with
+    // nothing joining them to the viewer
+    expect(visible.length).toBe(8);
+    expect(new Set(visible.map((m) => m.name))).toEqual(new Set(['deltoid', 'upperArm', 'forearm', 'hand']));
     human.update(pose({ view: 'tpp' }), 0.05);
     expect(meshes(human.object).every((m) => m.visible)).toBe(true);
     const bare = createProceduralHuman(lit, { fppHands: false });

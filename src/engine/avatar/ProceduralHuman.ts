@@ -47,9 +47,17 @@ const UP = new Vector3(0, 1, 0),
 // directions. The elbow bends 80 degrees and the knee 57, so both read as
 // joints rather than as one stiff limb; the hands end up ahead of the eye and
 // the feet above the back.
-const SHOULDER = new Vector3(0.24, 0.03, 0.26),
+/** The chest, and where it sits: the shoulders have to reach it. */
+export const TORSO = { rx: 0.21, ry: 0.13, rz: 0.31, at: new Vector3(0, 0, 0.05) };
+/**
+ * The shoulder used to sit at x = 0.24, which is 8 cm outside the chest it
+ * hangs on -- more than the arm is thick, so there was daylight between the two.
+ * At 0.20 the arm's own capsule reaches the surface, and the cap below covers
+ * the joint the way a suit's shoulder does.
+ */
+const SHOULDER = new Vector3(0.2, 0.03, 0.26),
   HIP = new Vector3(0.1, -0.02, -0.42);
-const UPPER = { r: 0.055, len: 0.3 },
+export const UPPER = { r: 0.055, len: 0.3 },
   FORE = { r: 0.045, len: 0.27 },
   THIGH = { r: 0.075, len: 0.42 },
   SHIN = { r: 0.055, len: 0.4 };
@@ -60,6 +68,43 @@ const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normaliz
 const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
 const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
 const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
+/**
+ * Where the upper arms go in a full dive. A track is not the box turned about
+ * the figure's own up axis -- that swings the arms out sideways, which is the
+ * one direction a track does not go. It is a second pose, arms back along the
+ * body, and a dive walks from one to the other.
+ */
+const trackDir = (side: number) => new Vector3(side * 0.15, -0.02, -0.99).normalize();
+/**
+ * The track. A dive folds the box into it: the upper arms swing back through
+ * this many radians about the figure's own up axis, the elbows straighten by
+ * this share of their bend, and the knees give up some of theirs -- so the
+ * forearms end up along the body with the hands at the hips, which is the
+ * position the owner asked for and the one that actually goes fast. `at` is the
+ * pitch that counts as all the way down.
+ */
+/**
+ * How far a full dive folds the box into a track: all the way to trackDir at
+ * the shoulder, this share of the elbow's bend and of the knee's. `at` is the
+ * pitch that counts as all the way down.
+ */
+const TRACK = { at: 0.5, elbow: 0.85, knee: 0.4 };
+/**
+ * How long a joint takes to catch up with what the air is asking of it, s. The
+ * limbs used to arrive in the same frame as the shoulders, which is what made
+ * the figure read as a puppet: nothing had any weight. A first-order lag per
+ * joint, longer the further it is from the chest, is the cheapest honest
+ * substitute for inertia -- and it is also the phase offset the flutter needed,
+ * so it is not applied twice.
+ */
+const LAG: Record<Hinge['kind'], number> = {
+  shoulder: 0.1,
+  elbow: 0.17,
+  hip: 0.1,
+  knee: 0.17,
+  ankle: 0.24,
+};
+const IDENTITY = new Quaternion();
 
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
 function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
@@ -91,10 +136,18 @@ function limb(radius: number, length: number): BufferGeometry {
 interface Hinge {
   pivot: Group;
   rest: Quaternion;
+  /** Where a full dive takes this joint, when it has somewhere else to be. */
+  track?: Quaternion;
   /** Orientation in the figure's frame, for the child hinge's rest. */
   world: Quaternion;
   side: 1 | -1;
   kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+  /** What this joint is actually doing, as opposed to what the air asked for. */
+  swing: number;
+  drop: number;
+  back: number;
+  /** How far into the track this joint has folded, 0..1. */
+  fold: number;
 }
 
 export function createProceduralHuman(
@@ -141,7 +194,7 @@ export function createProceduralHuman(
   object.rotation.order = 'YXZ';
   const body = new Group();
   object.add(body);
-  part('torso', ellipsoid(0.21, 0.13, 0.31), 'suit', body, 0, 0, 0.05);
+  part('torso', ellipsoid(TORSO.rx, TORSO.ry, TORSO.rz), 'suit', body, TORSO.at.x, TORSO.at.y, TORSO.at.z);
   part('pelvis', ellipsoid(0.18, 0.12, 0.16), 'suit', body, 0, -0.01, -0.3);
   const head = new Group();
   head.position.set(0, 0.02, 0.42);
@@ -163,15 +216,22 @@ export function createProceduralHuman(
     dir: Vector3,
     above: Hinge | null,
     side: 1 | -1,
+    tracked?: Vector3,
   ): Hinge => {
     const world = new Quaternion().setFromUnitVectors(UP, dir);
     const rest = above ? above.world.clone().invert().multiply(world) : world.clone();
+    const track = tracked
+      ? (() => {
+          const w = new Quaternion().setFromUnitVectors(UP, tracked);
+          return above ? above.world.clone().invert().multiply(w) : w;
+        })()
+      : undefined;
     const pivot = new Group();
     pivot.name = name;
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
-    const h = { pivot, rest, world, side, kind };
+    const h: Hinge = { pivot, rest, track, world, side, kind, swing: 0, drop: 0, back: 0, fold: 0 };
     hinges.push(h);
     return h;
   };
@@ -185,8 +245,15 @@ export function createProceduralHuman(
       upperDir(side),
       null,
       side,
+      trackDir(side),
     );
-    part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot);
+    // The cap rides on the joint, so it turns with the arm as a deltoid does
+    // and closes the seam at every sweep rather than only at rest.
+    // The whole arm is what the first person keeps: a forearm on its own hangs
+    // in the air with nothing joining it to the viewer, and the cap is what
+    // makes the shoulder end of it something rather than a cut.
+    hands.add(part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot));
+    hands.add(part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot));
     const elbow = hinge(
       'elbow',
       `elbow${s}`,
@@ -242,7 +309,14 @@ export function createProceduralHuman(
       // straightens the knees, a climb spreads the arms forward and wide. Both
       // are rotations around the figure's own up axis, so the arms travel in
       // the plane of the shoulders instead of flapping.
-      const sweep = pose.pitch < 0 ? Math.min(-pose.pitch, 0.5) * 0.75 : -Math.min(pose.pitch, 0.6) * 0.32;
+      const dive = Math.min(Math.max(-pose.pitch, 0), TRACK.at) / TRACK.at;
+      // A climb still spreads the arms about the up axis; only the dive has
+      // somewhere specific to be.
+      const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
+
+      // dt <= 0 is "place it, now": the world puts the figure down once before
+      // the first frame, and a test asks for a pose without a frame to reach it.
+      const caught = (kind: Hinge['kind']) => (dt > 0 ? 1 - Math.exp(-dt / LAG[kind]) : 1);
       for (const h of hinges) {
         const phase = h.side > 0 ? 0 : 2.1;
         let swing = 0,
@@ -256,23 +330,36 @@ export function createProceduralHuman(
             break;
           case 'elbow':
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
-            back = sweep * 0.5;
+            // In a climb the elbows help spread the arms; in a dive they have
+            // nothing to add, because straightening is what folds them in.
+            back = sweep < 0 ? sweep * 0.5 : 0;
             break;
           case 'hip':
             swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
             break;
           case 'knee':
-            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4 - sweep * 0.3;
+            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
             break;
           case 'ankle':
             swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
+        const k = caught(h.kind);
+        h.swing += (swing - h.swing) * k;
+        h.drop += (drop - h.drop) * k;
+        h.back += (back - h.back) * k;
+        h.fold += (dive - h.fold) * k;
+        h.pivot.quaternion.copy(h.rest);
+        if (h.track && h.fold > 0) h.pivot.quaternion.slerp(h.track, h.fold);
+        // Straightening is a walk of the joint's own bend back toward none of
+        // it, so the forearm ends up along the upper arm whatever direction the
+        // upper arm is pointing by then.
+        if (h.kind === 'elbow' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.elbow);
+        if (h.kind === 'knee' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.knee);
         h.pivot.quaternion
-          .copy(h.rest)
-          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * drop))
-          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * back))
-          .premultiply(qx.setFromAxisAngle(AXIS_X, swing));
+          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop))
+          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back))
+          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing));
       }
       if (pose.view !== view) {
         view = pose.view;
