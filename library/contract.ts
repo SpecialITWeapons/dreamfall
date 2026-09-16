@@ -247,6 +247,11 @@ export interface Cell {
   size: number;
   corner: { x: number; z: number };
   center: { x: number; z: number };
+  /**
+   * How much of this cell belongs to the biome whose hook is running, 0..1.
+   * A hook asks about itself with this and about its neighbours with weight().
+   */
+  readonly share: number;
   weight(biomeId: string): number;
   /**
    * The base fields in the cell's centre. The tree line reads baseTemp, a

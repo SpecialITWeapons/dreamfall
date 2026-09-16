@@ -76,12 +76,13 @@ library/
   contract.ts                 zmiana: SpeciesSpec, PropSpec, TreeKit, PropKit, Placement, ScatterSpec;
                               Cell.fields/mix/blend; walidacja gatunków, propsów i odwołań do nich
   standard/populate.js        nowy: scatter, resolvePopulate
+  standard/snowLine.js        nowy: SNOW_LINE, snowLineAt (linia drzew dziś, śnieg w M5)
+  standard/math.js            nowy: sstep i clamp01, dziś prywatne w presence.js
   species/acacia.js birch.js blossom.js cypress.js deadwood.js elder.js oak.js palm.js pine.js
   props/boulders.js props/cairns.js
   biomes/*.js                 zmiana: dziesięć wpisów dostaje populate: { type: 'scatter', ... }
   index.js                    zmiana: rejestr niesie species i props
 src/engine/
-  terrain/SnowLine.ts         nowy: SNOW_LINE, snowLineAt (linia drzew dziś, śnieg w M5)
   terrain/Fields.ts           zmiana: hash i noise zasolone ziarnem świata
   terrain/TerrainMesh.ts      zmiana: ziemia czyta arkusz cienia
   scenery/Overrides.ts        nowy: pusta warstwa nadpisań
@@ -215,13 +216,13 @@ Co-Authored-By: <model> <noreply@anthropic.com>"
 
 **Files:**
 
-- Create: `src/engine/terrain/SnowLine.ts`
+- Create: `library/standard/snowLine.js`
 - Modify: `src/engine/terrain/Fields.ts`
 - Test: `tests/unit/snowLine.test.ts`, `tests/unit/fields.test.ts` (rozszerzenie)
 
 **Interfaces:**
 
-- `export const SNOW_LINE = { base: 200, slope: 380 } as const;` i `export function snowLineAt(baseTemp: number): number` — `base + slope * baseTemp`. W oryginale funkcja brała temperaturę schłodzoną i sama cofała ochłodzenie (`temp + max(0, h) / 2600`); w v2 `Fields.baseTemp` jest dokładnie tą liczbą i po to powstało, więc hak podaje ją wprost. Moduł jest czysty (żadnych importów poza typami) i istnieje po to, żeby warstwa śniegu z M5 czytała tę samą linię co linia drzew z M3b — dwie linie śniegu w jednym świecie to błąd, którego nikt nie zauważy przez pół roku.
+- `export const SNOW_LINE = { base: 200, slope: 380 };` i `export function snowLineAt(baseTemp)` — `base + slope * baseTemp`. W oryginale funkcja brała temperaturę schłodzoną i sama cofała ochłodzenie (`temp + max(0, h) / 2600`); w v2 `Fields.baseTemp` jest dokładnie tą liczbą i po to powstało, więc hak podaje ją wprost. Moduł jest czysty (zero importów) i istnieje po to, żeby warstwa śniegu z M5 czytała tę samą linię co linia drzew z M3b — dwie linie śniegu w jednym świecie to błąd, którego nikt nie zauważy przez pół roku. **Mieszka w `library/`, nie w `src/`**, bo pierwszym konsumentem jest `library/standard/populate.js`, a biblioteka nigdy nie importuje z `src/`; precedens jest obok, w `library/standard/presence.js`, gdzie leżą stałe `CLIMATE`.
 - `createFields(sampler)` miesza `sampler.seed` do `hash` i `noise`:
 
 ```ts
@@ -333,8 +334,8 @@ Co-Authored-By: <model> <noreply@anthropic.com>"
 **Interfaces:**
 
 - `createOverrides(entries?: Override[])` z `for(key: string): Override | null` i `size`. Klucz komórki to `cell:${gx},${gz}`, klucz stanowiska `site:${id}`. `Override` na dziś: `{ key: string; skip?: boolean; placements?: Placement[] }` — „nie stawiaj tu nic" i „postaw dokładnie to".
-- W M3b warstwa jest **pusta**: `createOverrides()` bez argumentów, `for` zawsze `null`. Spec §18.2 mówi wprost, że pierwsza wersja odpowiada pusto, a warstwa istnieje po to, żeby edytor z M6 miał gdzie wejść i żeby pierścień od początku pytał. Pierścień pyta raz na komórkę, przed wywołaniem haków (Task 6).
-- Koszt: jedna `Map`, jedno zapytanie na komórkę na przebudowę (1681 zapytań co 96 m). Przy pustej mapie to jest `map.size === 0 ? null : map.get(key)` — sprawdzenie rozmiaru jest tu po to, żeby pusta warstwa nie budowała klucza jako stringa.
+- W M3b warstwa jest **pusta**: `createOverrides()` bez argumentów, `for` zawsze `null`. Spec §18.2 mówi wprost, że pierwsza wersja odpowiada pusto, a warstwa istnieje po to, żeby edytor z M6 miał gdzie wejść i żeby pierścień od początku pytał. Pierścień pyta raz na komórkę, przed wywołaniem haków, i **sam trzyma bramkę `size === 0`** (Task 6).
+- Koszt: jedna `Map`, jedno zapytanie na komórkę na przebudowę (1681 zapytań co 96 m). Pusta warstwa ma nie kosztować nic, a sprawdzenie rozmiaru **wewnątrz** `for(key)` tego nie załatwia — klucz jest już wtedy zbudowany. Dlatego `size` jest publiczne i to pierścień pyta o nie pierwszy: `overrides.size === 0 ? null : overrides.for(cellKey(gx, gz))`. `for` sprawdza rozmiar drugi raz, więc wywołujący, który zapomni, płaci tylko za własny string.
 
 - [ ] **Step 1: Test, implementacja, commit**
 

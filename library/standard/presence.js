@@ -6,6 +6,8 @@
  * monotonic in "how much of this place is mine".
  */
 
+import { clamp01, sstep } from './math.js';
+
 /**
  * The climate space, ported from fly-with-me: the axes are stretched around
  * their middle so the ends of temperature, moisture and region are reachable,
@@ -15,17 +17,7 @@
 export const CLIMATE = { stretch: 2.2, radius: 0.12, sharpness: 2.2 };
 
 /** @type {(v: number) => number} */
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
-/** @type {(v: number) => number} */
 const axis = (v) => clamp01((v - 0.5) * CLIMATE.stretch + 0.5);
-/**
- * Smoothstep, local so that library/ never reaches into the engine for arithmetic.
- * @type {(a: number, b: number, x: number) => number}
- */
-const sstep = (a, b, x) => {
-  const t = clamp01((x - a) / (b - a || 1e-9));
-  return t * t * (3 - 2 * t);
-};
 
 /**
  * A soft cell in climate space.
