@@ -492,3 +492,34 @@ Czego się boję w tym planie, w kolejności:
 4. **`kit.line` dzielony z drogami.** Kuszące jest skopiowanie próbkowania
    łamanej. Jeśli skopiuję, następna poprawka mitry naprawi jedno z dwóch
    miejsc — i będzie to widać dopiero na płocie.
+
+## Jak wyszło (2026-09-16, po wykonaniu)
+
+Cztery strachy z samoprzeglądu, po kolei:
+
+1. **Koszt planu miasteczka** — zmierzony i mieści się: 18,8 ms przy 900 m,
+   próg 25. Ale pierwszy pomiar dał 24,6, czyli mieścił się o dwa procent, i to
+   nie jest decyzja. Klucze hasza jako liczby zamiast stringów zrobiły
+   z 24,6 → 18,8 przy identycznym miasteczku. Bez tego Task 5 byłby wrócił do
+   (b) na pierwszej innej maszynie.
+2. **Cicha odmowa puli** — nie zdarza się (najgorsza pula w jednej trzeciej),
+   ale jest teraz policzalna i test przeglądarkowy żąda zera.
+3. **Dwie kraty** — zmierzone w Tasku 7, zero kolizji na 65 536 masek ziarna.
+4. **`kit.line` dzielony z drogami** — `walkPolyline` jest jeden, sprawdzone
+   złamaniem `MITER_LIMIT`: czerwienią się oba zestawy testów.
+
+Czego samoprzegląd **nie** przewidział, a okazało się ważniejsze od trzech
+z powyższych:
+
+- **`maxSlope` nie jest narzędziem do cięcia gruntu.** Plan zakładał, że
+  miasteczko dostanie ostrzejszy próg. Pomiar pokazał, że ostrzejszy próg nie
+  zmienia cięcia (167 → 146 m mediany) i tylko przerzedza miasteczka dwukrotnie.
+  Stąd `maxCut`, którego w planie nie było.
+- **Rezerwacje parcel nie przerzedzają scatteru tak, jak wyglądają.** Pokrywają
+  jakąś piątą część dysku, a `floor()` w scatterze zjada resztę: przy gęstości
+  0,55 wieś miała 1,7 drzewa na hektar w środku i 1,7 na zewnątrz — ten sam las,
+  z domami w środku. Dopiero 0,3 robi z tego polanę.
+- **Test „lasu wokół wsi" mierzył wieś przeciwko jej własnemu obrzeżu.** Pasmo
+  od 1,4 do 2,4 promienia leży wewnątrz obecności wsi (promień + pióro), więc
+  „las na zewnątrz" był przerzedzony przez samą wieś. Stosunek czytał się jako
+  0,74 dla czegoś, co naprawdę wynosi 0,40.
