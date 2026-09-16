@@ -64,13 +64,16 @@ export function createFields(sampler: WorldSampler): FieldsReader {
       // everywhere for a ninth of the cost.
       const cx = Math.floor(fields.x / cell),
         cz = Math.floor(fields.z / cell);
-      const jx = (hash2(cx, cz, salt) / u32 - 0.5) * LATTICE_JITTER * 2,
-        jz = (hash2(cx, cz, salt + 31) / u32 - 0.5) * LATTICE_JITTER * 2;
+      const jx = (hash2(cx, cz, salted(salt)) / u32 - 0.5) * LATTICE_JITTER * 2,
+        jz = (hash2(cx, cz, salted(salt + 31)) / u32 - 0.5) * LATTICE_JITTER * 2;
       hit.cx = (cx + 0.5 + jx) * cell;
       hit.cz = (cz + 0.5 + jz) * cell;
       hit.d = Math.hypot(hit.cx - fields.x, hit.cz - fields.z);
       hit.cell = cell;
-      hit.salt = salt;
+      // The stream the hit hands out is salted too: the sites of M4 stand on
+      // this lattice, and two worlds whose villages sit on the same grid are
+      // one world with two palettes.
+      hit.salt = salted(salt);
       return hit;
     },
   };

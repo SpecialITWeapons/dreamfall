@@ -82,12 +82,23 @@ describe('createFields', () => {
     const here = createFields(createWorldSampler(7)).at(2000, 3000);
     const noise = here.noise(370, 1),
       hash = here.hash(7);
+    // the lattice too: it is where the sites of M4 will stand, and two worlds
+    // whose villages sit on the same grid are one world with two palettes
+    const centre = here.lattice(6000, 3),
+      where = [centre.cx, centre.cz],
+      stream = centre.u(0);
     const other = createFields(createWorldSampler(8)).at(2000, 3000);
     expect(other.noise(370, 1)).not.toBe(noise);
     expect(other.hash(7)).not.toBe(hash);
+    const elsewhere = other.lattice(6000, 3);
+    expect([elsewhere.cx, elsewhere.cz]).not.toEqual(where);
+    expect(elsewhere.u(0)).not.toBe(stream);
     const again = createFields(createWorldSampler(7)).at(2000, 3000);
     expect(again.noise(370, 1)).toBe(noise); // and one seed is still one world
     expect(again.hash(7)).toBe(hash);
+    const back = again.lattice(6000, 3);
+    expect([back.cx, back.cz]).toEqual(where);
+    expect(back.u(0)).toBe(stream);
     expect(noise).toBeGreaterThanOrEqual(-1);
     expect(noise).toBeLessThanOrEqual(1);
     expect(hash).toBeGreaterThanOrEqual(0);
