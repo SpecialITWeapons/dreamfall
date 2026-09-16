@@ -207,6 +207,33 @@ Rzeczy, które trzeba rozstrzygnąć w trakcie i zapisać:
 - Kolejność losowań ze strumienia stanowiska jest powtarzalnością
   miasteczka; zmiana kolejności to inne miasteczko z tego samego ziarna.
 
+**Rozstrzygnięte w trakcie (2026-09-16):**
+
+1. **`settlement()` przyjmuje parametry i plan.** Miał zaszyte słowo „village"
+   w id, nazwie i wywołaniu planu. Parametry niosą teraz własne `id`, `name`,
+   `landmark` i `paint`. Wieś przechodzi przez to bez zmiany.
+2. **Chata dostaje trzecią kondygnację.** Centrum miasteczka ma być wyższe niż
+   obrzeże, a jedyne inne wypieki na 3 kondygnacje to młyn i wieża — centrum
+   miasteczka z samych wiatraków to nie jest centrum miasteczka. Koszt: jeden
+   wypiek i jedna pula więcej (Task 6 i tak je mierzy).
+3. **`maxCut` zamiast ostrzejszego `maxSlope`** — i to jest pomiar, nie gust.
+   Plan zakładał, że miasteczko potrzebuje znacznie ostrzejszego `maxSlope`.
+   Zmierzone: zaostrzenie z 0,45 do 0,06 przesuwa medianę ucieczki gruntu od
+   środka w promieniu 900 m ze 167 m na 146 m — czyli o nic — odrzucając przy
+   tym dwa stanowiska na trzy (41 km między miasteczkami robi się 78 km).
+   Na setkach metrów to jest rzeźba terenu, nie pochodna w jednym punkcie.
+   Hak `lattice` dostał więc `maxCut` (w metrach) osobno od `maxSlope`.
+   Tabele: `docs/superpowers/notes/2026-09-16-m4b-ciecie-miasteczka.md`.
+4. **Liczba budynków wychodzi z konstrukcji, nie z sufitu.** Generator
+   przechodzi wszystkie parcele, jakie oferuje siatka, sumuje `1 - out²`
+   i dobiera udział tak, żeby liczba wypadła w `lots.count`. Sufit obciąłby
+   miasteczko przestrzennie — dokładnie ta wada, którą ma sufit drzew
+   w pierścieniu.
+5. **`storeys`: zakres kondygnacji, o jaki osada wolno prosi każdy rodzaj.**
+   Plan jest czystą funkcją i nie pyta kitu, co jest upieczone, a prośba
+   o kondygnację bez wypieku **rzuca w kolejce**. Zakres jest więc zapisany
+   w parametrach, a test trzyma go przy zakresach z przepisów.
+
 - [ ] **Step 1: Test, który nie przechodzi** — plan tej samej komórki dwa razy
       jest identyczny; liczba budynków mieści się w 500..2000; żadne dwie
       parcele nie zachodzą na siebie; parcela trzyma odstęp od osi każdej
@@ -339,12 +366,24 @@ klimatyczne mają tam bliską zeru wagę.
 To jest w zakresie M4b: specyfikacja §8 wymienia wśród dodatków „propsy wzdłuż
 dróg (latarnie, drzewa), płoty i sady dla wsi".
 
-- [ ] **Step 1: Test, który nie przechodzi** — w pierścieniu nad wsią rośnie coś
-      między krawędzią zabudowy a krawędzią obecności, i **nic** nie rośnie na
-      rezerwacjach ani na drogach.
-- [ ] **Step 2:** Dać wsi `populate`: rzadkie drzewa i krzewy, gęstsze ku
-      krawędzi (odwrotnie niż parcele), plus sady przy `kit.line` z Taska 2.
-      Rezerwacje już trzymają je z dala od rynku i ulic — to jest gotowe od M4a.
+- [x] **Step 1: Test, który nie przechodzi** — „nic na rezerwacjach ani na
+      drogach" **już było** (`ring.test.ts`, „keeps the scatter off a plan").
+      Brakująca połowa siedziała w `contract.test.ts`, który twierdził wprost,
+      że osada nic nie sieje, „co utrzymuje jej grunt wsią, a nie lasem".
+      To było to zdanie, które oko właściciela obaliło; teraz mówi odwrotnie.
+- [x] **Step 2:** Zrobione — i **prościej, niż plan zgadywał**. Przerzedzanie ku
+      środkowi okazało się niepotrzebne: rezerwacje parcel już odmawiają drzewa
+      tam, gdzie stoją domy, więc jedna gęstość na całym dysku wychodzi rzadko
+      w zabudowie i pełno na obrzeżu sama z siebie. Deskryptor `scatter`
+      wystarczył, a to znaczy, że osada dostała też **trawę** — i to jest
+      większa połowa naprawy, bo okno trawy składa gęstość każdego biomu jego
+      wagą, więc wieś bez gęstości była łysa bardziej niż łąka wokół niej.
+      Sady: `kit.line` z rodzajem `hedge`, pierwszy użytkownik Taska 3
+      w bibliotece. Żywopłot nie zajmuje gruntu (tak mówi kontrakt), więc
+      w środku rośnie własny scatter wsi — i dlatego obrysowany kwadrat drzew
+      czyta się jako zasadzony. Pięć prób, zmierzone 3,8 sadu na wieś.
+      Rysowane na samym końcu: test trzyma, że żywopłoty nie ruszyły ani
+      jednego domu.
 - [ ] **Step 3: Zdjęcie przed i po**, tą samą drogą co przy nachyleniu, i commit.
 
 ---
