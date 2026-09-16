@@ -114,12 +114,12 @@ widoczne, podąża za terenem dołem). Rozstrzygnąć, czy to dzieli kod z
 `buildRoads` (próbkowanie łamanej, mitra na zakręcie) — najpewniej tak, i
 wtedy wspólna część idzie do jednej funkcji, a nie kopiuje się.
 
-- [ ] **Step 1: Test, który nie przechodzi** (czysta geometria, więc Node):
+- [x] **Step 1: Test, który nie przechodzi** (czysta geometria, więc Node):
       odcinek 100 m o wysokości 1,2 m ma tyle wierzchołków, ile mówi
       próbkowanie; dół każdego wierzchołka siedzi na tym, co zwraca atrapa
       `heightAt`, a góra o `height` wyżej; zakręt 90° nie zwęża wstęgi;
       przekroczenie budżetu rzuca z nazwą stanowiska.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
