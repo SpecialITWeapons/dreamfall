@@ -89,6 +89,21 @@ const trackDir = (side: number) => new Vector3(side * 0.15, -0.02, -0.99).normal
  * pitch that counts as all the way down.
  */
 const TRACK = { at: 0.5, elbow: 0.85, knee: 0.4 };
+/**
+ * How long a joint takes to catch up with what the air is asking of it, s. The
+ * limbs used to arrive in the same frame as the shoulders, which is what made
+ * the figure read as a puppet: nothing had any weight. A first-order lag per
+ * joint, longer the further it is from the chest, is the cheapest honest
+ * substitute for inertia -- and it is also the phase offset the flutter needed,
+ * so it is not applied twice.
+ */
+const LAG: Record<Hinge['kind'], number> = {
+  shoulder: 0.1,
+  elbow: 0.17,
+  hip: 0.1,
+  knee: 0.17,
+  ankle: 0.24,
+};
 const IDENTITY = new Quaternion();
 
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
@@ -127,6 +142,12 @@ interface Hinge {
   world: Quaternion;
   side: 1 | -1;
   kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+  /** What this joint is actually doing, as opposed to what the air asked for. */
+  swing: number;
+  drop: number;
+  back: number;
+  /** How far into the track this joint has folded, 0..1. */
+  fold: number;
 }
 
 export function createProceduralHuman(
@@ -210,7 +231,7 @@ export function createProceduralHuman(
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
-    const h: Hinge = { pivot, rest, track, world, side, kind };
+    const h: Hinge = { pivot, rest, track, world, side, kind, swing: 0, drop: 0, back: 0, fold: 0 };
     hinges.push(h);
     return h;
   };
@@ -292,7 +313,10 @@ export function createProceduralHuman(
       // A climb still spreads the arms about the up axis; only the dive has
       // somewhere specific to be.
       const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
-      const straighten = dive * TRACK.elbow;
+
+      // dt <= 0 is "place it, now": the world puts the figure down once before
+      // the first frame, and a test asks for a pose without a frame to reach it.
+      const caught = (kind: Hinge['kind']) => (dt > 0 ? 1 - Math.exp(-dt / LAG[kind]) : 1);
       for (const h of hinges) {
         const phase = h.side > 0 ? 0 : 2.1;
         let swing = 0,
@@ -314,22 +338,28 @@ export function createProceduralHuman(
             swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
             break;
           case 'knee':
-            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4 - dive * TRACK.knee;
+            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
             break;
           case 'ankle':
             swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
+        const k = caught(h.kind);
+        h.swing += (swing - h.swing) * k;
+        h.drop += (drop - h.drop) * k;
+        h.back += (back - h.back) * k;
+        h.fold += (dive - h.fold) * k;
         h.pivot.quaternion.copy(h.rest);
-        if (h.track && dive > 0) h.pivot.quaternion.slerp(h.track, dive);
+        if (h.track && h.fold > 0) h.pivot.quaternion.slerp(h.track, h.fold);
         // Straightening is a walk of the joint's own bend back toward none of
         // it, so the forearm ends up along the upper arm whatever direction the
         // upper arm is pointing by then.
-        if (h.kind === 'elbow' && straighten > 0) h.pivot.quaternion.slerp(IDENTITY, straighten);
+        if (h.kind === 'elbow' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.elbow);
+        if (h.kind === 'knee' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.knee);
         h.pivot.quaternion
-          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * drop))
-          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * back))
-          .premultiply(qx.setFromAxisAngle(AXIS_X, swing));
+          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop))
+          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back))
+          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing));
       }
       if (pose.view !== view) {
         view = pose.view;

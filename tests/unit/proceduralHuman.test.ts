@@ -48,10 +48,41 @@ const meshes = (root: Object3D) => {
   return out;
 };
 
+/** Hold a pose until the joints have caught up: the limbs have weight, so one frame is not the answer. */
+const hold = (
+  human: ReturnType<typeof createProceduralHuman>,
+  over: Partial<FlightPose> = {},
+  seconds = 0.6,
+) => {
+  for (let t = 0; t < seconds; t += 0.05) human.update(pose(over), 0.05);
+};
+
 describe('createProceduralHuman', () => {
   /** A point of the figure in the figure's own frame, whatever the flight is doing to it. */
   const inBody = (human: ReturnType<typeof createProceduralHuman>, name: string) =>
     human.object.worldToLocal(parts(human.object, name)[0]!.clone());
+
+  it('carries its limbs with weight: the far joints arrive after the near ones', () => {
+    const human = createProceduralHuman(lit);
+    human.update(pose(), 0); // placed, not flown: dt <= 0 means "be there now"
+    const joint = (name: string) => human.object.getObjectByName(name)!.quaternion.clone();
+    const shoulder = joint('shoulderL'),
+      elbow = joint('elbowL');
+    human.update(pose({ pitch: -0.5 }), 0.05); // one frame into a dive
+    const movedShoulder = shoulder.angleTo(joint('shoulderL')),
+      movedElbow = elbow.angleTo(joint('elbowL'));
+    expect(movedShoulder).toBeGreaterThan(0.02);
+    expect(movedElbow).toBeLessThan(movedShoulder);
+
+    // and given the time, the same pose arrives in full: a lag, not a limit
+    const settled = createProceduralHuman(lit);
+    settled.update(pose({ pitch: -0.5 }), 0);
+    hold(human, { pitch: -0.5 }, 2);
+    for (const name of ['shoulderL', 'elbowL', 'kneeL']) {
+      const there = settled.object.getObjectByName(name)!.quaternion;
+      expect(joint(name).angleTo(there)).toBeLessThan(0.05);
+    }
+  });
 
   it('folds into a track in a dive: the arms come back along the body and straighten', () => {
     const human = createProceduralHuman(lit);
@@ -153,7 +184,7 @@ describe('createProceduralHuman', () => {
     const level = shoulderL.quaternion.clone();
     // read the arm in the figure's own frame: the object's own pitch must not count
     const armIn = (p: Partial<FlightPose>) => {
-      human.update(pose(p), 0.05);
+      hold(human, p);
       const q = shoulderL.quaternion.clone();
       return new Vector3(0, 1, 0).applyQuaternion(q);
     };
@@ -193,9 +224,11 @@ describe('createProceduralHuman', () => {
     human.update(pose({ windPhase: 0 }), 0.05);
     const restL = shoulderL.quaternion.clone(),
       restR = shoulderR.quaternion.clone();
-    human.update(pose({ windPhase: 0, bank: -0.4 }), 0.05);
-    expect(restL.angleTo(shoulderL.quaternion)).toBeGreaterThan(0.1);
-    expect(restR.angleTo(shoulderR.quaternion)).toBeLessThan(0.01);
+    hold(human, { windPhase: 0, bank: -0.4 });
+    const droppedL = restL.angleTo(shoulderL.quaternion),
+      droppedR = restR.angleTo(shoulderR.quaternion);
+    expect(droppedL).toBeGreaterThan(0.1);
+    expect(droppedR).toBeLessThan(droppedL / 4);
   });
   it('hides the body in the first person and keeps the whole arm, unless told not to', () => {
     const human = createProceduralHuman(lit);
