@@ -247,11 +247,59 @@ To jest **ryzyko projektowe, nie błąd do naprawienia w locie**. Rozstrzygnąć
   (reguła silnika, nie biblioteki),
 - albo przyjmujemy, że się zdarza, i mierzymy, jak często.
 
-- [ ] **Step 1: POMIAR** — na ilu komórkach ziarna 42 w promieniu 100 km wieś
-      i miasteczko zachodzą na siebie. **Dopiero ta liczba mówi, czy warto
-      cokolwiek robić.**
-- [ ] **Step 2:** Rozstrzygnięcie, implementacja jeśli pomiar jej żąda, test,
-      commit.
+- [x] **Step 1: POMIAR** — zrobiony, `docs/superpowers/notes/2026-09-16-m4b-dwie-kraty.md`.
+      Obszar: 2,24 mln posadzonych komórek, 73,9 mln km². **Środek wsi wpada
+      w promień miasteczka na 1,51 % miasteczek**, czyli raz na 82–127 godzin
+      lotu. Dwa miasteczka ani dwie wsie nie zachodzą nigdy — ryzyko jest
+      wyłącznie międzykratowe.
+- [x] **Step 2: rozstrzygnięte — trzecie wyjście, przyjmujemy i zapisujemy.**
+      Uzasadnienie w notatce: odrzucanie stanowiska w `Sites` **pogorszyłoby**
+      sprawę, bo grunt psuje obecność, a nie plan — zostałby płaski placek gliny
+      bez domów, czyli dokładnie ta wada, którą M4a usunęło. Wygaszanie obecności
+      wsi przez miasteczko jest jedyną rzeczą, która naprawia grunt, nic nie
+      kosztuje na texel, i jego ceną są te same liczby w dwóch plikach — kształt
+      na kiedyś, nie na teraz.
+
+      **Pomiar znalazł przy okazji coś kosztowniejszego niż samo zadanie:** druga
+      krata podwajała wypełnienie okna (783 → 1810 ms), bo pamięć środka kraty
+      w `Fields.ts` miała jedno miejsce, a dwie kraty ją tłukły. Naprawione
+      osobnym commitem, cztery miejsca, 828 ms.
+
+---
+
+### Task 7b: `maxSlope` nie odrzuca niczego
+
+**Files:** `library/contract.ts`, `library/standard/presence.js`,
+`src/engine/terrain/Fields.ts`, `library/settlements/`, `tests/unit/`
+
+Znalezione przy pomiarze Taska 7 i sprawdzone analitycznie. Hak `lattice`
+kończy się tak:
+
+```js
+const room = maxSlope * Math.max(hit.d, radius);
+return near * (1 - sstep(room, room * 2, Math.abs(f.baseHeight - hit.h)));
+```
+
+Siedzisko jest sprawdzane **w środku kraty**, gdzie `hit.d = 0`, a `f.baseHeight`
+i `hit.h` to ta sama liczba — ten sam punkt. Różnica jest zerem, `sstep` zwraca
+zero, a człon wychodzi 1. **`maxSlope` nie ma jak odrzucić siedziska**; fade'uje
+tylko brzegi osady na nierównym gruncie. Specyfikacja §8 żąda „nachylenia < 0,25
+**w centrum**" i tego wymogu nie ma w kodzie.
+
+Przy wsi z plateau 0,3 to jest łagodne. **Przy miasteczku z plateau 1,0
+i promieniem do 900 m to jest 900-metrowy płaski dysk wcięty w zbocze** — i to
+jest powód, dla którego to zadanie stoi przed Taskiem 5, a nie po nim.
+
+- [ ] **Step 1: Test, który nie przechodzi** — stanowisko na stromym zboczu
+      ziarna 42 (znaleźć pomiarem, nie zgadnąć) jest dziś posadzone, a nie
+      powinno być.
+- [ ] **Step 2:** Rozstrzygnąć, skąd bierze się nachylenie w środku. `Fields`
+      nie ma pola nachylenia, a siedzisko czyta sampler, nie okno wysokości.
+      Najprościej: `LatticeHit` niesie nachylenie środka, próbkowane z samplera
+      razem z `h` i `t` — pamięć ma teraz cztery miejsca, więc to kilka próbek
+      na komórkę kraty, nie na texel. **Zmierzyć koszt wypełnienia okna przed
+      i po**, bo to jest dokładnie to miejsce, które przed chwilą podwoiło fill.
+- [ ] **Step 3: Testy i commit.**
 
 ---
 
@@ -269,7 +317,13 @@ miasteczko może być daleko od startu.
   2. **Żaden dom nie zginął**: licznik odmówionych z Taska 6 jest zerem.
   3. **Ziemia pod nim jest płaska**, a poza pióropuszem już nie — kontrast, jak
      przy wsi, bo plateau miasteczka jest pełne (1,0), więc różnica ma być
-     **większa** niż przy wsi.
+     **większa** niż przy wsi. **Uwaga z pomiaru Taska 7:** miejsce trzeba
+     wybrać jako miasteczko bez wsi w promieniu 1150 m (nie 900), bo wieś
+     w środku miasteczka rozcieńcza plateau do 0,35 naturalnej rzeźby i podnosi
+     rozpiętość z 0,01 m do 32,8 m. I nawet wtedy tylko 150 z 200 miasteczek
+     jest martwo płaskich — asercja „rozpiętość < 0,5 m" na losowym miasteczku
+     migotałaby w jednym przypadku na cztery. Po Tasku 7b ta liczba się zmieni;
+     zmierzyć ponownie.
   4. **Lot go nie przecina** — dominanta do 60 m jest wyższa niż cokolwiek, co
      lot dotąd omijał, więc to jest test na `MIN_CLEARANCE` nad wieżą, nie nad
      dachem.
