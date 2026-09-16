@@ -62,16 +62,23 @@ export const VILLAGE = {
    * the fragment and then sows nothing in their place. The owner's words for
    * it were that the ground around the houses is empty and looks odd.
    *
-   * It needs no thinning toward the edge: the lots' own reservations already
-   * refuse a tree where the houses are, so the same density over the whole disc
-   * comes out sparse in the built part and full at the fringe by itself. The
-   * grass is the bigger half of the fix -- a village had strictly less grass
-   * than the meadow around it, which is exactly backwards for trodden ground
-   * with gardens on it.
+   * The density is a fraction of the wood's and it has to be, because the
+   * reservations alone do far less than they look: they cover about a fifth of
+   * the disc, and the scatter's own `floor(density * share * grove)` swallows
+   * most of the rest. Measured over the real ring at seed 42's village, 0.55
+   * put 1.7 trees a hectare inside the village against 1.7 outside it -- the
+   * same wood, with houses in it. At 0.3 it is 0.5 against 1.4, which is a
+   * clearing with trees in it, which is what a village is.
+   *
+   * No thinning toward the middle beyond that: the reservations do refuse a
+   * tree where the houses are, and one density over the whole disc is enough
+   * once it is the right one. The grass is the bigger half of the fix anyway --
+   * a village had strictly less grass than the meadow around it, which is
+   * exactly backwards for trodden ground with gardens on it.
    */
   scenery: {
     species: { oak: 1, blossom: 0.7, birch: 0.4 },
-    density: 0.55,
+    density: 0.3,
     props: { cairns: 0.25 },
     grass: { tint: 'grassGold', density: 0.85 },
   },

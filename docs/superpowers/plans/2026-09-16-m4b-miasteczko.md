@@ -412,7 +412,14 @@ Wszystkie na pauzie, z twardo wpisanym miejscem ziarna 42 — i **miejsce trzeba
 najpierw znaleźć pomiarem w Node**, jak przy wsi. Krata 20 km, więc
 miasteczko może być daleko od startu.
 
-- [ ] **Step 1: Testy:**
+Miejsce znalezione pomiarem: **(-5289, -7577)**, 9,2 km od startu — najbliższe
+miasteczko ziarna 42, promień 804 m, 1635 budynków, i **żadnej wsi w promieniu
+1,4 km**. Rozpiętość gruntu w jego wnętrzu: **0,00 m**. Siedemset metrów od
+środka nadal 0,00; dopiero na 1000–1200 m (za promieniem 900, w piórze) grunt
+rusza o 12 do 48 m. To jest ten kontrast, o który prosił plan, i jest ostrzejszy
+niż przy wsi: wieś trzyma 12 m, miasteczko pół metra.
+
+- [x] **Step 1: Testy:** pięć, `tests/e2e/smoke.spec.ts`.
   1. **Miasteczko stoi**: `scenery.buildings` przekracza 500, a przeszkody
      rosną o tyle samo.
   2. **Żaden dom nie zginął**: licznik odmówionych z Taska 6 jest zerem.
@@ -431,8 +438,13 @@ miasteczko może być daleko od startu.
   5. **Kolejka nie zacina klatki ponad to, co pomiar z Taska 5 przewidział** —
      asercja z liczbą, nie z nadzieją.
   6. **Brak błędów konsoli** — materiały linii i dominanty się skompilowały.
-- [ ] **Step 2:** Uruchomienie (`--config pw.local.config.ts` w tym
-      kontenerze) **i commit**.
+- [x] **Step 2:** Uruchomione, `--config pw.local.config.ts`. Jedna asercja
+      poszła do kosza w trakcie: „lot przeszedł nad wieżą" nie jest prawdą,
+      którą można wymusić — autopilot steruje i nie obiecuje przelecieć nad
+      konkretnym dachem. Dominanta dostała więc pytanie deterministyczne:
+      postawić postać **wewnątrz** wieży metr pod prześwitem, który dałby sam
+      grunt, zrobić jeden krok i zobaczyć, że koperta podniosła ją nad szczyt,
+      a nie nad pole, na którym wieża stoi.
 
 ---
 
@@ -441,18 +453,18 @@ miasteczko może być daleko od startu.
 **Files:** `AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `docs/perf-notes.md`,
 specyfikacja
 
-- [ ] **Step 1: `AGENTS.md`** — sekcja „Settlements" zyskuje najwyżej dwa
+- [x] **Step 1: `AGENTS.md`** — sekcja „Settlements" zyskuje najwyżej dwa
       zdania: co robi druga krata i co kosztuje plan miasteczka. Nie więcej.
-- [ ] **Step 2: `CONTRIBUTING.md`** — „Adding a settlement" zyskuje miasteczko
+- [x] **Step 2: `CONTRIBUTING.md`** — „Adding a settlement" zyskuje miasteczko
       jako drugi przykład i mówi, kiedy pisze się nowy generator, a kiedy
       wystarczą parametry. Pomiar z tego planu jest odpowiedzią: **gdy układ
       jest inny, parametry nie wystarczą.**
-- [ ] **Step 3: specyfikacja** — poprawki z datą, jak w M4a: co z §8 wykonanie
+- [x] **Step 3: specyfikacja** — poprawki z datą, jak w M4a: co z §8 wykonanie
       wymusiło inaczej, i dlaczego.
-- [ ] **Step 4: `perf-notes.md`** — koszt planu miasteczka, koszt jego dróg
+- [x] **Step 4: `perf-notes.md`** — koszt planu miasteczka, koszt jego dróg
       i linii, wpływ na przebudowę pierścienia, i rozstrzygnięcie (a)/(b)
       z liczbą, która je uzasadnia.
-- [ ] **Step 5: `README.md`** — linijka statusu M4b.
+- [x] **Step 5: `README.md`** — linijka statusu M4b.
 
 ---
 

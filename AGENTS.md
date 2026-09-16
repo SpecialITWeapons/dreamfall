@@ -196,14 +196,41 @@ subdirectory.
   there. Two draws on one cell agree about half the time, which is what two
   coins do, and the other half is a village on the slope beside its own flat
   square. `SitesSpec` therefore carries no odds and no land line of its own.
-- A plan is data -- roads, lots, reservations, never geometry -- and a pure
-  function of its site, which is what lets a village be built and tested in
-  Node; the pools make the geometry out of it, as they do out of a scatter.
+- A plan is data -- roads, lines, lots, reservations, never geometry -- and a
+  pure function of its site, which is what lets a village be built and tested in
+  Node; the pools make the geometry out of it, as they do out of a scatter. A
+  settlement is that plan plus its parameters and nothing else: one entry,
+  `settlements/settlement.js`, makes the village and the town alike, and the
+  parameters carry the id, the name and the landmark, because a factory that
+  knew the word "village" could only ever make one.
+- A plan may not plant and a scatter may not build: `kit.tree` inside a plan and
+  `kit.structure` inside a `populate` both throw. A hedge is how a plan says
+  "trees were planted here" -- `kit.line` claims no ground, so the biome's own
+  scatter fills the plot. And a settlement **sows the ground it claims**: its own
+  weight is what crowds the country's biomes out of it, so a settlement with no
+  `populate` is a disc of bare paint as wide as its presence. No thinning toward
+  the middle is needed -- the lots' reservations already refuse a tree where the
+  houses are.
+- `maxSlope` refuses a lattice cell whose centre is steep, measured across
+  `LATTICE_SLOPE_PROBE`; `maxCut` is what the settlement will let the ground
+  depart from its centre before it fades, in metres. They were one number until
+  a town asked: over 900 m the departure is the terrain's relief and has almost
+  nothing to do with the slope at the middle of it, so tightening `maxSlope`
+  only made towns rare. A settlement a few hundred metres wide can still leave
+  `maxCut` unsaid.
 - Plans are built in a queue with a budget of 4 ms a frame and cached wider than
   the ring, so a plan survives the ring leaving it and coming back. Seating
   reads the sampler and needs no window; the plan reads the height window, so a
   site the window cannot answer for keeps its turn in the queue rather than
-  laying its street over the other side of the world.
+  laying its street over the other side of the world. The budget is checked
+  before a plan, never during one: a town costs 19 ms and is built whole on
+  purpose, because towns are 41 km apart and the machinery to slice one costs
+  more than the frame does. How many buildings it has is a **share of what its
+  streets offer** and never a cap on the count -- a cap walks the streets in the
+  order they were laid and builds a town with one side missing, which is the
+  fault the ring's own tree ceiling has -- and what the pools then refuse is
+  counted in `SceneryStats.buildingsRefused`, because a `continue` is how a
+  settlement quietly loses two hundred houses.
 - `cell.occupied` reads the plans' reservations and roads out of a hash grid
   filled at every rebuild, which is why the forest keeps off the square and the
   road.

@@ -128,9 +128,21 @@ around it, never for less.
 
 A settlement is a biome with a `sites` block: the places someone built, and what
 stands in one. It is the entry written as code over the standard hooks rather
-than as data. `library/settlements/village.js` holds the numbers,
-`settlement.js` is the biome that carries them into the world, and `plan.js` is
-the village itself.
+than as data.
+
+There are two of them and they share everything except their numbers and their
+plan. `settlement.js` is the one biome entry both go through; it takes the
+parameters and the plan and nothing else, so the parameters carry the id, the
+name, the landmark and the ground paint. `village.js` and `plan.js` are a
+village of thirty to a hundred and fifty houses along one street that follows a
+contour; `town.js` and `plan-town.js` are five hundred to two thousand on a
+jittered grid inside a ring road, with a plaza and a landmark in the middle.
+A third kind is two files and one line in `index.js`.
+
+The town is not the village with bigger numbers, and the reason is worth
+knowing before you try: the village's layout is one street with paths off it,
+which fills a ribbon. Stretched to a 900 m radius it lays 147 lots, measured.
+A town fills a disc, and only a grid does that.
 
 The `sites` block is five things. **`cell`** and **`salt`** name the lattice the
 settlements sit on, one per cell at most; **`radius`** is `[min, max]` metres of
@@ -154,9 +166,31 @@ so keep it saying what the hook says: `settlement.js` hands both the same three
 numbers (`land`, `minTemp`, `maxSlope`) and a `fits` narrower than its hook
 would leave ground painted for a village that never comes.
 
+Two of those numbers pull in different directions and it is worth knowing which
+is which. **`maxSlope`** refuses a cell whose own centre stands on a hillside,
+measured across 125 m. **`maxCut`** is how far the ground may depart from the
+centre's height before the settlement fades, in metres, and it is the one that
+shapes a wide settlement: over 900 m that departure is the terrain's relief and
+barely depends on the slope in the middle of it, so a town written with a strict
+`maxSlope` and no `maxCut` cuts exactly the same table out of the hill and is
+merely rarer. A village leaves `maxCut` unsaid and lets the slope stand for
+both, which at 250 m is fair enough.
+
+A settlement should also **sow the ground it claims** -- give it a `populate`
+like any other biome. Its own weight is what crowds the country's trees and
+grass out of the ground it stands on, so one without a `populate` is a disc of
+bare paint as wide as its presence, with the houses in the middle of it. It
+needs no thinning toward the centre: the lots' reservations already refuse a
+tree where the houses are.
+
 `build` produces data and never geometry: `kit.road(points, width)` for a street,
-`kit.structure(id, x, z, { yaw, floors })` for a plot, `kit.reserve(x, z, radius)`
-for ground nothing else may use. It reads the ground through `kit.height` and
+`kit.line(points, kind)` for a fence, a wall or a hedge, `kit.structure(id, x, z,
+{ yaw, floors })` for a plot, `kit.reserve(x, z, radius)` for ground nothing else
+may use. It may not plant: `kit.tree` inside a plan throws, because a settlement
+plants through its biome's `populate` and its cells. A hedge is how a plan says
+trees were planted here -- a line claims no ground, so the scatter fills the plot
+and the square of trees reads as an orchard. It reads the ground through
+`kit.height` and
 `kit.slope` rather than off a window of terrain, and draws every random it needs
 from `site.random()` in a fixed order -- change the order and the same cell grows
 a different village. That is what keeps a plan a pure function of its site:
@@ -164,6 +198,14 @@ a different village. That is what keeps a plan a pure function of its site:
 for the ground. Afterwards the pools raise the lots into instances and obstacle
 records, and the road kit turns a polyline into a ribbon that hugs the ground; a
 plan that made a geometry itself could be neither tested nor, one day, edited.
+
+Two rules for a plan that lays more than a hundred lots, both learned the
+expensive way. Ask for a floor count the recipe has **no bake at** and it throws
+inside the site queue, so clamp what you ask into the range the recipe declares
+-- `town.js` writes that range down in `storeys` because a pure function cannot
+ask the kit. And decide how many buildings you have as a **share of what the
+streets offered**, never by stopping at a cap: the streets are walked in the
+order they were laid, so a cap builds a town with one side missing.
 
 That is the split, and it is the same one the biomes and the props keep: **the
 settlement says what stands where, the structure says what it looks like.** A

@@ -523,6 +523,55 @@ Poprawki z 2026-09-16, z wykonania M4a (wieś; miasteczko idzie do M4b):
   w Node bez okna terenu. Propsów wzdłuż dróg, płotów i sadów nie ma —
   `kit.line` rzuca do M4b.
 
+Poprawki z 2026-09-16, z wykonania M4b (miasteczko):
+
+- **Jeden wpis, dwie osady.** `settlement()` miał zaszyte słowo „village" w id,
+  nazwie i wywołaniu planu. Bierze teraz parametry i plan; parametry niosą
+  własne `id`, `name`, `landmark` i malowanie gruntu. Miasteczko to te same haki
+  co wieś, inne liczby i inny plan — `plan-town.js`.
+- **Miasteczko nie jest wsią z większymi liczbami**, i to zmierzono, zanim
+  powstało: układ wsi to jedna ulica wzdłuż warstwicy z bocznymi ścieżkami, co
+  wypełnia wstęgę. Rozciągnięta do promienia 900 m daje **147 parcel**, a nie
+  500–2000. Dysk wypełnia tylko siatka, więc miasteczko ma własny generator.
+- **`maxSlope` a `maxCut`.** Tabela wyżej żąda nachylenia < 0,25 w centrum,
+  a plan M4b zakładał dla miasteczka próg jeszcze ostrzejszy, bo jego plateau
+  jest pełne. Pomiar to obalił: na 895 stanowiskach ziarna 42 zaostrzenie
+  z 0,45 do 0,06 przesuwa medianę ucieczki gruntu od środka w promieniu 900 m
+  ze 167 m na 146 m — czyli o nic — i odrzuca dwa stanowiska na trzy (41 km
+  między miasteczkami robi się 78). Na setkach metrów to jest rzeźba terenu,
+  nie pochodna w jednym punkcie. Hak `lattice` ma więc dwie osobne liczby:
+  `maxSlope` odrzuca komórkę o stromym środku (mierzone przez 125 m),
+  a `maxCut` mówi w metrach, jak daleko grunt może uciec, zanim osada zgaśnie.
+  Wieś nie podaje `maxCut` i zachowuje się dokładnie jak przedtem.
+- **Ile budynków.** Nie `density(r)` i nie sufit: pierwszy przebieg planu zbiera
+  wszystkie parcele, jakie oferuje siatka, i sumuje ich wagi `1 - (r/R)²`,
+  a drugi przyjmuje taki ich udział, żeby liczba wypadła w `lots.count`. Sufit
+  obciąłby miasteczko przestrzennie — ulice chodzi się w kolejności, w jakiej je
+  położono, więc sufit buduje miasteczko bez jednego boku.
+- **Kondygnacje 1..4 malejące od centrum** — tak, ale liczba jest potem
+  **przycinana do zakresu, w którym dany przepis ma wypiek**: prośba o piętro
+  bez wypieku rzuca w kolejce. Parametry niosą ten zakres w `storeys`, bo plan
+  jest czystą funkcją i nie może zapytać kitu. Chata dostała trzecią
+  kondygnację, bo jedyne inne wypieki na trzy piętra to młyn i wieża.
+- **Dominanta.** Jest parametrem (`landmark: 'tower'`) i stawia się ją **raz,
+  po imieniu**, a nie wagą — waga nie umie powiedzieć „jeden". Stoi na obrzeżu
+  placu i obchodzi go, jeśli wylosowany kierunek postawiłby ją na jezdni
+  (na 120 miasteczek zdarzało się to jednemu na sześć). Wieża ma 46,2 albo
+  57,0 m — **nie 60**, bo lot omija tylko to, o czym wie na 70 m przed sobą.
+- **Miasteczko buduje się w całości.** `build` biegnie atomowo, a budżet
+  kolejki to 4 ms na klatkę; zmierzony koszt planu to 4,3 / 10,3 / 18,8 ms przy
+  400 / 650 / 900 m. Przyjęto jedną długą klatkę raz na 41 km lotu zamiast
+  maszynerii, która by ją usunęła. Próg, poniżej którego ta decyzja obowiązuje,
+  to 25 ms i jest zapisany w `docs/perf-notes.md`.
+- **Dodatki, których M4a nie miało.** `kit.line` istnieje i wieś go używa: sady
+  są żywopłotem wokół działki na obrzeżu, a żywopłot nie zajmuje gruntu, więc
+  w środku rośnie własny scatter wsi. Propsów wzdłuż dróg nadal nie ma.
+- **Osada sieje.** Tego w specyfikacji nie było i okazało się konieczne:
+  własna waga osady wypycha biomy kraju z gruntu, który osada zajmuje, więc
+  osada bez haka `populate` jest dyskiem malowanej gliny szerokim jak jej
+  obecność, z domami pośrodku. Obie osady mają teraz `populate`, a rezerwacje
+  parcel załatwiają przerzedzenie w zabudowie za darmo.
+
 Pierwsza wersja świadomie bez: malowanych pól na ziemi, mostów (po rzekach w
 M6: przeszkody z `bottom`, `kit.bridge(from, to, width)` z filarami, wykrywanie
 wąwozu wzdłuż drogi po `heightAt`), wnętrz.

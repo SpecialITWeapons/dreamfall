@@ -438,18 +438,18 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
 
 test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
   // Five window refills and three renders, on a software rasteriser, and every
-  // refill now runs eleven presence hooks over 313 600 texels: this one is slow
+  // refill now runs twelve presence hooks over 313 600 texels: this one is slow
   // by construction, not by accident.
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page); // no render loop competing with the teleports below
   const biomes = await page.evaluate(() => window.__world!.biomes);
-  // The ten climate biomes of the original, and the settlement, which is
-  // claimed off a lattice rather than out of climate space and so goes last:
-  // the first biome is the one that takes ground nobody else claims.
-  expect(biomes).toHaveLength(11);
+  // The ten climate biomes of the original, and the two settlements, which are
+  // claimed off a lattice rather than out of climate space and so go last: the
+  // first biome is the one that takes ground nobody else claims.
+  expect(biomes).toHaveLength(12);
   expect(biomes[0]).toBe('wildsong');
-  expect(biomes.at(-1)).toBe('village');
+  expect(biomes.slice(-2)).toEqual(['village', 'town']);
   const here = await page.evaluate(() => window.__world!.weightsAt(0, 0));
   expect(here).toHaveLength(3);
   expect(here.reduce((s, slot) => s + slot.weight, 0)).toBeCloseTo(1, 4);
@@ -864,7 +864,9 @@ test('the ground under the village is flat, because one lattice hit both chose i
   expect(errors).toEqual([]);
 });
 
-test('the forest keeps off the village and stands again outside it', async ({ page }) => {
+test('the village is a clearing with its own trees in it, not a bald patch and not a wood', async ({
+  page,
+}) => {
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
@@ -893,20 +895,37 @@ test('the forest keeps off the village and stands again outside it', async ({ pa
         }
       return { ground, anything, canopy, tallest };
     };
-    return { inside: scan(0, s.radius, 4), outside: scan(s.radius * 1.4, s.radius * 2.4, 6) };
+    // Open country, and it has to be past the village's presence: radius plus
+    // feather is 413 m for this one, and a band starting at 1.4 radii would be
+    // measuring the village's own thinned fringe and calling it the wood.
+    return { inside: scan(0, s.radius, 4), outside: scan(700, 1100, 6) };
   }, site);
-  // Inside the radius the village is the only thing standing: something is over
-  // a tenth of the probes, and nothing at all is taller than a roof. A tree of
-  // this world stands 20 to 60 m and the tallest house of this one is 11.2, so
-  // fifteen metres is a line neither crosses by accident.
+  // Something stands over a good tenth of the probes inside: the houses, and
+  // the village's own trees among them.
   expect(standing.inside.anything).toBeGreaterThan(200);
-  expect(standing.inside.tallest).toBeLessThan(15);
-  expect(standing.inside.canopy).toBe(0);
-  // Outside it the wood is back and is a wood: a canopy over a good tenth of the
-  // ground and sixty metres of it at its tallest. The reservations and the
-  // village's own weight in the cell are what keep the trees off; neither of
-  // them reaches out here.
-  expect(standing.outside.canopy / standing.outside.ground).toBeGreaterThan(0.1);
+  // This assertion used to read `canopy === 0`, on the theory that a village
+  // with no trees in it was what kept its ground a village and not a wood. What
+  // it actually kept was a disc of bare paint 420 m across -- radius plus
+  // feather -- with two hundred metres of houses in the middle, which is what
+  // the owner saw from the air and called odd. A settlement sows its own ground
+  // now, so there are trees in the village.
+  expect(standing.inside.canopy).toBeGreaterThan(0);
+  // And it is still a clearing, which is the half of it that has to stay true.
+  // Nothing thins the scatter toward the middle on purpose: the lots'
+  // reservations refuse a tree where the houses are and the village's own
+  // density is a fraction of the wood's, and between them the canopy inside
+  // comes out well under the canopy outside.
+  // Measured here: 0.130 of the village stands under a canopy against 0.326 of
+  // the open country, a ratio of 0.40 -- and the same ratio the tree counts
+  // give over the ring in Node. Six tenths is the line, and what it catches is
+  // a village as wooded as the wood, which is what this was at a scatter
+  // density of 0.55: 1.7 trees a hectare on both sides of its own edge.
+  const inside = standing.inside.canopy / standing.inside.ground,
+    outside = standing.outside.canopy / standing.outside.ground;
+  expect(inside).toBeLessThan(outside * 0.6);
+  // Outside it the wood is a wood: a canopy over a good quarter of the ground
+  // and sixty metres of it at its tallest.
+  expect(outside).toBeGreaterThan(0.2);
   expect(standing.outside.tallest).toBeGreaterThan(40);
   expect(errors).toEqual([]);
 });
@@ -1040,5 +1059,256 @@ test('the village draws: the road and the houses compile', async ({ page }) => {
   // ribbon of road and the houses reaching the GPU in that one frame.
   expect(drawn.after.geometries).toBeGreaterThan(drawn.before.geometries);
   // Nothing in the console is what proves their materials compiled.
+  expect(errors).toEqual([]);
+});
+
+/**
+ * The town seed 42 seats 9.2 km from the start: the nearest one, and the one
+ * with no village inside 1.4 km of it. That second condition is not fussiness.
+ * A village standing inside a town dilutes the town's plateau to its own share
+ * of the fragment, and the ground that should be a table comes out with tens of
+ * metres of relief in it -- measured in M4b's second-lattice note. The centre
+ * comes from `siteNear` like the village's; these two numbers only have to land
+ * the question inside the ring's reach.
+ */
+const TOWN = { x: -5289, z: -7577 };
+
+/**
+ * The flight over the town, with its buildings standing. Same sequence as the
+ * village: a town is seated off the sampler, which answers anywhere, but its
+ * plan reads the height window, so it is planned only once the window covers it
+ * and raised on the rebuild after that.
+ */
+const overTown = async (page: Page) => {
+  await teleport(page, TOWN, 200);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = window.__world!;
+          w.step(0.05);
+          return w.scenery!.buildings;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(100);
+  return page.evaluate((t) => {
+    const w = window.__world!;
+    return {
+      site: w.siteNear(t.x, t.z)!,
+      trees: w.scenery!.trees,
+      buildings: w.scenery!.buildings,
+      refused: w.scenery!.buildingsRefused,
+      obstacles: w.obstacles,
+    };
+  }, TOWN);
+};
+
+test('a town stands, and not one house of it is lost on the way through the pools', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const town = await overTown(page);
+  expect(town.site.id.startsWith('town')).toBe(true);
+  expect(Math.hypot(town.site.x - TOWN.x, town.site.z - TOWN.z)).toBeLessThan(5);
+  expect(town.site.radius).toBeGreaterThanOrEqual(400);
+  expect(town.site.radius).toBeLessThanOrEqual(900);
+  // The spec's own number: a town is five hundred to two thousand buildings,
+  // and the generator hits it by construction rather than by a cap.
+  expect(town.buildings).toBeGreaterThan(500);
+  expect(town.buildings).toBeLessThanOrEqual(2000);
+  // A plan is raised whole or not at all, so what stands is its lots.
+  expect(town.buildings).toBe(town.site.lots);
+  // And this is the assertion the counter exists for. A pool at its ceiling and
+  // a shape nobody baked are both a `continue` in the ring, so before M4b a
+  // town could lose two hundred houses and nothing would say so. Measured: the
+  // worst pool a town fills is a third of one, and this is what keeps it true.
+  expect(town.refused).toBe(0);
+  // Every building is something the flight has to fly around, on top of the
+  // ring's trees and nothing else.
+  expect(town.obstacles).toBe(town.trees + town.buildings);
+  expect(errors).toEqual([]);
+});
+
+test('the ground under the town is a table, which the ground under a village is not', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overTown(page);
+  const relief = await page.evaluate((s) => {
+    const w = window.__world!;
+    const ring = (cx: number, cz: number, r: number) =>
+      Math.max(
+        ...Array.from({ length: 8 }, (_, k) => {
+          const a = (k / 8) * Math.PI * 2;
+          return Math.abs(w.heightAt(cx + Math.cos(a) * r, cz + Math.sin(a) * r) - w.heightAt(cx, cz));
+        }),
+      );
+    const four = (d: number) => [
+      ring(s.x + d, s.z, 80),
+      ring(s.x - d, s.z, 80),
+      ring(s.x, s.z + d, 80),
+      ring(s.x, s.z - d, 80),
+    ];
+    return { centre: ring(s.x, s.z, 80), inside: four(700), outside: [...four(1000), ...four(1200)] };
+  }, site);
+  // A village's plateau is 0.3 of the way to flat and its ground holds to
+  // within twelve metres. A town's is all the way, and it is a floor: nothing
+  // inside the plateau moves by half a metre, seven hundred metres out from the
+  // centre included.
+  expect(relief.centre).toBeLessThan(0.5);
+  for (const inside of relief.inside) expect(inside).toBeLessThan(0.5);
+  // And past the plateau's radius the country is the country again. The band
+  // sampled is 1.0 to 1.2 km, which is outside the 900 m radius and inside the
+  // 300 m feather's far edge -- where the cut is being let down.
+  for (const outside of relief.outside) expect(outside).toBeGreaterThan(10);
+  expect(errors).toEqual([]);
+});
+
+test('the flight does not fly through the town, landmark included', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overTown(page);
+  const flown = await page.evaluate((s) => {
+    const w = window.__world!;
+    // The tallest thing standing in the town, found the way the forest is
+    // counted: by asking what stands over the ground. The landmark is three or
+    // four stages of 10.8 m on a plinth, so it is half again the tallest roof
+    // and taller than anything the flight has had to climb over before.
+    let tallest = { x: s.x, z: s.z, top: 0 };
+    for (let x = s.x - s.radius; x <= s.x + s.radius; x += 4)
+      for (let z = s.z - s.radius; z <= s.z + s.radius; z += 4) {
+        if (Math.hypot(x - s.x, z - s.z) > s.radius) continue;
+        const top = w.floorAt(x, z) - w.heightAt(x, z);
+        if (top > tallest.top) tallest = { x, z, top };
+      }
+    // Straight at it from 500 m out, a metre under the clearance the bare
+    // ground would ask for, so the envelope has to lift the figure over the
+    // town rather than over the field it stands in.
+    const heading = Math.atan2(tallest.x - s.x, tallest.z - s.z);
+    const from = { x: tallest.x - Math.sin(heading) * 500, z: tallest.z - Math.cos(heading) * 500 };
+    w.state.x = from.x;
+    w.state.z = from.z;
+    w.state.y = w.heightAt(from.x, from.z) + 26;
+    w.state.vy = 0;
+    w.state.heading = heading;
+    w.step(0.05);
+    let worst = Infinity,
+      closest = Infinity;
+    for (let k = 0; k < 40 * 50; k++) {
+      w.step(0.02);
+      worst = Math.min(worst, w.state.y - w.floorAt(w.state.x, w.state.z));
+      closest = Math.min(closest, Math.hypot(w.state.x - s.x, w.state.z - s.z));
+    }
+    // Where the flight goes over the town is the autopilot's business -- it
+    // steers, and a figure told to cross a town does not promise to cross one
+    // particular roof of it. So the landmark gets a question of its own, and a
+    // deterministic one: stand the figure inside the tower, a metre under the
+    // clearance the bare ground would ask for, and take one step. The envelope
+    // clamps after the move, so what comes back is the lift itself.
+    w.state.x = tallest.x;
+    w.state.z = tallest.z;
+    w.state.y = w.heightAt(tallest.x, tallest.z) + 26;
+    w.state.vy = 0;
+    w.step(0.05);
+    const lifted = {
+      overGround: w.state.y - w.heightAt(tallest.x, tallest.z),
+      overTower: w.state.y - w.floorAt(tallest.x, tallest.z),
+    };
+    return { tallest, worst, closest, lifted, buildings: w.scenery!.buildings };
+  }, site);
+  // It really is a landmark and not a roof: the mill is 3 x 2.6 m of wall under
+  // a roof, and this is over thirty.
+  expect(flown.tallest.top).toBeGreaterThan(30);
+  expect(flown.buildings).toBeGreaterThan(500);
+  // The same envelope that holds over the canopy and over the village's roofs,
+  // over a tower half again as tall: the figure hangs 0.3 m below the
+  // clearance and one step of the integrator is worth less than the rest.
+  expect(flown.worst).toBeGreaterThanOrEqual(MIN_CLEARANCE - 0.5);
+  // and it really crossed the town rather than turning away from it
+  expect(flown.closest).toBeLessThan(site.radius);
+  // The landmark, asked on its own: the figure stood inside the tower and the
+  // envelope put it over the top, not over the field the tower stands in.
+  expect(flown.lifted.overTower).toBeGreaterThanOrEqual(MIN_CLEARANCE - 0.5);
+  expect(flown.lifted.overGround).toBeGreaterThan(flown.tallest.top + MIN_CLEARANCE - 0.5);
+  expect(errors).toEqual([]);
+});
+
+test('the town costs the frame it was measured to cost, and no more', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  // Nowhere near the town: 9.2 km is well past what the height window can
+  // answer for, so the town cannot have been planned before the jump and
+  // whatever the queue spends on it falls inside the frames sampled here.
+  const queue = await page.evaluate((t) => {
+    const w = window.__world!;
+    w.state.x = t.x;
+    w.state.z = t.z;
+    w.state.y = w.heightAt(t.x, t.z) + 200;
+    w.state.vy = 0;
+    const ms: number[] = [];
+    for (let frame = 0; frame < 16; frame++) {
+      w.step(0.05);
+      ms.push(w.scenery!.sitesMs);
+    }
+    return { ms, site: w.siteNear(t.x, t.z), buildings: w.scenery!.buildings };
+  }, TOWN);
+  expect(queue.site!.id.startsWith('town')).toBe(true);
+  expect(queue.buildings).toBeGreaterThan(500);
+  // This is the number M4b's threshold was set against, and the reason the town
+  // is built whole instead of in quarters. Measured in Node over this ground:
+  // 18.8 ms at the widest radius, 18.9 for this town through the queue. The
+  // ceiling here is twice that, which leaves a software rasteriser room to have
+  // a bad moment and still fails if a town ever costs two frames more than it
+  // was measured to. A town is 41 km from the next: one long frame every eleven
+  // to seventeen minutes of flying, deliberately, because the machinery to
+  // remove it costs more than it does.
+  expect(Math.max(...queue.ms)).toBeLessThanOrEqual(40);
+  expect(errors).toEqual([]);
+});
+
+test('the town draws: its streets, its houses and its landmark compile', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overTown(page);
+  const drawn = await page.evaluate(async (s) => {
+    const w = window.__world!;
+    // Back off and turn to face it, so the streets and the buildings are in
+    // front of the camera in the frame that follows rather than under it.
+    const x = s.x - 1400,
+      z = s.z - 1400;
+    w.state.x = x;
+    w.state.z = z;
+    w.state.y = w.heightAt(x, z) + 220;
+    w.state.vy = 0;
+    w.state.heading = Math.atan2(s.x - x, s.z - z);
+    w.step(0.05);
+    const before = w.memory();
+    const shot = await w.capture(128, 72);
+    return {
+      before,
+      after: w.memory(),
+      buildings: w.scenery!.buildings,
+      refused: w.scenery!.buildingsRefused,
+      pixels: shot ? shot.data.length : 0,
+      finite: shot ? shot.data.every(Number.isFinite) : false,
+    };
+  }, site);
+  expect(drawn.buildings).toBeGreaterThan(500);
+  expect(drawn.refused).toBe(0);
+  expect(drawn.pixels).toBe(128 * 72 * 4);
+  expect(drawn.finite).toBe(true);
+  // No assertion on the geometry count here, unlike the village's. It counts
+  // meshes that have reached the GPU, which is a proxy for "this frame drew
+  // something new" -- and for a town it is not a stable one: raising a town
+  // takes enough frames that its pools have already been drawn by the time the
+  // camera is turned on it. It passed alone and failed in the suite, which is
+  // the definition of an assertion not worth keeping. What is left proves the
+  // same thing anyway: a frame with the town in front of the camera came back
+  // whole, and nothing in the console. An `uncapturederror` is fatal here on
+  // purpose, so a shader that only warned would not have got this far.
   expect(errors).toEqual([]);
 });
