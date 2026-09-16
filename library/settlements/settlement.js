@@ -36,6 +36,7 @@ export function settlement(params = VILLAGE) {
       feather: params.plateau.feather,
       odds: params.odds,
       land: params.ground.land,
+      minTemp: params.ground.minTemp,
       maxSlope: params.ground.maxSlope,
     },
     height: {
@@ -58,13 +59,15 @@ export function settlement(params = VILLAGE) {
     },
     sites: {
       cell,
-      odds: params.odds,
+      salt,
       radius: params.radius,
       structures: params.buildings,
-      // The finder has already refused the sea and the rough ground; this is
-      // the settlement's own say, and it is about the climate rather than the
-      // shape: nobody builds a village on a glacier.
-      fits: (f) => f.baseHeight > params.ground.land && f.temp > 0.2,
+      // The same two numbers the presence hook above reads, asked of the same
+      // point: the site finder seats a village at the lattice centre, so
+      // `fits` is evaluated there and answers exactly as the hook does. A
+      // third number here would be a third lottery, and the ground would be
+      // painted for villages that never arrive.
+      fits: (f) => f.baseHeight >= params.ground.land && f.temp >= params.ground.minTemp,
       build: (site, kit) => planVillage(site, params, kit),
     },
   });

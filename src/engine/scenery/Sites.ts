@@ -19,24 +19,29 @@ import type {
   SitesSpec,
 } from '../../../library/contract';
 import { swatchColor } from '../../../library/contract';
+import { resolvePresence } from '../../../library/standard/index.js';
 import { Color } from 'three';
 import { createFields } from '../terrain/Fields';
 import type { Heightfield } from '../terrain/Heightfield';
-import { hash2, mulberry32 } from '../terrain/noise';
+import { mulberry32 } from '../terrain/noise';
 import type { WorldSampler } from '../terrain/WorldSampler';
 import { siteKey as keyOf, type Overrides } from './Overrides';
 
 export { siteKey } from './Overrides';
 
-/** Tries to seat a site inside its own cell before giving the cell up (port). */
-const SEATS = 4;
-/** A site sits in the middle of its cell, never against the seam with the next one. */
-const SEAT_INSET = 0.2;
-/** Ground a site will not stand on: the sea, and the surf. */
-const SITE_LAND = 8;
-/** The flatness probe: eight points at this reach must agree within this many metres. */
-const LEVEL_REACH = 90,
-  LEVEL_SPREAD = 12;
+/**
+ * The default the standard `lattice` presence hook uses; a settlement that does
+ * not name its salt gets the same lattice the hook would read.
+ */
+const LATTICE_SALT = 0x5117;
+/**
+ * The streams of a site's own cell. 0 and 1 belong to the lattice: the presence
+ * hook draws the carry from 1, and 0 is left alone because it is salted like
+ * the jitter. A site takes the ones after them.
+ */
+const RADIUS_STREAM = 2,
+  YAW_STREAM = 3,
+  PLAN_STREAM = 4;
 /** Plans further than this beyond the asking reach are forgotten, m. */
 const KEEP_PAD = 4000;
 
@@ -64,26 +69,28 @@ export interface Sites {
   readonly queued: number;
 }
 
-const idHash = (id: string) => {
-  let h = 7;
-  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0;
-  return h >>> 0;
-};
-
 /** A copy of the fields, because the reader hands out one object and moves on. */
 const copyFields = (f: Fields): Fields => ({ ...f });
 
 export function createSites(deps: {
-  seed: number;
   library: Library;
   sampler: WorldSampler;
   heightfield: Heightfield;
   overrides: Overrides;
 }): Sites {
-  const { seed, library, sampler, heightfield, overrides } = deps;
+  const { library, sampler, heightfield, overrides } = deps;
+  // A settlement's presence hook is resolved here, not read out of the sampler,
+  // because the seat asks it a question the window never asks: does *this cell*
+  // carry a site? Asked at the lattice centre it is one call and one lottery --
+  // the same lottery that paints the ground and flattens it.
   const settled = library.biomes
     .filter((biome): biome is Biome & { sites: SitesSpec } => Boolean(biome.sites))
-    .map((biome) => ({ biome, spec: biome.sites, salt: (seed ^ idHash(`site:${biome.id}`)) >>> 0 }));
+    .map((biome) => ({
+      biome,
+      spec: biome.sites,
+      presence: resolvePresence(biome.presence),
+      salt: biome.sites.salt ?? LATTICE_SALT,
+    }));
   const fields = createFields(sampler);
   // What the lattice carries, by cell: a site, or nothing. Nothing is worth
   // remembering too -- it is the answer to the same question.
@@ -93,46 +100,46 @@ export function createSites(deps: {
   let built = 0;
 
   // How far the height window actually knows the ground. Past it heightAt wraps
-  // around the torus and answers with the other side of the world, so a site
-  // seated out there would stand on ground that is not underneath it -- and,
-  // worse, be remembered as seated there. A cell we cannot judge is left
-  // undecided rather than decided wrongly.
+  // around the torus and answers with the other side of the world, so a plan
+  // built out there would lay its street over ground that is not underneath it.
+  // The seat itself needs no window -- it reads the sampler, which answers
+  // everywhere -- so this guards the queue and nothing else.
   const known = (heightfield.size / 2 - 2) * heightfield.cell;
-  const inWindow = (x: number, z: number) =>
-    Math.abs(x - heightfield.center.cx * heightfield.cell) < known &&
-    Math.abs(z - heightfield.center.cz * heightfield.cell) < known;
-  /** Ground level enough to build on: eight points around agree within a spread. */
-  const level = (x: number, z: number, h: number) => {
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2;
-      const around = heightfield.heightAt(x + Math.cos(a) * LEVEL_REACH, z + Math.sin(a) * LEVEL_REACH);
-      if (Math.abs(around - h) > LEVEL_SPREAD) return false;
-    }
-    return true;
-  };
+  const inWindow = (x: number, z: number, pad: number) =>
+    Math.abs(x - heightfield.center.cx * heightfield.cell) < known - pad &&
+    Math.abs(z - heightfield.center.cz * heightfield.cell) < known - pad;
 
-  /** Does this lattice cell of this settlement carry a site, and where does it stand? */
+  /**
+   * Does this lattice cell carry a site, and where does it stand?
+   *
+   * The cell's own presence hook answers both. Asked at the lattice centre it
+   * is the same draw, on the same salt, against the same odds and the same
+   * ground that the sampler makes when it paints the cell and the plateau when
+   * it flattens it -- so a village stands in the middle of its own flat square
+   * by construction rather than by two lotteries happening to agree. They did
+   * not: measured on seed 42 before this, the two agreed on half the cells,
+   * which is what two coins do.
+   */
   const seat = (entry: (typeof settled)[number], gx: number, gz: number): Site | null => {
-    const { spec, biome, salt } = entry;
-    const roll = mulberry32(hash2(gx, gz, salt));
-    if (roll() > spec.odds) return null;
+    const { spec, biome, salt, presence } = entry;
     const id = `${biome.id}:${gx},${gz}`;
     if (overrides.size > 0 && overrides.for(keyOf(id))?.skip) return null;
-    const radius = spec.radius[0] + roll() * (spec.radius[1] - spec.radius[0]);
-    const yaw = roll() * Math.PI * 2;
-    for (let attempt = 0; attempt < SEATS; attempt++) {
-      const x = (gx + SEAT_INSET + roll() * (1 - 2 * SEAT_INSET)) * spec.cell,
-        z = (gz + SEAT_INSET + roll() * (1 - 2 * SEAT_INSET)) * spec.cell;
-      const h = heightfield.heightAt(x, z);
-      if (h < SITE_LAND || !level(x, z, h)) continue;
-      const here = fields.at(x, z);
-      if (!spec.fits(here)) continue;
-      // Its own stream, fixed from here on: the plan draws from it, so a site
-      // planned now and planned after a reload is the same village.
-      const stream = mulberry32(hash2(gx, gz, salt ^ 0x51a7));
-      return { id, biome: biome.id, x, z, radius, yaw, fields: copyFields(here), random: stream };
-    }
-    return null;
+    // Any point of the cell gives the same hit; its centre is the plain one.
+    const hit = fields.at((gx + 0.5) * spec.cell, (gz + 0.5) * spec.cell).lattice(spec.cell, salt);
+    const x = hit.cx,
+      z = hit.cz;
+    const radius = spec.radius[0] + hit.u(RADIUS_STREAM) * (spec.radius[1] - spec.radius[0]);
+    const yaw = hit.u(YAW_STREAM) * Math.PI * 2;
+    // The hit is one shared object and fields.at moves it, so read what the
+    // seat needs off it before asking the fields at the centre.
+    const here = fields.at(x, z);
+    if (presence(here) <= 0 || !spec.fits(here)) return null;
+    // Its own stream, fixed from here on: the plan draws from it, so a site
+    // planned now and planned after a reload is the same village. It is one of
+    // the cell's own streams, which is what carries the world's seed into it --
+    // `salt` here is the library's number and is the same in every world.
+    const stream = mulberry32(Math.floor(hit.u(PLAN_STREAM) * 4294967296));
+    return { id, biome: biome.id, x, z, radius, yaw, fields: copyFields(here), random: stream };
   };
 
   /** The kit a build hook writes its plan through; it collects, it never draws. */
@@ -224,9 +231,9 @@ export function createSites(deps: {
             const key = `${entry.biome.id}:${gx},${gz}`;
             let site = found.get(key);
             if (site === undefined) {
-              // Only decide a cell the window can answer for; the flight will
-              // come back to this one with the ground under it.
-              if (!inWindow((gx + 0.5) * cell, (gz + 0.5) * cell)) continue;
+              // Seating reads the sampler, which answers anywhere, so a cell is
+              // decided here once and for all and never depends on where the
+              // window happened to be.
               site = seat(entry, gx, gz);
               found.set(key, site);
               if (site) queue.push(site);
@@ -242,9 +249,19 @@ export function createSites(deps: {
     work(budgetMs) {
       if (budgetMs <= 0) return;
       const until = performance.now() + budgetMs;
-      while (queue.length > 0 && performance.now() < until) {
+      // A plan reads the window, so a site the window cannot answer for waits
+      // its turn again rather than laying its street over the other side of the
+      // world. Each site is looked at once per call: without the count, a queue
+      // of nothing but far sites would spin until the budget ran out.
+      let left = queue.length;
+      while (left-- > 0 && queue.length > 0 && performance.now() < until) {
         const site = queue.shift()!;
-        if (!plans.has(site.id)) build(site);
+        if (plans.has(site.id)) continue;
+        if (!inWindow(site.x, site.z, site.radius)) {
+          queue.push(site);
+          continue;
+        }
+        build(site);
       }
     },
     get built() {

@@ -1,7 +1,8 @@
-// The scenery, as one object: the painted textures, the baked species and
-// props, the pools they are instanced through, the ring that decides where
-// they stand, the sheet of shade under them and the window of grass. The world
-// holds one of these and calls update once a frame.
+// The scenery, as one object: the painted textures, the baked species, props
+// and buildings, the pools they are instanced through, the lattice of
+// settlements, the ring that decides where everything stands, the sheet of
+// shade under them and the window of grass. The world holds one of these and
+// calls update once a frame.
 //
 // Baking happens in the constructor and costs the better part of a second, so
 // the world can defer it and give it its own stage of the veil.
@@ -19,11 +20,29 @@ import { createOverrides } from './Overrides';
 import { createPaintedTextures, createSceneryMaterials } from './Painted';
 import { createPools } from './Pools';
 import { createRing, type ScenerySink, type TreeInstance } from './Ring';
+import { createSites, type Site } from './Sites';
+
+/** What a frame gives the plan queue, ms. A village costs about one of these. */
+const SITE_BUDGET_MS = 4;
+/**
+ * How far siteNear looks for a settlement, m. It asks the same question the
+ * ring asks, so it seats cells and may drop a plan the flight has left behind;
+ * both are deterministic and cost a rebuild at worst. Ask it about where you
+ * are, not about the other side of the world.
+ */
+const SITE_REACH = 2000;
 
 export interface SceneryStats {
   trees: number;
   props: number;
+  /** Houses the last rebuild raised out of the site plans it covered. */
+  buildings: number;
   grass: number;
+  /** Sites whose plan is built and cached. */
+  sites: number;
+  /** Sites found but not yet planned; the queue works them off a frame at a time. */
+  sitesQueued: number;
+  sitesMs: number;
   /** Cells the last rebuild visited. */
   cells: number;
   rebuilds: number;
@@ -36,6 +55,8 @@ export interface SceneryStats {
 export interface Scenery {
   update(x: number, z: number, cameraY: number, moved: boolean): void;
   readonly stats: SceneryStats;
+  /** The nearest settlement to a world point, or null; the browser test finds a village through this. */
+  siteNear(x: number, z: number): { id: string; x: number; z: number; radius: number; lots: number } | null;
   /** The i-th tree of the last rebuild in both frames; the browser test checks the conversion. */
   sample(i: number): { world: [number, number]; local: [number, number] } | null;
   dispose(): void;
@@ -103,31 +124,60 @@ export function createScenery(deps: {
     },
   };
 
+  const overrides = createOverrides();
+  const sites = createSites({ library, sampler, heightfield, overrides });
   const ring = createRing({
     seed,
     library,
     sampler,
     heightfield,
     obstacles,
-    overrides: createOverrides(),
+    overrides,
     metrics: pools.metrics,
     propKit: pools.propKit,
+    sites,
     sink,
   });
 
   let rebuilds = 0;
+  let sitesMs = 0;
+  const nearby: Site[] = [];
   return {
     update(x, z, cameraY, moved) {
-      if (ring.update(x, z, moved)) {
+      // The queue runs before the ring so a plan finished in this frame is
+      // standing in this frame's rebuild. A plan that was only just finished
+      // also forces one: the ring finds its sites while rebuilding, so without
+      // this a village discovered over a standing flight would wait for the
+      // next cell crossing, and a village discovered at the last crossing would
+      // arrive a whole cell late.
+      const planned = sites.built;
+      const started = performance.now();
+      sites.work(SITE_BUDGET_MS);
+      sitesMs = performance.now() - started;
+      if (ring.update(x, z, moved || sites.built > planned)) {
         rebuilds++;
         shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
       }
       grass.update(x, z, cameraY, origin, moved);
     },
+    siteNear(x, z) {
+      const site = sites.near(x, z, SITE_REACH, nearby)[0];
+      if (!site) return null;
+      return {
+        id: site.id,
+        x: site.x,
+        z: site.z,
+        radius: site.radius,
+        lots: sites.planFor(site)?.lots.length ?? 0,
+      };
+    },
     get stats() {
       return {
         trees: ring.trees,
         props: ring.props,
+        buildings: ring.buildings,
+        sites: sites.built,
+        sitesQueued: sites.queued,
         // what is drawn, not what is buffered: above 250 m the window is off
         // and the blades from the last low pass are still in its arrays
         grass: grass.mesh.visible ? grass.count : 0,
@@ -135,6 +185,7 @@ export function createScenery(deps: {
         rebuilds,
         ringMs: Math.round(ring.ms * 10) / 10,
         grassMs: Math.round(grass.ms * 10) / 10,
+        sitesMs: Math.round(sitesMs * 100) / 100,
         bakeMs,
       };
     },

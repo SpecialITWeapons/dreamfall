@@ -14,7 +14,8 @@ test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
 interface, procedural human, outfits), `terrain/` (noise, base fields,
 heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
-ring, pools, tree kit, painted textures, ground shade, grass), `sky/`
+ring, settlement lattice, pools, tree kit, structure kit, road kit, painted
+textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
 (ambience model and sound graph), `render/` (color grade, lighting model,
 display chain), `time/` (day clock). `three` is aliased to
@@ -167,11 +168,33 @@ subdirectory.
   how it stands.
 - `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
   own top and radius -- never the entry's data, so a generator cannot understate
-  how much sky it takes.
+  how much sky it takes; a building is measured the same way, and its entry's own
+  `obstacle` may ask for more room, never for less.
 - Everything that decides what stands where is behind `ScenerySink` and runs in
   Node with a test; everything past it is instancing and is checked in the
   browser. Leaves and grass sway on `uniforms.time`, so a paused flight is a
   still forest.
+
+## Settlements
+
+- One lattice answers three questions -- where a site stands (the `lattice`
+  presence hook), where the ground goes flat (the `plateau` height hook) and
+  where the site is seated -- and the seat is not a fourth draw: `Sites` calls
+  the biome's own presence hook at the lattice centre and stands the settlement
+  there. Two draws on one cell agree about half the time, which is what two
+  coins do, and the other half is a village on the slope beside its own flat
+  square. `SitesSpec` therefore carries no odds and no land line of its own.
+- A plan is data -- roads, lots, reservations, never geometry -- and a pure
+  function of its site, which is what lets a village be built and tested in
+  Node; the pools make the geometry out of it, as they do out of a scatter.
+- Plans are built in a queue with a budget of 4 ms a frame and cached wider than
+  the ring, so a plan survives the ring leaving it and coming back. Seating
+  reads the sampler and needs no window; the plan reads the height window, so a
+  site the window cannot answer for keeps its turn in the queue rather than
+  laying its street over the other side of the world.
+- `cell.occupied` reads the plans' reservations and roads out of a hash grid
+  filled at every rebuild, which is why the forest keeps off the square and the
+  road.
 
 ## Checking
 

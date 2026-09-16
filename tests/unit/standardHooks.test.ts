@@ -12,6 +12,7 @@ const hit = (over: Partial<LatticeHit> = {}): LatticeHit => ({
   cz: 0,
   d: 0,
   h: 0,
+  t: 0.5,
   u: () => 0.5,
   ...over,
 });

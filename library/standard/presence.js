@@ -97,7 +97,12 @@ const CARRY = 1;
  * on this lattice -- the plan of the settlement, its buildings -- takes the
  * streams after it.
  *
- * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, maxSlope?: number, shoreBonus?: number }} spec
+ * `minTemp` is the last of the cell-level refusals and reads the centre's own
+ * temperature for the same reason `land` reads its height: a settlement that
+ * refuses a glacier must refuse the whole cell, or the ground is painted and
+ * flattened for a village the site finder will not seat.
+ *
+ * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, shoreBonus?: number }} spec
  * @returns {(f: import('../contract').Fields) => number}
  */
 export function lattice({
@@ -107,6 +112,7 @@ export function lattice({
   odds = 0.5,
   salt = 0x5117,
   land = -Infinity,
+  minTemp = -Infinity,
   maxSlope = Infinity,
   shoreBonus = 0,
 }) {
@@ -115,7 +121,7 @@ export function lattice({
     // Nearly every texel of a cell kilometres wide is nowhere near its centre,
     // so the distance is asked first and the rest of the cell costs nothing.
     const near = 1 - sstep(radius, radius + feather, hit.d);
-    if (near === 0 || hit.h < land) return 0;
+    if (near === 0 || hit.h < land || hit.t < minTemp) return 0;
     const shore = 1 - sstep(0, SHORE_REACH, Math.abs(hit.h));
     if (hit.u(CARRY) >= odds * (1 + shoreBonus * shore)) return 0;
     if (maxSlope === Infinity) return near; // unset, it is no ceiling at all

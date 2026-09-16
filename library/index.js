@@ -36,11 +36,26 @@ import cottage from './structures/cottage.js';
 import barn from './structures/barn.js';
 import mill from './structures/mill.js';
 import cairns from './props/cairns.js';
+import { settlement } from './settlements/settlement.js';
 
 /** @returns {import('./contract').Library} */
 export function createLibrary() {
   return {
-    biomes: [wildsong, elderwood, steppe, badlands, dunes, frostpines, moor, autumn, jungle, blossom],
+    // The village goes last: the first biome takes any texel no other claims,
+    // and a settlement claims its own ground and nothing else.
+    biomes: [
+      wildsong,
+      elderwood,
+      steppe,
+      badlands,
+      dunes,
+      frostpines,
+      moor,
+      autumn,
+      jungle,
+      blossom,
+      settlement(),
+    ],
     species: [acacia, birch, blossomTree, cypress, deadwood, elder, oak, palm, pine],
     props: [boulders, cairns],
     structures: [cottage, barn, mill],

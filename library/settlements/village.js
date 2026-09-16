@@ -14,7 +14,12 @@ export const VILLAGE = {
   radius: [120, 250],
   /** Weak on purpose: a village sits on its hill, it does not cut it flat. */
   plateau: { strength: 0.3, feather: 170 },
-  ground: { land: 10, maxSlope: 0.25 },
+  /**
+   * What ground a village will stand on. These three numbers are read twice --
+   * by the presence hook, which paints and flattens, and by the site finder,
+   * which seats the village -- and they must be the same numbers both times.
+   */
+  ground: { land: 10, minTemp: 0.2, maxSlope: 0.25 },
   roads: {
     /** Metres between side paths along the main street. */
     spacing: 70,

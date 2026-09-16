@@ -39,12 +39,14 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   const centre = new Float64Array(5);
   let atX = NaN,
     atZ = NaN,
-    centreHeight = 0;
+    centreHeight = 0,
+    centreTemp = 0;
   const hit: LatticeHit & { cell: number; salt: number; ix: number; iz: number } = {
     cx: 0,
     cz: 0,
     d: 0,
     h: 0,
+    t: 0,
     cell: 0,
     salt: 0,
     ix: 0,
@@ -90,10 +92,12 @@ export function createFields(sampler: WorldSampler): FieldsReader {
       if (hit.cx !== atX || hit.cz !== atZ) {
         sampler.baseFields(hit.cx, hit.cz, centre);
         centreHeight = centre[0]!;
+        centreTemp = centre[1]!;
         atX = hit.cx;
         atZ = hit.cz;
       }
       hit.h = centreHeight;
+      hit.t = centreTemp;
       hit.cell = cell;
       // The stream the hit hands out is salted too: the sites of M4 stand on
       // this lattice, and two worlds whose villages sit on the same grid are

@@ -165,6 +165,12 @@ export interface LatticeHit {
   d: number;
   /** Base height at the centre, m: what a plateau flattens its ground toward. */
   h: number;
+  /**
+   * Temperature at the centre, 0..1. Like `h`, it is the cell's own answer
+   * rather than this texel's, so a hook can refuse a whole cell on climate
+   * without its edge disagreeing with its middle.
+   */
+  t: number;
   u(k: number): number;
 }
 
@@ -202,6 +208,8 @@ export type PresenceDescriptor =
       salt?: number;
       /** Metres of height the centre must have; the sea claims nothing. */
       land?: number;
+      /** Temperature the centre must have, 0..1; nobody settles a glacier. */
+      minTemp?: number;
       maxSlope?: number;
       shoreBonus?: number;
     }
@@ -396,12 +404,30 @@ export interface SitePlan {
   reservations: Reservation[];
 }
 
+/**
+ * Where a settlement stands and what it puts there.
+ *
+ * It carries no odds and no land line of its own: the biome's presence hook
+ * decides whether a lattice cell carries a site, and the site is seated at the
+ * centre that hook believes in. That is not tidiness -- it is the only way the
+ * ground that is painted and flattened for a village is the ground the village
+ * stands on. Two draws on one cell agree about half the time, which is what two
+ * coins do.
+ */
 export interface SitesSpec {
+  /** The lattice, m: the same cell the presence hook is given. */
   cell: number;
-  odds: number;
+  /** The lattice's salt: again the hook's. Defaults to the hook's own default. */
+  salt?: number;
   radius: [number, number];
   /** Relative weights by structure id; the validator checks them against the registry. */
   structures?: Record<string, number>;
+  /**
+   * The settlement's own last word, asked at the centre the hook chose. It can
+   * only refuse what the hook allowed, so a `fits` narrower than the presence
+   * hook leaves ground painted for a village that never comes: keep the two
+   * saying the same thing, as `library/settlements/settlement.js` does.
+   */
   fits(f: Fields): boolean;
   build(site: Site, kit: SiteKit): void;
 }
@@ -667,8 +693,10 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       if (typeof site.fits !== 'function') errors.push(`${where}.sites: needs a fits hook`);
       if (typeof site.build !== 'function') errors.push(`${where}.sites: needs a build hook`);
       if (!(site.cell > 0)) errors.push(`${where}.sites.cell: ${site.cell} is not a lattice`);
-      if (!(site.odds >= 0 && site.odds <= 1))
-        errors.push(`${where}.sites.odds: ${site.odds} is not a chance`);
+      // A settlement is seated off its presence hook, so a biome that carries
+      // sites and no lattice under them has nothing to seat them on.
+      if (typeof biome.presence !== 'function' && biome.presence?.type !== 'lattice')
+        errors.push(`${where}.sites: needs a lattice presence to stand on`);
       const radius = site.radius;
       if (!Array.isArray(radius) || radius.length !== 2 || !(radius[0] > 0 && radius[1] >= radius[0]))
         errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);

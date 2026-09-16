@@ -14,9 +14,10 @@ First run of the browser tests: `npx playwright install chromium`.
 ## Library contract
 
 Everything the world is made of that is not the engine lives in `library/`:
-biomes now, species, props and structures as they arrive. An entry is a plain
-object from one of the `define*` helpers in `library/contract.ts`, and it takes
-one line in `library/index.js` to be part of the world.
+biomes, species, props, structures, and the settlements that decide where a
+building stands. An entry is a plain object from one of the `define*` helpers in
+`library/contract.ts`, and it takes one line in `library/index.js` to be part of
+the world.
 
 A biome says three things at least. **Presence** is where it is, as a number
 from zero to one: name a standard hook (`climatePoint` for a place in climate
@@ -89,7 +90,83 @@ from the descriptor, not called.
 
 Objects that run in a line -- fences across a field, walls, hedges -- are not
 props scattered thinly. They are ribbons along a polyline, the same shape as a
-road, and they arrive with the road kit in M4.
+road. The road kit came with the settlements; the ribbon that is not a road is
+`kit.line` on a site plan, which is in the contract and throws until M4b.
+
+## Adding a structure
+
+A structure is a building: a file under `library/structures/`, one line in
+`library/index.js`, and a settlement that names it. It is data for the built-in
+kit -- a **footprint** (the plan at ground level, in metres), a range of
+**floors**, a **roof** (`gable`, `hip` or `flat`, with a `roofPitch` and an
+optional `chimney`) and a **palette** of swatches for the wall, the roof, the
+trim and the window. `library/structures/cottage.js` is a whole house in a dozen
+numbers; `barn.js` and `mill.js` differ from it by those numbers alone.
+
+The window colour is the one that does more than paint. The kit **cuts** a band
+of windows into each storey's walls -- a box has no vertices where its windows go
+-- paints the pieces that land inside the band and gives them a `glow` attribute
+of 1. After dark the material multiplies that by the instance's own `lit` and by
+the sky's night, so some houses are awake and others are not, without a second
+geometry, a second material or a texture. A recipe that names no window colour
+has no windows and never lights up: that is what makes `barn.js` a barn.
+
+A shape that is none of these writes its own `bake(kit)`, as `cypress.js` does
+among the species, and grows itself through the kit's verbs -- `box`, `roof`,
+`windows`, `merge`, `matrix` -- reading `spec` and `floors` off the kit, the two
+things that differ between two bakes of the same entry. There is one bake per
+kind and per floor count, because whole buildings are instanced.
+
+Budgets bite at bake time and stop the page: 6000 triangles a building, and the
+colour envelope on every vertex. What the flight has to clear is measured off the
+baked shape, never off the entry; an entry's own `obstacle` may ask for more room
+around it, never for less.
+
+## Adding a settlement
+
+A settlement is a biome with a `sites` block: the places someone built, and what
+stands in one. It is the entry written as code over the standard hooks rather
+than as data. `library/settlements/village.js` holds the numbers,
+`settlement.js` is the biome that carries them into the world, and `plan.js` is
+the village itself.
+
+The `sites` block is five things. **`cell`** and **`salt`** name the lattice the
+settlements sit on, one per cell at most; **`radius`** is `[min, max]` metres of
+settlement, capped at 900; **`fits(fields)`** is the settlement's own last word;
+**`build(site, kit)`** lays it out. Name the buildings you use in
+**`structures`** as well, as weights by id: nothing but the validator reads
+them, and what it does with them is refuse a building nobody baked -- the rule
+that catches a typo in a biome's species.
+
+What it is **not** is a lottery. There is no `odds` here and no land line: the
+biome's presence hook decides whether a cell carries a settlement at all, and
+`Sites` seats the settlement by calling that hook at the lattice centre. So
+presence, the plateau and the site finder read one lattice by construction --
+give `presence`, `height` and `sites` the same `cell` and the same `salt` and
+they cannot drift. They used to draw separately, and separately they agreed
+about half the time; the other half was a village on the slope beside its own
+flat square, or a flat square with no village.
+
+`fits` is asked at that same centre and can only refuse what the hook allowed,
+so keep it saying what the hook says: `settlement.js` hands both the same three
+numbers (`land`, `minTemp`, `maxSlope`) and a `fits` narrower than its hook
+would leave ground painted for a village that never comes.
+
+`build` produces data and never geometry: `kit.road(points, width)` for a street,
+`kit.structure(id, x, z, { yaw, floors })` for a plot, `kit.reserve(x, z, radius)`
+for ground nothing else may use. It reads the ground through `kit.height` and
+`kit.slope` rather than off a window of terrain, and draws every random it needs
+from `site.random()` in a fixed order -- change the order and the same cell grows
+a different village. That is what keeps a plan a pure function of its site:
+`tests/unit/settlementPlan.test.ts` lays out a whole village in Node with a stub
+for the ground. Afterwards the pools raise the lots into instances and obstacle
+records, and the road kit turns a polyline into a ribbon that hugs the ground; a
+plan that made a geometry itself could be neither tested nor, one day, edited.
+
+That is the split, and it is the same one the biomes and the props keep: **the
+settlement says what stands where, the structure says what it looks like.** A
+plan names an id, a spot, a heading and a floor count, and never how tall a
+storey is or what colour the roof is; a recipe never knows there is a village.
 
 ## Publishing
 
