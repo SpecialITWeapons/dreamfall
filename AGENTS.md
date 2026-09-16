@@ -158,7 +158,7 @@ subdirectory.
 
 ## Scenery
 
-- The ring (96 m cells, 1.9 km) rebuilds when the flight crosses a cell **and
+- The ring (96 m cells, 2.6 km) rebuilds when the flight crosses a cell **and
   when `Origin` jumps**: the instances the pools wrote are relative to an origin
   that no longer exists. Positions are decided in the world, matrices are written
   in the local frame, and that is the only conversion.
@@ -174,6 +174,18 @@ subdirectory.
   Node with a test; everything past it is instancing and is checked in the
   browser. Leaves and grass sway on `uniforms.time`, so a paused flight is a
   still forest.
+- A tree, a prop and a building **fade** at the edge of the ring, through
+  opacity against an alpha test, and stand at full height until they do. The
+  original folded them into their own base instead, which is cheaper and reads
+  as a tree sprouting out of the ground in front of the flight: the fog covers
+  only a quarter of what stands at two kilometres, so that band is watched, not
+  hidden. The ring's own ceiling (`MAX_RING_TREES`) is deliberately above a
+  pool's (`MAX_TREES`): the sweep runs in row order and stops dead on it, so a
+  ring that reaches its ceiling is a wood with one side missing.
+- Grass is tufts, not blades: three painted cards crossed about an axis, in four
+  baked forms an instance takes one of, because one card is a line seen from
+  above and a meadow of them reads as streaks. Each form is a mesh of its own
+  and `Grass.mesh` is the group of them.
 
 ## Settlements
 

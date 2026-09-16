@@ -124,9 +124,17 @@ export const BUDGET = {
    * the reach it holds them over. A lattice fine enough to put more than this
    * in front of the flight is refused: the ring would be raising villages
    * shoulder to shoulder, which is a town, and a town is its own entry.
+   *
+   * `siteReach` is the ring's `TREE_RADIUS`, written here a second time because
+   * the contract may not import the engine -- the library is the contributed
+   * side and the dependency does not run that way. A test holds the two
+   * together and goes red the moment they disagree, which is the only thing
+   * that makes a copied constant safe: this one was 1900 for as long as it took
+   * to move the ring to 2600, and for all that time it measured a world that
+   * was no longer there.
    */
   siteInstances: 4,
-  siteReach: 1900,
+  siteReach: 2600,
   /**
    * Distinct floor counts one structure may be baked at. A building is
    * instanced whole, so every count in `floors` gets its own bake and its own
@@ -375,8 +383,13 @@ export interface SiteKit extends SceneryKit {
   /**
    * Anything else that runs in a line: a fence across a field, a wall, a hedge.
    * It is a ribbon along a polyline, the same mechanism as a road, which is why
-   * it lives here and not in a thin scatter of props. M4a knows the shape and
-   * throws; M4b builds it.
+   * it lives here and not in a thin scatter of props -- and the same walk, so a
+   * corner is mitred once for both.
+   *
+   * A line claims no ground: the tallest kind stands 1.4 m, far under the
+   * clearance the flight keeps, so nothing is reserved and no obstacle is
+   * recorded. Fence a square and the trees still grow inside it; `reserve` is
+   * what keeps them out.
    */
   line(points: Array<[number, number]>, kind: string, opts?: { height?: number }): void;
   reserve(x: number, z: number, radius: number): void;
@@ -407,12 +420,21 @@ export interface Reservation {
  * geometry out of this, which is what lets a plan be a pure function with a
  * test in Node -- and what will let the editor of M6 change one.
  */
+/** One run of fence, wall or hedge, in world metres. */
+export interface LineSpec {
+  points: Array<[number, number]>;
+  /** A kind the line kit bakes: `fence`, `wall`, `hedge`. Anything else is refused by name. */
+  kind: string;
+  /** Metres above the ground; the kind's own height by default. */
+  height?: number;
+}
 export interface SitePlan {
   id: string;
   x: number;
   z: number;
   radius: number;
   roads: RoadSpec[];
+  lines: LineSpec[];
   lots: LotSpec[];
   reservations: Reservation[];
 }

@@ -45,6 +45,12 @@ const PAINTED_MEAN = 0.38,
 const BARK_BUMP = 0.015;
 const LEAF_ALPHA_TEST = 0.04,
   LEAF_EMISSIVE = 0.025;
+/**
+ * Where a thing standing on the ground stops being drawn as it reaches the edge
+ * of the ring. Low on purpose: the coverage samples are what dissolve it, and a
+ * higher test would cut the last of it off in one step instead of thinning it.
+ */
+const FADE_ALPHA_TEST = 0.02;
 const GRASS_ALPHA_TEST = 0.08;
 /** Blades fade out over this band of camera distance, meters. */
 const GRASS_FADE: [number, number] = [120, 190];
@@ -344,14 +350,19 @@ export function createSceneryMaterials(deps: {
   const bark = sampleOf(textures.bark);
   return {
     /**
-     * A trunk or a limb: the painted bark, tinted per species. The pool owns
-     * the position of this one, because the shrink at the edge of the ring is
-     * the pool's arithmetic, not the bark's.
+     * A trunk or a limb: the painted bark, tinted per species. `fade` is how
+     * much of this tree is there at all -- one at any normal distance, falling
+     * to nothing at the edge of the ring. It travels through opacity against an
+     * alpha test, so a trunk dissolves into the haze in the coverage samples
+     * rather than shrinking into the ground, which is a thing a tree does not do.
      */
-    wood(tint: Color) {
+    wood(tint: Color, fade: Node<'float'>) {
       // Only the color: the lit material of this engine takes no alpha, and the
       // bark canvas has none to take.
-      const m = litMaterial(bark.rgb.mul(uniform(tint.clone())));
+      const m = litMaterial(bark.rgb.mul(uniform(tint.clone())), {
+        basic: { alphaTest: FADE_ALPHA_TEST, alphaToCoverage: true },
+      });
+      m.opacityNode = fade;
       m.bumpMap = textures.barkRelief;
       m.bumpScale = BARK_BUMP;
       return m;
@@ -391,8 +402,13 @@ export function createSceneryMaterials(deps: {
      * here; in this engine the grade lives in the display chain, so the ground
      * and the boulder on it are graded once, together.
      */
-    prop() {
-      return litMaterial(attribute<'vec3'>('color', 'vec3'));
+    prop(fade?: Node<'float'>) {
+      if (!fade) return litMaterial(attribute<'vec3'>('color', 'vec3'));
+      const m = litMaterial(attribute<'vec3'>('color', 'vec3'), {
+        basic: { alphaTest: FADE_ALPHA_TEST, alphaToCoverage: true },
+      });
+      m.opacityNode = fade;
+      return m;
     },
     /**
      * The grass of the local window. `ao` is the shade sheet under the trees,

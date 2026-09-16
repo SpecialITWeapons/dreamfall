@@ -197,6 +197,43 @@ describe('createSites', () => {
     const never = village({}, 'village', { type: 'lattice', cell: CELL, salt: SALT, radius: 250, odds: 0 });
     expect(sites(library([never])).near(0, 0, 9000, [])).toEqual([]);
   });
+  it('collects the lines a plan draws, and refuses a kind nobody bakes', () => {
+    const fenced = village({
+      build: (site, kit: SiteKit) => {
+        kit.line(
+          [
+            [site.x - 40, site.z],
+            [site.x + 40, site.z],
+          ],
+          'fence',
+        );
+        kit.line([[site.x, site.z - 30]], 'wall', { height: 2 });
+      },
+    });
+    const s = sites(library([fenced]));
+    const one = s.near(0, 0, 3000, [])[0]!;
+    s.work(100);
+    const plan = s.planFor(one)!;
+    expect(plan.lines).toHaveLength(2);
+    expect(plan.lines[0]!.kind).toBe('fence');
+    expect(plan.lines[0]!.height).toBeUndefined();
+    expect(plan.lines[0]!.points).toEqual([
+      [one.x - 40, one.z],
+      [one.x + 40, one.z],
+    ]);
+    expect(plan.lines[1]).toMatchObject({ kind: 'wall', height: 2 });
+    // A line claims no ground: 1.4 m is far under the clearance the flight
+    // keeps, so fencing a square is not the same as reserving it.
+    expect(plan.reservations).toEqual([]);
+
+    // and a kind nobody bakes is said here, in the queue, not dropped in a frame
+    const wrong = village({
+      build: (site, kit: SiteKit) => kit.line([[site.x, site.z]], 'palisade'),
+    });
+    const w = sites(library([wrong]));
+    w.near(0, 0, 3000, []);
+    expect(() => w.work(100)).toThrow(/unknown line kind "palisade"/);
+  });
   it('tells the plan at once when it asks for a building nobody baked', () => {
     // The queue is not the render loop, so this is the one place it is safe to
     // be loud -- and the alternative is a house that silently does not appear.

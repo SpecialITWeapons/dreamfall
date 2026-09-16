@@ -28,7 +28,6 @@ import {
   type BufferGeometry,
   type Material,
 } from 'three';
-import type { Node } from 'three/webgpu';
 import {
   attribute,
   cameraPosition,
@@ -52,6 +51,7 @@ import {
 import type { Origin } from '../sim/Origin';
 import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32, sstep } from '../terrain/noise';
+import { buildLines } from './LineKit';
 import { buildRoads } from './RoadKit';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { SceneryMaterials, PaintedTextures } from './Painted';
@@ -74,8 +74,15 @@ import {
 
 /** Where the full crown gives way to the thinned one, m. */
 const CROWN_FADE = [540, 680] as const;
-/** Where a tree folds into its own base, m. */
-const RING_FADE = [1680, 1850] as const;
+/**
+ * Where a thing standing on the ground fades out, m. It ends just inside
+ * TREE_RADIUS: past that the ring has nothing to show anyway. The original
+ * folded a tree into its own base across this band, which is cheap and reads
+ * as a tree sprouting out of the ground in front of the flight -- two and a
+ * half to four seconds of it, at the speeds this world flies. A tree stands at
+ * its own height here and dissolves instead.
+ */
+const RING_FADE = [2300, 2560] as const;
 /**
  * Which crown a tree is given at a rebuild. The margins are the original's,
  * and they are generous on purpose: a rebuild happens at most one cell after
@@ -97,8 +104,11 @@ const treeBase = attribute<'vec3'>('base', 'vec3');
 const baseDistance = length(treeBase.sub(cameraPosition));
 const crownBand = smoothstep(CROWN_FADE[0], CROWN_FADE[1], baseDistance);
 const distantCrown = step(CROWN_FADE[1], baseDistance);
-const ringScale = float(1).sub(smoothstep(RING_FADE[0], RING_FADE[1], baseDistance));
-const grown = (position: Node<'vec3'>) => treeBase.add(position.sub(treeBase).mul(ringScale));
+/**
+ * How much of a thing is there at all, by the distance to its own foot rather
+ * than to the vertex: a tree must thin out whole, not from the top down.
+ */
+const ringFade = float(1).sub(smoothstep(RING_FADE[0], RING_FADE[1], baseDistance));
 // Instancing has already moved the vertex, so the card's centre is rebuilt in
 // the scene from its tree-local one: cos, sin, the horizontal scale and the
 // vertical one, all four packed beside the base in one interleaved buffer
@@ -189,8 +199,7 @@ export function createPools(deps: {
   for (const entry of library.species ?? []) {
     const baked = bakeSpecies(entry, { leafTexture: (form) => textures.leaf(form) });
     const trunkTint = new Color(swatchColor(entry.trunk?.tint ?? 'white'));
-    const bark = materials.wood(trunkTint);
-    bark.positionNode = grown(positionLocal);
+    const bark = materials.wood(trunkTint, ringFade);
     const wood = pool(baked.wood, bark, MAX_TREES);
     wood.castShadow = true;
     const record: SpeciesPool = {
@@ -213,14 +222,14 @@ export function createPools(deps: {
         baked.crown,
         materials.leaf(
           map,
-          float(1).sub(distantCrown),
-          grown(cardWorld.add(positionLocal.sub(cardWorld).mul(cardScale))),
+          float(1).sub(distantCrown).mul(ringFade),
+          cardWorld.add(positionLocal.sub(cardWorld).mul(cardScale)),
         ),
         MAX_TREES,
       );
       record.distant = pool(
         baked.distant,
-        materials.leaf(map, distantCrown, grown(positionLocal)),
+        materials.leaf(map, distantCrown.mul(ringFade), positionLocal),
         MAX_TREES,
       );
       record.crown.castShadow = true;
@@ -248,8 +257,7 @@ export function createPools(deps: {
     sstep,
     color: (value) => new Color(swatchColor(value)),
   };
-  const propMaterial = materials.prop();
-  propMaterial.positionNode = grown(positionLocal);
+  const propMaterial = materials.prop(ringFade);
   const props = new Map<string, PropPool>();
   for (const entry of library.props ?? []) {
     const geometry = entry.bake(propKit);
@@ -265,8 +273,7 @@ export function createPools(deps: {
   // range is its own: a mill starts at three storeys and a pool that assumed one
   // and two would flatten it into a shed.
   const structureKit = createStructureKit();
-  const buildingMaterial = materials.prop();
-  buildingMaterial.positionNode = grown(positionLocal);
+  const buildingMaterial = materials.prop(ringFade);
   // What lights a village after dark: the window colour the bake painted, only
   // where the bake said `glow`, only as awake as this instance is, and only as
   // far as the sky is night. No light leaves the window -- one lighting model,
@@ -339,7 +346,9 @@ export function createPools(deps: {
   roads.name = 'roads';
   const roadMaterial = materials.prop();
   materialsMade.push(roadMaterial);
-  const ribbons = new Map<string, Mesh>();
+  // What one site put in the scene: its road ribbon, its lines, or neither.
+  // Keyed by plan, so an empty answer is an answer and is not asked again.
+  const ribbons = new Map<string, Mesh[]>();
   const offered = new Set<string>();
 
   const sink: ScenerySink = {
@@ -353,22 +362,29 @@ export function createPools(deps: {
     },
     site(plan: SitePlan) {
       offered.add(plan.id);
-      let ribbon = ribbons.get(plan.id);
-      if (!ribbon) {
-        const geometry = buildRoads(plan.roads, {
-          heightAt: (x, z) => heightfield.heightAt(x, z),
+      let built = ribbons.get(plan.id);
+      if (!built) {
+        const deps = {
+          heightAt: (x: number, z: number) => heightfield.heightAt(x, z),
           site: plan.id,
-          at: [plan.x, plan.z],
+          at: [plan.x, plan.z] as [number, number],
+        };
+        // The answer is remembered even when it is "nothing to build". A site
+        // whose roads are all too short to sample would otherwise walk its
+        // polylines again on every single rebuild, for ever, to be told the same
+        // thing -- and a settlement made only of fences is exactly that site.
+        built = [buildRoads(plan.roads, deps), buildLines(plan.lines, deps)].flatMap((geometry) => {
+          if (!geometry) return [];
+          const mesh = new Mesh(geometry, roadMaterial);
+          mesh.receiveShadow = true;
+          roads.add(mesh);
+          return [mesh];
         });
-        if (!geometry) return;
-        ribbon = new Mesh(geometry, roadMaterial);
-        ribbon.receiveShadow = true;
-        ribbons.set(plan.id, ribbon);
-        roads.add(ribbon);
+        ribbons.set(plan.id, built);
       }
       // Written every rebuild rather than once: a rebuild is what an origin
       // jump forces, and the jump is the only thing that moves this.
-      ribbon.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
+      for (const mesh of built) mesh.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
     },
     tree(tree: TreeInstance) {
       const record = species.get(tree.species);
@@ -457,10 +473,12 @@ export function createPools(deps: {
         if (record.distant) commit(record.distant, record.far);
       }
       for (const record of props.values()) commit(record.mesh, record.count);
-      for (const [id, ribbon] of ribbons)
+      for (const [id, meshes] of ribbons)
         if (!offered.has(id)) {
-          roads.remove(ribbon);
-          ribbon.geometry.dispose();
+          for (const mesh of meshes) {
+            roads.remove(mesh);
+            mesh.geometry.dispose();
+          }
           ribbons.delete(id);
         }
     },
@@ -489,7 +507,7 @@ export function createPools(deps: {
         mesh.geometry.dispose();
         mesh.dispose();
       }
-      for (const ribbon of ribbons.values()) ribbon.geometry.dispose();
+      for (const meshes of ribbons.values()) for (const mesh of meshes) mesh.geometry.dispose();
       ribbons.clear();
       roads.clear();
       for (const material of new Set(materialsMade)) material.dispose();

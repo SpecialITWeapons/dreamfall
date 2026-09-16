@@ -8,6 +8,7 @@ import {
   type Fields,
   type GroundHook,
   type Library,
+  type LineSpec,
   type LotSpec,
   type Prop,
   type Reservation,
@@ -19,7 +20,10 @@ import { createWorldSampler } from '../../src/engine/terrain/WorldSampler';
 import { createObstacles } from '../../src/engine/scenery/Obstacles';
 import { createOverrides, type Override } from '../../src/engine/scenery/Overrides';
 import {
+  MAX_RING_TREES,
+  MAX_TREES,
   TREE_CELL,
+  TREE_RADIUS,
   createRing,
   type PropInstance,
   type SceneryMetrics,
@@ -135,6 +139,7 @@ const planOf = (parts: {
   x: number;
   z: number;
   roads?: RoadSpec[];
+  lines?: LineSpec[];
   reservations?: Reservation[];
   lots?: LotSpec[];
 }): SitePlan => ({
@@ -143,6 +148,7 @@ const planOf = (parts: {
   z: parts.z,
   radius: 250,
   roads: parts.roads ?? [],
+  lines: parts.lines ?? [],
   lots: parts.lots ?? [],
   reservations: parts.reservations ?? [],
 });
@@ -260,6 +266,17 @@ describe('the streamed ring', () => {
     r.ring.update(0, 0, false);
     expect(r.trees).toHaveLength(5);
     expect(r.ring.trees).toBe(5);
+  });
+  it("keeps its own ceiling above a pool's, because hitting it costs a side of the forest", () => {
+    // The sweep runs cell by cell in row order and stops dead on the ceiling,
+    // so a ring that reaches it is a wood with one edge missing rather than a
+    // thinner wood. The pools are allocated per species and per mesh, which is
+    // what makes their number the expensive one; the ring's is a loop guard and
+    // costs nothing, so it is the one with the headroom.
+    expect(MAX_RING_TREES).toBeGreaterThan(MAX_TREES);
+    // and the reach is wide enough that the fade at its edge is not watched:
+    // at the original 1900 m the fog covers about a quarter of what stands there
+    expect(TREE_RADIUS).toBeGreaterThanOrEqual(2600);
   });
   it('is the same ring twice: rebuilt in place, and after a walk there and back', () => {
     const a = ring(library([everywhere('woods', 1)])),

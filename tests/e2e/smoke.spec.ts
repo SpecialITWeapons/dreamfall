@@ -682,6 +682,11 @@ test('grass grows close to the ground and costs nothing from altitude', async ({
 const VILLAGE = { x: 1525, z: 1588 };
 /** The next village out, 8.3 km away: further than the height window can answer for. */
 const NEXT_VILLAGE = { x: 8401, z: -2905 };
+/**
+ * Wooded ground with no settlement inside the ring's reach of it: the nearest
+ * is over 3.2 km away, and the ring sees 2.6. What stands here is only forest.
+ */
+const VILLAGE_FREE = { x: 6000, z: 6000 };
 
 /** Drops the flight over a world point; the jump crosses cells, so the ring rebuilds. */
 const teleport = (page: Page, at: { x: number; z: number }, above = 120) =>
@@ -728,28 +733,77 @@ const overVillage = async (page: Page) => {
   }, VILLAGE);
 };
 
+test('the forest reaches past two kilometres, where the fade is not worth watching', async ({ page }) => {
+  // The ring used to stop at 1.9 km, and a tree there folded into its own base
+  // to leave: growth in plain sight, because the fog covers only a quarter of
+  // what stands at that distance. The reach is what moved; this is the half of
+  // it the page can answer for, and the console below is the other half -- a
+  // material that faded instead of shrinking had to compile to say nothing.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const standing = await page.evaluate((at) => {
+    const w = window.__world!;
+    w.state.x = at.x;
+    w.state.z = at.z;
+    w.state.y = w.heightAt(at.x, at.z) + 120;
+    w.step(0.05);
+    // What stands over the ground, counted in rings around the flight: the
+    // obstacle registry is filled by the ring and by nothing else, so a ring
+    // with something in it is a ring the scenery reached.
+    const band = (from: number, to: number) => {
+      let found = 0;
+      let land = 0;
+      for (let k = 0; k < 720; k++) {
+        const a = (k / 720) * Math.PI * 2,
+          r = from + ((k * 37) % 100) * ((to - from) / 100);
+        const x = at.x + Math.cos(a) * r,
+          z = at.z + Math.sin(a) * r;
+        // Dry ground only: floorAt answers with the sea level over water, and
+        // a seabed ten metres under it would read as something standing on it.
+        const ground = w.heightAt(x, z);
+        if (ground < 10) continue;
+        land++;
+        if (w.floorAt(x, z) - ground > 5) found++;
+      }
+      return { found, land };
+    };
+    return { near: band(1000, 1500), edge: band(2000, 2500), beyond: band(2700, 3200) };
+  }, VILLAGE_FREE);
+  // Trees stand where they always did, and now also in the band the old ring
+  // could not reach at all.
+  expect(standing.near.found).toBeGreaterThan(0);
+  expect(standing.edge.found).toBeGreaterThan(0);
+  // and the ring still ends: past its reach there is dry ground, and nothing
+  // standing on any of it
+  expect(standing.beyond.land).toBeGreaterThan(50);
+  expect(standing.beyond.found).toBe(0);
+  expect(errors).toEqual([]);
+});
+
 test('a village stands where the lattice seated it, and every house of it joins the obstacles', async ({
   page,
 }) => {
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
-  // The flight's own start, as the control: the plan is known out here -- the
-  // seat needs no window -- and none of it stands, because the ring's 1.9 km
-  // does not reach 2.2. So everything the obstacle registry holds here is a
-  // tree, and what the reading over the village has on top of that is houses.
-  const home = await page.evaluate(() => {
+  // Wooded country with no settlement within the ring's reach, as the control:
+  // everything the obstacle registry holds here is a tree, so the reading over
+  // the village has houses and nothing else on top of it. It is not the
+  // flight's own start any more -- the village sits 2.2 km from there and the
+  // ring reaches 2.6, so the start now has a village standing in it.
+  const bare = await page.evaluate((at) => {
     const w = window.__world!;
-    w.state.x = 0;
-    w.state.z = 0;
-    w.state.y = w.heightAt(0, 0) + 120;
+    w.state.x = at.x;
+    w.state.z = at.z;
+    w.state.y = w.heightAt(at.x, at.z) + 120;
     w.step(0.05);
-    return { site: w.siteNear(0, 0), scenery: w.scenery!, obstacles: w.obstacles };
-  });
-  expect(home.site?.id).toBe('village:0,0');
-  expect(home.site!.lots).toBeGreaterThan(20);
-  expect(home.scenery.buildings).toBe(0);
-  expect(home.obstacles).toBe(home.scenery.trees);
+    return { site: w.siteNear(at.x, at.z), scenery: w.scenery!, obstacles: w.obstacles };
+  }, VILLAGE_FREE);
+  expect(bare.site).toBeNull();
+  expect(bare.scenery.buildings).toBe(0);
+  expect(bare.scenery.trees).toBeGreaterThan(500);
+  expect(bare.obstacles).toBe(bare.scenery.trees);
 
   const village = await overVillage(page);
   // Two kilometres of slack in the question, half a metre in the answer: the

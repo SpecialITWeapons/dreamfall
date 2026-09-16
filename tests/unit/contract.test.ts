@@ -18,6 +18,7 @@ import {
   defineStructure,
 } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
+import { TREE_RADIUS } from '../../src/engine/scenery/Ring';
 
 // The validator never calls a hook, so a stub of the right shape is enough.
 const ground = (() => ({ albedo: null })) as unknown as GroundHook;
@@ -112,7 +113,11 @@ describe('validateLibrary', () => {
     expect(BUDGET.propTriangles).toBe(6000);
     expect(BUDGET.propInstances).toBe(2000);
     expect(BUDGET.siteInstances).toBe(4);
-    expect(BUDGET.siteReach).toBe(1900);
+    // The contract may not import the engine, so the ring's reach is written
+    // here twice and this is the seam that refuses to let the copies drift: a
+    // guard measured against a reach the ring no longer has is a guard that
+    // lies, and it lied for exactly as long as it took to move the ring.
+    expect(BUDGET.siteReach).toBe(TREE_RADIUS);
     expect(BUDGET.speciesScale).toBe(3);
   });
 });
@@ -270,13 +275,18 @@ describe('validateLibrary: structures and the sites that place them', () => {
         settled({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
         // a lattice this fine is a town's, and a town is its own entry
         settled({ id: 'crowded', sites: sites({ cell: 900 }) }),
+        // and this one is the drift itself: 2200 m fits four sites inside the
+        // 1900 m the guard was written against and nine inside the 2600 the
+        // ring actually reaches, so it passed until the reach was told the truth
+        settled({ id: 'drifted', sites: sites({ cell: 2200 }) }),
       ],
       structures: [structure()],
     });
     const all = errors.join('\n');
     expect(all).toContain('biome sprawl.sites.radius: 1200 m, the budget is 900');
     expect(all).toContain('biome drifting.sites: needs a lattice presence to stand on');
-    expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 25 sites in the ring, the budget is 4');
+    expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 36 sites in the ring, the budget is 4');
+    expect(all).toContain('biome drifted.sites.cell: 2200 m puts up to 9 sites in the ring, the budget is 4');
     expect(all).toContain('biome hookless.sites: needs a build hook');
   });
 });

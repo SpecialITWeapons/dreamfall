@@ -55,7 +55,7 @@ export interface RoadDeps {
 }
 
 /** One sample along a polyline: where it is, and which way the ribbon spreads from it. */
-interface Sample {
+export interface PolylineSample {
   x: number;
   z: number;
   /** The half-width direction, already stretched by the mitre at a corner. */
@@ -85,11 +85,17 @@ function miter(d0x: number, d0z: number, d1x: number, d1z: number): [number, num
 }
 
 /**
- * One polyline walked every ROAD_SAMPLE metres. Corners are samples of both the
+ * One polyline walked every `step` metres. Corners are samples of both the
  * segment that arrives and the one that leaves, so the ribbon turns on one rim
  * pair and never tears.
+ *
+ * The line kit walks with this too: a fence follows a polyline the way a road
+ * does, and there is one mitre in this engine. The step is the caller's,
+ * because it is not the same choice for the two of them -- it says how finely
+ * that kind of ribbon follows the ground, and a road that is lifted and a fence
+ * that is buried forgive a chord differently.
  */
-function walk(points: Array<[number, number]>): Sample[] {
+export function walkPolyline(points: Array<[number, number]>, step: number): PolylineSample[] {
   const pts: Array<[number, number]> = [];
   for (const p of points) {
     const last = pts[pts.length - 1];
@@ -99,10 +105,10 @@ function walk(points: Array<[number, number]>): Sample[] {
   let total = 0;
   for (let s = 0; s + 1 < pts.length; s++)
     total += Math.hypot(pts[s + 1]![0] - pts[s]![0], pts[s + 1]![1] - pts[s]![1]);
-  // a road shorter than a single sample is a stray point of a plan, not a road
-  if (total < ROAD_SAMPLE) return [];
+  // a run shorter than a single sample is a stray point of a plan, not a run
+  if (total < step) return [];
 
-  const out: Sample[] = [];
+  const out: PolylineSample[] = [];
   let along = 0;
   for (let s = 0; s + 1 < pts.length; s++) {
     const [x0, z0] = pts[s]!,
@@ -110,7 +116,7 @@ function walk(points: Array<[number, number]>): Sample[] {
     const length = Math.hypot(x1 - x0, z1 - z0);
     const dx = (x1 - x0) / length,
       dz = (z1 - z0) / length;
-    const steps = Math.max(1, Math.ceil(length / ROAD_SAMPLE));
+    const steps = Math.max(1, Math.ceil(length / step));
     const next = pts[s + 2];
     // the first sample of a segment is the corner the segment before it ended on
     for (let i = s === 0 ? 0 : 1; i <= steps; i++) {
@@ -158,7 +164,7 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
   // A road too short to sample drops out here, with its spec: what is left
   // keeps its own width and its own colour, whatever fell out before it.
   const walks = roads
-    .map((road) => ({ road, samples: walk(road.points) }))
+    .map((road) => ({ road, samples: walkPolyline(road.points, ROAD_SAMPLE) }))
     .filter(({ samples }) => samples.length > 1);
   const quads = walks.reduce((sum, { samples }) => sum + samples.length - 1, 0);
   if (quads === 0) return null;
