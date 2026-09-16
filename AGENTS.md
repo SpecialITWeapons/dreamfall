@@ -137,6 +137,12 @@ subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
+- The figure: the shoulder sits on the chest and the cap rides on the joint, so
+  the seam closes at every sweep; a dive is a second pose (`trackDir`) the
+  joints walk to, not a rotation of the first; every joint follows through a
+  first-order lag, longer the further it is from the chest, and `dt <= 0` means
+  "be there now", which is how the world places the figure before the first
+  frame.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own
