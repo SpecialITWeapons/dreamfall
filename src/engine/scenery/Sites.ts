@@ -150,6 +150,8 @@ export function createSites(deps: {
       reservations,
     };
     const kit: SiteKit = {
+      height: (x, z) => heightfield.heightAt(x, z),
+      slope: (x, z) => heightfield.slopeAt(x, z),
       road: (points, width, opts) => {
         roads.push({ points: points.map(([x, z]) => [x, z] as [number, number]), width, color: opts?.color });
       },

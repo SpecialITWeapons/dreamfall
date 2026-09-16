@@ -342,6 +342,14 @@ export interface Site {
   fields: Fields;
 }
 export interface SiteKit extends SceneryKit {
+  /**
+   * The ground the site stands on. A plan needs it -- a street that ignores the
+   * slope is a street up a cliff -- and taking it through the kit is what keeps
+   * the plan a pure function: a test in Node hands it a stub and reads the
+   * answer, with no window of terrain anywhere.
+   */
+  height(x: number, z: number): number;
+  slope(x: number, z: number): number;
   road(points: Array<[number, number]>, width: number, opts?: { color?: SceneryColor }): void;
   /**
    * Anything else that runs in a line: a fence across a field, a wall, a hedge.
