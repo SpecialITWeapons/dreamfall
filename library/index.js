@@ -32,6 +32,9 @@ import oak from './species/oak.js';
 import palm from './species/palm.js';
 import pine from './species/pine.js';
 import boulders from './props/boulders.js';
+import cottage from './structures/cottage.js';
+import barn from './structures/barn.js';
+import mill from './structures/mill.js';
 import cairns from './props/cairns.js';
 
 /** @returns {import('./contract').Library} */
@@ -40,6 +43,6 @@ export function createLibrary() {
     biomes: [wildsong, elderwood, steppe, badlands, dunes, frostpines, moor, autumn, jungle, blossom],
     species: [acacia, birch, blossomTree, cypress, deadwood, elder, oak, palm, pine],
     props: [boulders, cairns],
-    structures: [],
+    structures: [cottage, barn, mill],
   };
 }

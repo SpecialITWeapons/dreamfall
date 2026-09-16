@@ -518,15 +518,27 @@ export interface Prop {
   bake(kit: PropKit): BufferGeometry;
   place(cell: Cell, kit: PropKit): Placement[] | void;
 }
-/** What a building recipe is baked through: the prop kit, plus what a wall needs. */
+/**
+ * What a building recipe is baked through: the prop kit, plus what a wall needs,
+ * plus the two things that vary per bake. A recipe that bakes itself reads
+ * `floors` here -- it is the one number that changes between two bakes of the
+ * same entry, and `library/` cannot name a type that lives in `src/`.
+ */
 export interface StructureKit extends PropKit {
+  spec: Structure;
+  floors: number;
   box(w: number, h: number, d: number, color: SceneryColor): BufferGeometry;
   roof(kind: Structure['roof'], w: number, d: number, rise: number, color: SceneryColor): BufferGeometry;
   /**
-   * A band of windows around one floor: vertex colour on the wall, and a `glow`
-   * attribute of 1 on exactly those vertices. The colour is what the day sees;
-   * the glow is what the night reads, multiplied by the instance's own `lit`
-   * and by the sky's `uNight`.
+   * A band of windows around one floor, painted the window colour and carrying
+   * a `glow` attribute of 1 -- what the night reads, multiplied by the
+   * instance's own `lit` and the sky's `uNight`.
+   *
+   * It **cuts** the band into the geometry rather than painting whatever
+   * vertices happen to be near it: a box has no vertices where its windows go,
+   * so painting alone would either miss the band or smear it up the whole
+   * storey. Call it after merging, never before: a merge carries position,
+   * normal, colour and uv across, and would drop the glow.
    */
   windows(geometry: BufferGeometry, y: number, height: number, color: SceneryColor): void;
 }
@@ -543,7 +555,11 @@ export interface Structure {
   chimney?: boolean;
   palette: { wall: SceneryColor; roof: SceneryColor; trim?: SceneryColor; window?: SceneryColor };
   budget?: { triangles?: number };
-  /** How much sky it takes; the bake measures it, so this only overrides. */
+  /**
+   * How much sky it takes. The bake measures the shape it built and the larger
+   * of the two wins: an entry may ask the flight for more room than it fills,
+   * never for less.
+   */
   obstacle?: { radius: number; height: number };
   bake?(kit: StructureKit): BufferGeometry;
 }
