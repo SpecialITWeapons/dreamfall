@@ -154,6 +154,36 @@ describe('createFields', () => {
     expect(same.h).toBe(hit.h);
   });
 
+  it('remembers a centre per lattice, so two of them do not take turns evicting each other', () => {
+    // The registry carries more than one lattice -- a village on six kilometres
+    // and a town on twenty -- and the window is filled texel by texel, each of
+    // them asking every lattice in turn. With one remembered answer the pair
+    // thrash it and every texel pays for both: measured over a full 560x560
+    // window of seed 42, 783 ms with one lattice against 1810 with two.
+    let sampled = 0;
+    const counting = {
+      ...createWorldSampler(42),
+      baseFields(x: number, z: number, out: Float64Array) {
+        sampled++;
+        createWorldSampler(42).baseFields(x, z, out);
+      },
+    };
+    const f = createFields(counting);
+    // One texel asking both lattices costs two samples: its own fields, and...
+    // nothing else, because each centre is remembered from the texel before.
+    f.at(3000, 3000).lattice(6000, 3);
+    f.at(3000, 3000).lattice(20000, 7);
+    const afterFirst = sampled;
+    // Nine more texels of the same two cells: the fields of each, and not one
+    // centre sampled again.
+    for (let k = 1; k <= 9; k++) {
+      f.at(3000 + k, 3000 + k).lattice(6000, 3);
+      f.at(3000 + k, 3000 + k).lattice(20000, 7);
+    }
+    // two `at` calls a texel, nine texels, and no centre re-read
+    expect(sampled - afterFirst).toBe(9 * 2);
+  });
+
   it('gives one lattice centre per cell, with its own random stream', () => {
     const f = fields();
     const hit = f.at(3000, 3000).lattice(6000, 3);

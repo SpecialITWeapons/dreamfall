@@ -236,3 +236,33 @@ Left alone, and worth knowing: only 52 of the window's 121 tiles fall inside
 instances the meshes hold. A third of that allocation is unreachable and has
 been since the port. `SPAN` is the knob, and it changes how much grass there is
 rather than only what it costs, so it is not a free win.
+
+## A second lattice used to cost a second window
+
+M4b adds the town, and with it the registry's second lattice: a village on
+six kilometres and a town on twenty. Measured on a full 560x560 fill of seed
+42, before anything was changed for it:
+
+|                                  | fill        |
+| -------------------------------- | ----------- |
+| eleven biomes, one lattice       | 783 ms      |
+| twelve biomes, no second lattice | 792 ms      |
+| twelve biomes, **two lattices**  | **1810 ms** |
+
+The twelfth biome is free; the second _lattice_ is not, and it is not the
+hooks -- it is one line of cache. `Fields.lattice` remembered the centre's
+base height in a single slot, which is right for one lattice, where the
+window is filled row by row and a cell is kilometres wide, so one answer
+covers almost every texel. With two lattices the same texel asks for two
+different centres and they evict each other, so **every texel pays two extra
+`baseFields`** and the whole saving is handed back. The comment above the
+cache predicted exactly this and nobody read it as a warning.
+
+Four slots, scanned rather than hashed because there are four: **828 ms**.
+The second lattice now costs 62 ms of a fill rather than a full second. In
+flight this is the difference between a worst frame of 3.7 ms and one of 8.2,
+with the plan queue's 4 ms budget landing in the same frame.
+
+It scales to a third and fourth lattice and then falls off the same cliff;
+the slot count is the knob, and it is only worth turning when a fifth
+settlement kind exists to turn it for.

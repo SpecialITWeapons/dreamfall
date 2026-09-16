@@ -32,15 +32,25 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   const salted = (salt: number) => (salt ^ Math.imul(sampler.seed, 0x9e3779b1)) >>> 0;
   let ix = 0,
     iz = 0;
-  // The centre's own height, sampled once per lattice cell rather than once per
-  // texel. A lattice cell is kilometres wide and the window is filled row by
-  // row, so one remembered answer covers almost every query; without it a
-  // presence hook that asks for a lattice would double the cost of a fill.
+  // The centre's own height and temperature, sampled once per lattice cell
+  // rather than once per texel. A lattice cell is kilometres wide and the window
+  // is filled row by row, so a remembered answer covers almost every query;
+  // without one, a presence hook that asks for a lattice doubles the cost of a
+  // fill.
+  //
+  // There are SEATS of them, not one, because the registry carries more than one
+  // lattice: a village on six kilometres and a town on twenty are two different
+  // centres asked for the same texel, and a single slot is thrashed by the pair.
+  // Measured on a full 560x560 window of seed 42: 783 ms with one lattice and
+  // 1810 ms with two, which is the whole saving handed back. The slots are
+  // scanned rather than hashed because there are four of them.
   const centre = new Float64Array(5);
-  let atX = NaN,
-    atZ = NaN,
-    centreHeight = 0,
-    centreTemp = 0;
+  const SEATS = 4;
+  const seatX = new Float64Array(SEATS).fill(NaN),
+    seatZ = new Float64Array(SEATS).fill(NaN),
+    seatH = new Float64Array(SEATS),
+    seatT = new Float64Array(SEATS);
+  let nextSeat = 0;
   const hit: LatticeHit & { cell: number; salt: number; ix: number; iz: number } = {
     cx: 0,
     cz: 0,
@@ -89,15 +99,26 @@ export function createFields(sampler: WorldSampler): FieldsReader {
       hit.cx = (cx + 0.5 + jx) * cell;
       hit.cz = (cz + 0.5 + jz) * cell;
       hit.d = Math.hypot(hit.cx - fields.x, hit.cz - fields.z);
-      if (hit.cx !== atX || hit.cz !== atZ) {
+      let seat = -1;
+      for (let k = 0; k < SEATS; k++)
+        if (seatX[k] === hit.cx && seatZ[k] === hit.cz) {
+          seat = k;
+          break;
+        }
+      if (seat < 0) {
         sampler.baseFields(hit.cx, hit.cz, centre);
-        centreHeight = centre[0]!;
-        centreTemp = centre[1]!;
-        atX = hit.cx;
-        atZ = hit.cz;
+        // Round robin, because the lattices take turns by texel: whatever is
+        // evicted is the one asked longest ago, which with one slot per lattice
+        // is never the one about to be asked.
+        seat = nextSeat;
+        nextSeat = (nextSeat + 1) % SEATS;
+        seatX[seat] = hit.cx;
+        seatZ[seat] = hit.cz;
+        seatH[seat] = centre[0]!;
+        seatT[seat] = centre[1]!;
       }
-      hit.h = centreHeight;
-      hit.t = centreTemp;
+      hit.h = seatH[seat]!;
+      hit.t = seatT[seat]!;
       hit.cell = cell;
       // The stream the hit hands out is salted too: the sites of M4 stand on
       // this lattice, and two worlds whose villages sit on the same grid are
