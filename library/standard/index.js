@@ -4,8 +4,8 @@
  * through untouched. An unknown type throws by name at load, rather than
  * returning something that fails one texel at a time later on.
  */
-export { CLIMATE, climatePoint, heightBand, mul, max } from './presence.js';
-export { offset, terraces } from './height.js';
+export { CLIMATE, climatePoint, heightBand, lattice, mul, max } from './presence.js';
+export { offset, plateau, terraces } from './height.js';
 export { layers } from './ground.js';
 export { CELL_TREES, scatter } from './populate.js';
 export { SNOW_LINE, snowLineAt } from './snowLine.js';

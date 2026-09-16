@@ -193,13 +193,35 @@ export interface Fields {
 export type PresenceDescriptor =
   | { type: 'climatePoint'; point: [number, number, number]; radius?: number }
   | { type: 'heightBand'; from: number; to: number; feather?: number }
+  | {
+      type: 'lattice';
+      cell: number;
+      radius?: number;
+      feather?: number;
+      odds?: number;
+      salt?: number;
+      /** Metres of height the centre must have; the sea claims nothing. */
+      land?: number;
+      maxSlope?: number;
+      shoreBonus?: number;
+    }
   | { type: 'mul'; of: PresenceDescriptor[] }
   | { type: 'max'; of: PresenceDescriptor[] };
 /** How much of this place is this biome's, 0..1. The engine normalises across the registry. */
 export type Presence = ((f: Fields) => number) | PresenceDescriptor;
 
 export type HeightDescriptor =
-  { type: 'offset'; meters: number } | { type: 'terraces'; step: number; sharpness?: number };
+  | { type: 'offset'; meters: number }
+  | { type: 'terraces'; step: number; sharpness?: number }
+  /** The same lattice the presence hook reads, or the village sits beside its own square. */
+  | {
+      type: 'plateau';
+      cell: number;
+      salt?: number;
+      radius?: number;
+      feather?: number;
+      strength?: number;
+    };
 /** The new height in meters; the engine clips the change to BUDGET.heightDelta. */
 export type HeightHook = ((f: Fields, base: number) => number) | HeightDescriptor;
 
@@ -548,8 +570,8 @@ export const defineStructure = (structure: Structure): Structure => ({ kind: 'st
 // not start on a library that fails either.
 // ---------------------------------------------------------------------------
 
-const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'mul', 'max']);
-const HEIGHT_TYPES = new Set(['offset', 'terraces']);
+const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'lattice', 'mul', 'max']);
+const HEIGHT_TYPES = new Set(['offset', 'plateau', 'terraces']);
 const GROUND_TYPES = new Set(['layers']);
 const POPULATE_TYPES = new Set(['scatter']);
 const ROOFS = new Set(['gable', 'hip', 'flat']);
