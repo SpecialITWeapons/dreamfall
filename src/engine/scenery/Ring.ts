@@ -458,7 +458,12 @@ export function createRing(deps: RingDeps): Ring {
     tree: (speciesId, x, z, opts) => plantTree(speciesId, x, z, opts),
     prop: (propId, x, z, opts) => standProp(propId, { x, z, ...opts }),
     structure: () => {
-      throw new Error('scenery: structures land in M4');
+      // Not unfinished work: a scatter says what grows on a cell, and a
+      // building is not something that grows. Buildings stand on site plans,
+      // which are placed whole by `raise`.
+      throw new Error(
+        'scenery library: a biome scatters, it does not build; a building belongs to a site plan',
+      );
     },
     color: (value) => new Color(swatchColor(value)),
   };

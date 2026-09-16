@@ -119,7 +119,14 @@ export const BUDGET = {
   crownCards: 200,
   propTriangles: 6000,
   propInstances: 2000,
+  /**
+   * Settlements of one biome the streamed ring is sized to hold at once, and
+   * the reach it holds them over. A lattice fine enough to put more than this
+   * in front of the flight is refused: the ring would be raising villages
+   * shoulder to shoulder, which is a town, and a town is its own entry.
+   */
   siteInstances: 4,
+  siteReach: 1900,
   /**
    * Distinct floor counts one structure may be baked at. A building is
    * instanced whole, so every count in `floors` gets its own bake and its own
@@ -703,6 +710,14 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       // sites and no lattice under them has nothing to seat them on.
       if (typeof biome.presence !== 'function' && biome.presence?.type !== 'lattice')
         errors.push(`${where}.sites: needs a lattice presence to stand on`);
+      // One site a cell, so how many can face the flight at once is the lattice
+      // against the ring's reach. Counted the way the ring counts: every cell
+      // the reach touches, plus the one the flight stands in.
+      const across = Math.floor((2 * BUDGET.siteReach) / site.cell) + 1;
+      if (site.cell > 0 && across * across > BUDGET.siteInstances)
+        errors.push(
+          `${where}.sites.cell: ${site.cell} m puts up to ${across * across} sites in the ring, the budget is ${BUDGET.siteInstances}`,
+        );
       const radius = site.radius;
       if (!Array.isArray(radius) || radius.length !== 2 || !(radius[0] > 0 && radius[1] >= radius[0]))
         errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);

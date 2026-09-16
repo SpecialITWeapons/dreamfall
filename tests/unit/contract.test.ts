@@ -112,6 +112,7 @@ describe('validateLibrary', () => {
     expect(BUDGET.propTriangles).toBe(6000);
     expect(BUDGET.propInstances).toBe(2000);
     expect(BUDGET.siteInstances).toBe(4);
+    expect(BUDGET.siteReach).toBe(1900);
     expect(BUDGET.speciesScale).toBe(3);
   });
 });
@@ -267,12 +268,15 @@ describe('validateLibrary: structures and the sites that place them', () => {
         // climate biome has nowhere to put one
         biome({ id: 'drifting', sites: sites() }),
         settled({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
+        // a lattice this fine is a town's, and a town is its own entry
+        settled({ id: 'crowded', sites: sites({ cell: 900 }) }),
       ],
       structures: [structure()],
     });
     const all = errors.join('\n');
     expect(all).toContain('biome sprawl.sites.radius: 1200 m, the budget is 900');
     expect(all).toContain('biome drifting.sites: needs a lattice presence to stand on');
+    expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 25 sites in the ring, the budget is 4');
     expect(all).toContain('biome hookless.sites: needs a build hook');
   });
 });
