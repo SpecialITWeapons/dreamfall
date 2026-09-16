@@ -210,7 +210,12 @@ export type PopulateHook = ((cell: Cell, kit: SceneryKit) => void) | PopulateDes
 // stanowiska
 export interface SitesSpec {
   cell: number;                       // bok kraty, m
-  odds: number;                       // 0..1 szansa na komórkę kraty
+  // 2026-09-16: `odds` tu nie ma. O tym, czy komórka niesie osadę, decyduje hak
+  // obecności biomu, a `Sites` sadza osadę, wołając ten hak w środku komórki
+  // kraty. Dwie loterie o jednej komórce zgadzają się w połowie przypadków
+  // (zmierzone: 625 komórek ziarna 42, zgoda 50 %). `salt` jest tu po to, żeby
+  // wskazać tę samą kratę, co hak.
+  salt?: number;                      // domyślnie tyle, co w haku (0x5117)
   radius: [number, number];           // m
   // 2026-09-16: wagi rodzajów budynków; walidator sprawdza po nich
   // identyfikatory w rejestrze, tak jak gatunki biomu.
@@ -458,11 +463,22 @@ funkcją `(seed, komórka kraty, params)`, więc testuje się w Node.
 
 Poprawki z 2026-09-16, z wykonania M4a (wieś; miasteczko idzie do M4b):
 
-- **Krata a okno wysokości.** Stanowisko sadza się tylko w komórce, o którą okno
-  wysokości umie zapytać; dalej `heightAt` zawija się po torusie i odpowiada
-  drugą stroną świata. Komórka spoza okna zostaje nierozstrzygnięta — lot wróci
-  do niej z ziemią pod spodem — zamiast zostać rozstrzygnięta źle i zapamiętana
-  na dobre.
+- **Jedna loteria, jeden środek.** To jest największa poprawka M4a i została
+  zmierzona. `Sites.seat` losował własnym ziarnem, na własnej soli, i sadzał
+  wieś w losowym punkcie komórki — a hak obecności losował swoim, malował ziemię
+  i uruchamiał płaskowyż wokół swojego środka. Na 625 komórkach ziarna 42: 64
+  komórki, gdzie obie strony mówiły „wieś", 247, gdzie obie mówiły „nic", 72
+  płaskie place wydeptanej gliny bez jednego domu i 242 wsie na gruncie, którego
+  nikt dla nich nie spłaszczył. Zgoda 50 % — tyle, co dwie monety. Teraz decyzja
+  jest jedna: `seat` woła hak obecności biomu w środku kraty i stawia osadę
+  właśnie tam. Po poprawce: 132 komórki niosą wieś, 132 są posadzone, odstęp
+  między siedziskiem a środkiem 0,00 m. Dlatego `SitesSpec` nie ma własnych
+  `odds` ani własnej linii lądu — trzyma je hak, i nie mają jak się rozjechać.
+- **Krata a okno wysokości.** Sadzanie czyta sampler, który odpowiada wszędzie,
+  więc okno nie decyduje już o tym, które komórki istnieją. Czyta je dopiero
+  **plan**: dalej niż okno `heightAt` zawija się po torusie i odpowiada drugą
+  stroną świata, więc stanowisko, o które okno nie umie zapytać, czeka w
+  kolejce na swoją kolej zamiast położyć ulicę po drugiej stronie świata.
 - **Drogi wsi.** Nie ma przełącznika `roads: 'organic' | 'grid'`: kształt ulic
   jest kodem planu (`settlements/plan.js`), a parametry niosą `spacing`, `width`
   oraz `reach` i `maxSlope` bocznej ścieżki. `jitter`, `ringRoad`, `radials` i
@@ -487,6 +503,20 @@ Poprawki z 2026-09-16, z wykonania M4a (wieś; miasteczko idzie do M4b):
   `land`, `minTemp`, `maxSlope`. Inaczej ziemia byłaby malowana i spłaszczana
   pod wieś, której osadnik nie posadzi. `shoreBonus` jest w haku obecności, ale
   wieś go nie ustawia.
+- **Wieś staje w całości albo wcale.** Pierścień nie przycina parcel planu
+  odległością. Wstęga drogi powstaje z planu, a nie z zasięgu pierścienia, więc
+  przycinanie parcela po parceli pokazywało całą ulicę z ośmioma domami przy
+  niej — dokładnie tę pół-wieś, przed którą broni się ten punkt. Plan ma najwyżej
+  `SITE_RADIUS` średnicy, więc wystawanie poza pierścień jest ograniczone.
+- **Budynki i kondygnacje w pulach.** Pule pieką każdy rodzaj raz na każdą
+  liczbę kondygnacji z jego zakresu, nie tylko na jego końce, bo parcela może
+  poprosić o dwupiętrowy dom z przepisu `[1, 3]`. `BUDGET.floorSpan` ogranicza
+  ten zakres, a plan, który nazwie budynek spoza rejestru albo liczbę pięter
+  spoza przepisu, mówi to od razu — w kolejce, nie w pętli klatki.
+- **Ile wsi naraz.** `BUDGET.siteInstances` przestał być martwą liczbą:
+  walidator liczy kratę przeciw zasięgowi pierścienia (`BUDGET.siteReach`)
+  i odrzuca kratę tak gęstą, że przed lotem stanęłyby więcej niż cztery osady.
+  To już miasteczko, a miasteczko jest osobnym wpisem.
 - **Czystość planu i dodatki.** `build(site, kit)` jest czystą funkcją
   stanowiska, parametrów i tego, co kit odpowie o gruncie (`kit.height`,
   `kit.slope`); grunt wchodzi przez kit właśnie po to, żeby plan liczył się

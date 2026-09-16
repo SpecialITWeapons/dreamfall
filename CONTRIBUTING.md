@@ -117,8 +117,10 @@ among the species, and grows itself through the kit's verbs -- `box`, `roof`,
 things that differ between two bakes of the same entry. There is one bake per
 kind and per floor count, because whole buildings are instanced.
 
-Budgets bite at bake time and stop the page: 6000 triangles a building, and the
-colour envelope on every vertex. What the flight has to clear is measured off the
+Budgets bite at bake time and stop the page: 6000 triangles a building, the
+colour envelope on every vertex, and `BUDGET.floorSpan` storey counts -- every
+count in a recipe's `floors` range is baked and pooled separately, because a
+building is instanced whole and a plan is free to ask for any of them. What the flight has to clear is measured off the
 baked shape, never off the entry; an entry's own `obstacle` may ask for more room
 around it, never for less.
 
