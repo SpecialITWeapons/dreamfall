@@ -12,7 +12,7 @@
  * The words themselves live in index.html, with every other string the page
  * shows.
  */
-export type VeilStage = 'graphics' | 'ground' | 'sky';
+export type VeilStage = 'graphics' | 'ground' | 'scenery' | 'sky';
 
 export function createVeil(doc: Document) {
   const veil = doc.getElementById('loading') as HTMLElement;
