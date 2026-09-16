@@ -136,10 +136,10 @@ Linie, jak drogi, są jedną siatką na stanowisko, nie instancjami. Pule trzyma
 dziś jedną wstęgę na plan (`ScenerySink.site`); linie dołączają do tej samej
 ścieżki — jedna siatka więcej w tej samej grupie, zwalniana z planem.
 
-- [ ] **Step 1: Test, który nie przechodzi** — plan z linią jest oferowany
+- [x] **Step 1: Test, który nie przechodzi** — plan z linią jest oferowany
       w całości; linia znika, gdy pierścień zostawia plan; rezerwacje planu
       dalej trzymają las z daleka.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 

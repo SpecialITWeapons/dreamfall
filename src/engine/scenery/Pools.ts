@@ -51,6 +51,7 @@ import {
 import type { Origin } from '../sim/Origin';
 import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32, sstep } from '../terrain/noise';
+import { buildLines } from './LineKit';
 import { buildRoads } from './RoadKit';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { SceneryMaterials, PaintedTextures } from './Painted';
@@ -345,7 +346,9 @@ export function createPools(deps: {
   roads.name = 'roads';
   const roadMaterial = materials.prop();
   materialsMade.push(roadMaterial);
-  const ribbons = new Map<string, Mesh>();
+  // What one site put in the scene: its road ribbon, its lines, or neither.
+  // Keyed by plan, so an empty answer is an answer and is not asked again.
+  const ribbons = new Map<string, Mesh[]>();
   const offered = new Set<string>();
 
   const sink: ScenerySink = {
@@ -359,22 +362,29 @@ export function createPools(deps: {
     },
     site(plan: SitePlan) {
       offered.add(plan.id);
-      let ribbon = ribbons.get(plan.id);
-      if (!ribbon) {
-        const geometry = buildRoads(plan.roads, {
-          heightAt: (x, z) => heightfield.heightAt(x, z),
+      let built = ribbons.get(plan.id);
+      if (!built) {
+        const deps = {
+          heightAt: (x: number, z: number) => heightfield.heightAt(x, z),
           site: plan.id,
-          at: [plan.x, plan.z],
+          at: [plan.x, plan.z] as [number, number],
+        };
+        // The answer is remembered even when it is "nothing to build". A site
+        // whose roads are all too short to sample would otherwise walk its
+        // polylines again on every single rebuild, for ever, to be told the same
+        // thing -- and a settlement made only of fences is exactly that site.
+        built = [buildRoads(plan.roads, deps), buildLines(plan.lines, deps)].flatMap((geometry) => {
+          if (!geometry) return [];
+          const mesh = new Mesh(geometry, roadMaterial);
+          mesh.receiveShadow = true;
+          roads.add(mesh);
+          return [mesh];
         });
-        if (!geometry) return;
-        ribbon = new Mesh(geometry, roadMaterial);
-        ribbon.receiveShadow = true;
-        ribbons.set(plan.id, ribbon);
-        roads.add(ribbon);
+        ribbons.set(plan.id, built);
       }
       // Written every rebuild rather than once: a rebuild is what an origin
       // jump forces, and the jump is the only thing that moves this.
-      ribbon.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
+      for (const mesh of built) mesh.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
     },
     tree(tree: TreeInstance) {
       const record = species.get(tree.species);
@@ -463,10 +473,12 @@ export function createPools(deps: {
         if (record.distant) commit(record.distant, record.far);
       }
       for (const record of props.values()) commit(record.mesh, record.count);
-      for (const [id, ribbon] of ribbons)
+      for (const [id, meshes] of ribbons)
         if (!offered.has(id)) {
-          roads.remove(ribbon);
-          ribbon.geometry.dispose();
+          for (const mesh of meshes) {
+            roads.remove(mesh);
+            mesh.geometry.dispose();
+          }
           ribbons.delete(id);
         }
     },
@@ -495,7 +507,7 @@ export function createPools(deps: {
         mesh.geometry.dispose();
         mesh.dispose();
       }
-      for (const ribbon of ribbons.values()) ribbon.geometry.dispose();
+      for (const meshes of ribbons.values()) for (const mesh of meshes) mesh.geometry.dispose();
       ribbons.clear();
       roads.clear();
       for (const material of new Set(materialsMade)) material.dispose();

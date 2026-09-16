@@ -10,6 +10,7 @@ import type {
   Biome,
   Fields,
   Library,
+  LineSpec,
   LotSpec,
   Reservation,
   RoadSpec,
@@ -22,6 +23,7 @@ import { swatchColor } from '../../../library/contract';
 import { resolvePresence } from '../../../library/standard/index.js';
 import { Color } from 'three';
 import { createFields } from '../terrain/Fields';
+import { LINE_KINDS } from './LineKit';
 import type { Heightfield } from '../terrain/Heightfield';
 import { mulberry32 } from '../terrain/noise';
 import type { WorldSampler } from '../terrain/WorldSampler';
@@ -147,6 +149,7 @@ export function createSites(deps: {
   /** The kit a build hook writes its plan through; it collects, it never draws. */
   const collect = (site: Site): { kit: SiteKit; plan: SitePlan } => {
     const roads: RoadSpec[] = [],
+      lines: LineSpec[] = [],
       lots: LotSpec[] = [],
       reservations: Reservation[] = [];
     const plan: SitePlan = {
@@ -155,6 +158,7 @@ export function createSites(deps: {
       z: site.z,
       radius: site.radius,
       roads,
+      lines,
       lots,
       reservations,
     };
@@ -164,8 +168,17 @@ export function createSites(deps: {
       road: (points, width, opts) => {
         roads.push({ points: points.map(([x, z]) => [x, z] as [number, number]), width, color: opts?.color });
       },
-      line: () => {
-        throw new Error('scenery library: lines land in M4b');
+      line: (points, kind, opts) => {
+        // Refused here rather than in the ring, for the reason a lot's structure
+        // is: the queue is not the render loop, and a line naming a kind nobody
+        // bakes would otherwise be dropped in a frame without a word.
+        if (!(kind in LINE_KINDS))
+          throw new Error(`scenery library: site ${site.id}: unknown line kind "${kind}"`);
+        lines.push({
+          points: points.map(([x, z]) => [x, z] as [number, number]),
+          kind,
+          ...(opts?.height === undefined ? {} : { height: opts.height }),
+        });
       },
       reserve: (x, z, radius) => {
         reservations.push({ x, z, radius });

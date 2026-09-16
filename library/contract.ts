@@ -383,8 +383,13 @@ export interface SiteKit extends SceneryKit {
   /**
    * Anything else that runs in a line: a fence across a field, a wall, a hedge.
    * It is a ribbon along a polyline, the same mechanism as a road, which is why
-   * it lives here and not in a thin scatter of props. M4a knows the shape and
-   * throws; M4b builds it.
+   * it lives here and not in a thin scatter of props -- and the same walk, so a
+   * corner is mitred once for both.
+   *
+   * A line claims no ground: the tallest kind stands 1.4 m, far under the
+   * clearance the flight keeps, so nothing is reserved and no obstacle is
+   * recorded. Fence a square and the trees still grow inside it; `reserve` is
+   * what keeps them out.
    */
   line(points: Array<[number, number]>, kind: string, opts?: { height?: number }): void;
   reserve(x: number, z: number, radius: number): void;
@@ -415,12 +420,21 @@ export interface Reservation {
  * geometry out of this, which is what lets a plan be a pure function with a
  * test in Node -- and what will let the editor of M6 change one.
  */
+/** One run of fence, wall or hedge, in world metres. */
+export interface LineSpec {
+  points: Array<[number, number]>;
+  /** A kind the line kit bakes: `fence`, `wall`, `hedge`. Anything else is refused by name. */
+  kind: string;
+  /** Metres above the ground; the kind's own height by default. */
+  height?: number;
+}
 export interface SitePlan {
   id: string;
   x: number;
   z: number;
   radius: number;
   roads: RoadSpec[];
+  lines: LineSpec[];
   lots: LotSpec[];
   reservations: Reservation[];
 }

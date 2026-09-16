@@ -8,6 +8,7 @@ import {
   type Fields,
   type GroundHook,
   type Library,
+  type LineSpec,
   type LotSpec,
   type Prop,
   type Reservation,
@@ -138,6 +139,7 @@ const planOf = (parts: {
   x: number;
   z: number;
   roads?: RoadSpec[];
+  lines?: LineSpec[];
   reservations?: Reservation[];
   lots?: LotSpec[];
 }): SitePlan => ({
@@ -146,6 +148,7 @@ const planOf = (parts: {
   z: parts.z,
   radius: 250,
   roads: parts.roads ?? [],
+  lines: parts.lines ?? [],
   lots: parts.lots ?? [],
   reservations: parts.reservations ?? [],
 });

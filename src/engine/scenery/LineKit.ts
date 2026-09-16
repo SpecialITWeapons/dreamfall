@@ -17,7 +17,7 @@
 // site's own world metres; the pools move them into the scene's local frame,
 // as they do for everything the ring places.
 import { BufferGeometry, Color, Float32BufferAttribute } from 'three';
-import { swatchColor, validateBaked, type SceneryColor } from '../../../library/contract';
+import { swatchColor, validateBaked, type LineSpec, type SceneryColor } from '../../../library/contract';
 import { walkPolyline, type PolylineSample } from './RoadKit';
 
 /**
@@ -80,21 +80,6 @@ export const LINE_KINDS: Record<string, LineKind> = {
   wall: { height: 1.1, thickness: 0.45, color: 'stoneWarm' },
   hedge: { height: 1.4, thickness: 0.9, color: 'forest' },
 };
-
-/**
- * One line along a polyline, in world metres.
- *
- * The contract will own this the moment a plan carries lines; the shape is the
- * kit's own signature unrolled -- `line(points, kind, { height })` -- so that
- * import replaces this declaration and nothing else.
- */
-export interface LineSpec {
-  points: Array<[number, number]>;
-  /** A key of LINE_KINDS; anything else is refused by name. */
-  kind: string;
-  /** Metres above the ground; the kind's own height by default. */
-  height?: number;
-}
 
 export interface LineDeps {
   /** The terrain, in the site's world metres: the CPU heightfield, or a stub in a test. */

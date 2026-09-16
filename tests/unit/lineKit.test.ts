@@ -1,13 +1,12 @@
 import { Color, type BufferGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
-import { swatchColor } from '../../library/contract';
+import { swatchColor, type LineSpec } from '../../library/contract';
 import {
   LINE_KINDS,
   LINE_SAMPLE,
   LINE_SINK,
   LINE_TRIANGLES,
   buildLines,
-  type LineSpec,
 } from '../../src/engine/scenery/LineKit';
 
 /** The buffer is float32: seven digits in all, so five decimals is as tight as metres get. */
