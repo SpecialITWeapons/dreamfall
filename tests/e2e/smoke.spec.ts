@@ -433,14 +433,18 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
 
 test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
   // Five window refills and three renders, on a software rasteriser, and every
-  // refill now runs ten presence hooks over 313 600 texels: this one is slow by
-  // construction, not by accident.
+  // refill now runs eleven presence hooks over 313 600 texels: this one is slow
+  // by construction, not by accident.
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page); // no render loop competing with the teleports below
   const biomes = await page.evaluate(() => window.__world!.biomes);
-  expect(biomes).toHaveLength(10);
+  // The ten climate biomes of the original, and the settlement, which is
+  // claimed off a lattice rather than out of climate space and so goes last:
+  // the first biome is the one that takes ground nobody else claims.
+  expect(biomes).toHaveLength(11);
   expect(biomes[0]).toBe('wildsong');
+  expect(biomes.at(-1)).toBe('village');
   const here = await page.evaluate(() => window.__world!.weightsAt(0, 0));
   expect(here).toHaveLength(3);
   expect(here.reduce((s, slot) => s + slot.weight, 0)).toBeCloseTo(1, 4);
