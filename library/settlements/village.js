@@ -39,4 +39,12 @@ export const VILLAGE = {
   },
   /** Relative weights by structure id; the validator checks them against the registry. */
   buildings: { cottage: 1, barn: 0.3, mill: 0.05 },
+  /**
+   * What a house is tinted with. A tint multiplies the colours its recipe
+   * painted, so these are pale and warm on purpose: a village of three recipes
+   * needs to read as a village of houses rather than three houses repeated, and
+   * this costs nothing -- no second bake, no second pool, one instance colour.
+   * `white` is in twice so that a plain house stays the commonest.
+   */
+  palette: ['white', 'white', 'barkPale', 'canopyDry', 'grassGold'],
 };

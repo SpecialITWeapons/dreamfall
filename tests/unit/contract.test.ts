@@ -275,6 +275,9 @@ describe('validateLibrary: structures and the sites that place them', () => {
         settled({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
         // a lattice this fine is a town's, and a town is its own entry
         settled({ id: 'crowded', sites: sites({ cell: 900 }) }),
+        // a tint is a colour like any other and meets the same envelope: this
+        // one would paint a house in neon and is refused by its index
+        settled({ id: 'garish', sites: sites({ palette: ['barkPale', '#00ff88'] }) }),
         // and this one is the drift itself: 2200 m fits four sites inside the
         // 1900 m the guard was written against and nine inside the 2600 the
         // ring actually reaches, so it passed until the reach was told the truth
@@ -287,6 +290,7 @@ describe('validateLibrary: structures and the sites that place them', () => {
     expect(all).toContain('biome drifting.sites: needs a lattice presence to stand on');
     expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 36 sites in the ring, the budget is 4');
     expect(all).toContain('biome drifted.sites.cell: 2200 m puts up to 9 sites in the ring, the budget is 4');
+    expect(all).toContain('biome garish.sites.palette[1]: #00ff88 is outside the palette envelope');
     expect(all).toContain('biome hookless.sites: needs a build hook');
   });
 });

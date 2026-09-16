@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { SceneryColor } from '../../library/contract';
 import type { LotSpec, RoadSpec, Reservation, Site, SiteKit } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { VILLAGE } from '../../library/settlements/village.js';
@@ -35,8 +36,20 @@ const collect = (ground = hillside) => {
     slope: (x: number, z: number) => Math.abs(ground(x + 1, z) - ground(x - 1, z)) / 2,
     road: (points: Array<[number, number]>, width: number, opts?: { color?: string }) =>
       roads.push({ points, width, color: opts?.color }),
-    structure: (structure: string, x: number, z: number, opts?: { yaw?: number; floors?: number }) =>
-      lots.push({ structure, x, z, yaw: opts?.yaw ?? 0, floors: opts?.floors ?? 1 }),
+    structure: (
+      structure: string,
+      x: number,
+      z: number,
+      opts?: { yaw?: number; floors?: number; tint?: SceneryColor },
+    ) =>
+      lots.push({
+        structure,
+        x,
+        z,
+        yaw: opts?.yaw ?? 0,
+        floors: opts?.floors ?? 1,
+        ...(opts?.tint === undefined ? {} : { tint: opts.tint }),
+      }),
     reserve: (x: number, z: number, radius: number) => reservations.push({ x, z, radius }),
     line: () => {
       throw new Error('no lines in M4a');
@@ -48,9 +61,9 @@ const collect = (ground = hillside) => {
   return { kit, roads, lots, reservations };
 };
 
-const plan = (over: Partial<Site> = {}, ground = hillside) => {
+const plan = (over: Partial<Site> = {}, ground = hillside, params = VILLAGE) => {
   const out = collect(ground);
-  planVillage(site(over), VILLAGE, out.kit);
+  planVillage(site(over), params, out.kit);
   return out;
 };
 
@@ -130,6 +143,28 @@ describe('planVillage', () => {
       expect(lot.floors).toBeGreaterThanOrEqual(spec!.floors[0]);
       expect(lot.floors).toBeLessThanOrEqual(spec!.floors[1]);
     }
+  });
+  it('tints its houses out of the settlement palette, and nothing else', () => {
+    // A tint multiplies what the recipe painted, so this is what lets a town
+    // and a village be built out of the same three recipes and not look it --
+    // no second bake, no second pool, one instance colour.
+    const { lots } = plan();
+    expect(lots.length).toBeGreaterThan(20);
+    const used = new Set(lots.map((l) => l.tint));
+    for (const tint of used) expect(VILLAGE.palette).toContain(tint);
+    expect(used.size).toBeGreaterThan(1);
+    // white is in the palette twice, so a house left exactly as its recipe
+    // painted it is the commonest kind
+    const plain = lots.filter((l) => l.tint === 'white').length;
+    expect(plain / lots.length).toBeGreaterThan(0.25);
+
+    // A palette of one is a settlement whose houses are all their own recipe.
+    const one = plan({}, hillside, { ...VILLAGE, palette: ['white'] });
+    expect(new Set(one.lots.map((l) => l.tint))).toEqual(new Set(['white']));
+    // and a different palette is a different-looking settlement on the same plan
+    const other = plan({}, hillside, { ...VILLAGE, palette: ['barkDark'] });
+    expect(other.lots.map((l) => [l.x, l.z])).toEqual(one.lots.map((l) => [l.x, l.z]));
+    expect(new Set(other.lots.map((l) => l.tint))).toEqual(new Set(['barkDark']));
   });
   it('keeps the village inside its own radius', () => {
     const one = site();

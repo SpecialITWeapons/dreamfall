@@ -62,6 +62,7 @@ export function settlement(params = VILLAGE) {
       salt,
       radius: params.radius,
       structures: params.buildings,
+      palette: params.palette,
       // The same two numbers the presence hook above reads, asked of the same
       // point: the site finder seats a village at the lattice centre, so
       // `fits` is evaluated there and answers exactly as the hook does. A

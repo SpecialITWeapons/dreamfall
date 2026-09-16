@@ -474,6 +474,19 @@ export interface SitesSpec {
   /** Relative weights by structure id; the validator checks them against the registry. */
   structures?: Record<string, number>;
   /**
+   * Tints a lot is drawn from, in the order the plan draws them. A lot's tint
+   * reaches the pools as the instance colour, which **multiplies** the colours
+   * the recipe baked -- so these are tints and not colours: `white` leaves a
+   * house exactly as its recipe painted it and anything darker shades the whole
+   * of it, walls, roof and all. The swatch book's own tint group is the one to
+   * pick from.
+   *
+   * This is where a town may differ from a village while both are built out of
+   * the same three recipes, which is cheaper by a whole bake than giving the
+   * town recipes of its own.
+   */
+  palette?: SceneryColor[];
+  /**
    * The settlement's own last word, asked at the centre the hook chose. It can
    * only refuse what the hook allowed, so a `fits` narrower than the presence
    * hook leaves ground painted for a village that never comes: keep the two
@@ -761,6 +774,7 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
         errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);
       else if (radius[1] > SITE_RADIUS)
         errors.push(`${where}.sites.radius: ${radius[1]} m, the budget is ${SITE_RADIUS}`);
+      for (const [i, tint] of (site.palette ?? []).entries()) colorAt(`${where}.sites.palette[${i}]`, tint);
       // The ids a settlement asks for are checked here for the same reason a
       // biome's species are: the site builds years after someone types them.
       for (const id of Object.keys(site.structures ?? {}))

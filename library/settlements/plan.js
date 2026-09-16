@@ -162,9 +162,16 @@ export function planVillage(site, params, kit) {
             if (pick <= 0) break;
           }
           const floors = structure === 'mill' ? 3 : site.random() < 0.3 ? 2 : 1;
+          // The settlement's own tint, drawn here and nowhere else: it is the
+          // last number this lot takes from the stream, so adding one changes
+          // every house after it and none before. A tint multiplies what the
+          // recipe painted, so a palette of one white is a settlement whose
+          // houses are all exactly their recipe.
+          const palette = params.palette ?? ['white'];
+          const tint = palette[Math.min(palette.length - 1, Math.floor(site.random() * palette.length))];
           // Facing the street: the house turns its front to the axis it stands on.
           const yaw = Math.atan2(ux, uz) + (shoulder > 0 ? 0 : Math.PI);
-          kit.structure(structure, x, z, { yaw, floors });
+          kit.structure(structure, x, z, { yaw, floors, tint });
           kit.reserve(x, z, params.lots.depth * 0.7);
         }
       }
