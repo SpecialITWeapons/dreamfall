@@ -160,10 +160,29 @@ Paleta osady: dziś parcela nie dostaje odcienia (`LotSpec.tint` istnieje,
 losuje odcień parceli — i to jest miejsce, gdzie miasteczko może wyglądać
 inaczej niż wieś przy tych samych trzech przepisach budynków.
 
-- [ ] **Step 1: Test, który nie przechodzi** — walidator przyjmuje wieżę
+- [x] **Step 1: Test, który nie przechodzi** — walidator przyjmuje wieżę
       i odrzuca przepis spoza koperty kolorów; dwa stanowiska z różnymi
       paletami dają różne odcienie przy tych samych przepisach.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 2: Implementacja i commit.**
+
+---
+
+> **Zrobione.** Wieża: `floors: [3, 4]`, `floorHeight` 10,8 m — kondygnacja jest
+> tu **kondygnacją trzonu**, nie piętrem, więc 46 m nad wsią i 57 m nad
+> miasteczkiem z dwóch pieczeń zamiast czterdziestu. 274/338 trójkątów, czyli
+> 5 % budżetu i **mniej niż młyn**. Paleta: odcienie mnożą kolory instancji,
+> więc miasteczko różni się od wsi bez ani jednego nowego pieczenia.
+>
+> **Sufit wysokości to nie 60 m, tylko 70** — `FlightController` zaczyna niski
+> przelot tylko dopóki `terrainAhead < here + 70`, a `terrainAhead` czyta
+> przeszkody. Dominanta wyższa niż 70 m **odpychałaby lot od jedynego miejsca
+> wartego niskiego przelotu**. To nie jest w specyfikacji ani w `AGENTS.md`;
+> zweryfikowane w źródle.
+>
+> **Pułapka przy wpinaniu:** `plan.js` wybiera kondygnacje jako
+> `mill ? 3 : random < 0.3 ? 2 : 1`. Osada, która nazwie `tower` w wagach
+> budynków bez własnego przypadku, poprosi o 1 albo 2 — poza `[3, 4]` — i
+> **rzuci w kolejce** (reguła z M4a). Generator miasteczka musi prosić o 3 lub 4.
 
 ---
 

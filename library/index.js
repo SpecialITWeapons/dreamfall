@@ -35,6 +35,7 @@ import boulders from './props/boulders.js';
 import cottage from './structures/cottage.js';
 import barn from './structures/barn.js';
 import mill from './structures/mill.js';
+import tower from './structures/tower.js';
 import cairns from './props/cairns.js';
 import { settlement } from './settlements/settlement.js';
 
@@ -58,6 +59,6 @@ export function createLibrary() {
     ],
     species: [acacia, birch, blossomTree, cypress, deadwood, elder, oak, palm, pine],
     props: [boulders, cairns],
-    structures: [cottage, barn, mill],
+    structures: [cottage, barn, mill, tower],
   };
 }
