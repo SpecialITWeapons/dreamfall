@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { MIN_CLEARANCE } from '../../src/engine/flight/FlightController';
 import { ORBIT } from '../../src/engine/flight/Steering';
 import type { WorldDebug } from '../../src/page/Debug';
 
@@ -253,13 +254,17 @@ test('V switches to the eye and back, the HUD and the memory follow', async ({ p
   expect(await page.evaluate(() => window.__world!.view)).toBe('tpp');
   expect(await page.evaluate(() => window.__world!.cameraFov)).toBe(55);
   await page.keyboard.press('KeyV');
-  await expect.poll(() => page.evaluate(() => window.__world!.view)).toBe('fpp');
+  // The same fifteen seconds the projection below is already given. A view is
+  // switched on a frame, and a frame of this world on a software rasteriser
+  // under a full suite can take longer than a default poll waits: this test
+  // took 45 s on its own and timed out here at five when the machine was busy.
+  await expect.poll(() => page.evaluate(() => window.__world!.view), { timeout: 15_000 }).toBe('fpp');
   await expect(page.locator('#viewBtn')).toHaveText('view: eyes');
   // the projection follows on the next frame
   await expect.poll(() => page.evaluate(() => window.__world!.cameraFov), { timeout: 15_000 }).toBe(75);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).view)).toBe('fpp');
   await page.click('#viewBtn');
-  await expect.poll(() => page.evaluate(() => window.__world!.view)).toBe('tpp');
+  await expect.poll(() => page.evaluate(() => window.__world!.view), { timeout: 15_000 }).toBe('tpp');
   await expect.poll(() => page.evaluate(() => window.__world!.cameraFov), { timeout: 15_000 }).toBe(55);
   expect(errors).toEqual([]);
 });
@@ -433,14 +438,18 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
 
 test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
   // Five window refills and three renders, on a software rasteriser, and every
-  // refill now runs ten presence hooks over 313 600 texels: this one is slow by
-  // construction, not by accident.
+  // refill now runs eleven presence hooks over 313 600 texels: this one is slow
+  // by construction, not by accident.
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page); // no render loop competing with the teleports below
   const biomes = await page.evaluate(() => window.__world!.biomes);
-  expect(biomes).toHaveLength(10);
+  // The ten climate biomes of the original, and the settlement, which is
+  // claimed off a lattice rather than out of climate space and so goes last:
+  // the first biome is the one that takes ground nobody else claims.
+  expect(biomes).toHaveLength(11);
   expect(biomes[0]).toBe('wildsong');
+  expect(biomes.at(-1)).toBe('village');
   const here = await page.evaluate(() => window.__world!.weightsAt(0, 0));
   expect(here).toHaveLength(3);
   expect(here.reduce((s, slot) => s + slot.weight, 0)).toBeCloseTo(1, 4);
@@ -658,5 +667,324 @@ test('grass grows close to the ground and costs nothing from altitude', async ({
   });
   expect(counts.low).toBeGreaterThan(100);
   expect(counts.high).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Seed 42's nearest village, hard-coded for the same reason as the two climates
+ * above: a search costs a window refill per probe. The lattice seats it 2.2 km
+ * from where the flight starts, which is near enough for `siteNear` to answer
+ * for it from there and too far for the ring to raise it -- so the start is the
+ * control for the counts below. Everything here takes the village's real centre,
+ * radius and lot count from `siteNear`; these two numbers only have to land the
+ * question inside its 2 km reach.
+ */
+const VILLAGE = { x: 1525, z: 1588 };
+/** The next village out, 8.3 km away: further than the height window can answer for. */
+const NEXT_VILLAGE = { x: 8401, z: -2905 };
+
+/** Drops the flight over a world point; the jump crosses cells, so the ring rebuilds. */
+const teleport = (page: Page, at: { x: number; z: number }, above = 120) =>
+  page.evaluate(
+    (to) => {
+      const w = window.__world!;
+      w.state.x = to.x;
+      w.state.z = to.z;
+      w.state.y = w.heightAt(to.x, to.z) + to.above;
+      w.state.vy = 0;
+      w.step(0.05);
+    },
+    { ...at, above },
+  );
+
+/**
+ * The flight over the village, with its houses standing. Seating a site reads
+ * the sampler, which answers anywhere, but its plan reads the height window, so
+ * a village is planned only once the flight's window covers it and raised only
+ * on the rebuild after that. Stepping inside a poll is what that sequence looks
+ * like from out here, and it holds whichever frame the houses arrive in.
+ */
+const overVillage = async (page: Page) => {
+  await teleport(page, VILLAGE);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = window.__world!;
+          w.step(0.05);
+          return w.scenery!.buildings;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+  return page.evaluate((v) => {
+    const w = window.__world!;
+    return {
+      site: w.siteNear(v.x, v.z)!,
+      trees: w.scenery!.trees,
+      buildings: w.scenery!.buildings,
+      obstacles: w.obstacles,
+    };
+  }, VILLAGE);
+};
+
+test('a village stands where the lattice seated it, and every house of it joins the obstacles', async ({
+  page,
+}) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  // The flight's own start, as the control: the plan is known out here -- the
+  // seat needs no window -- and none of it stands, because the ring's 1.9 km
+  // does not reach 2.2. So everything the obstacle registry holds here is a
+  // tree, and what the reading over the village has on top of that is houses.
+  const home = await page.evaluate(() => {
+    const w = window.__world!;
+    w.state.x = 0;
+    w.state.z = 0;
+    w.state.y = w.heightAt(0, 0) + 120;
+    w.step(0.05);
+    return { site: w.siteNear(0, 0), scenery: w.scenery!, obstacles: w.obstacles };
+  });
+  expect(home.site?.id).toBe('village:0,0');
+  expect(home.site!.lots).toBeGreaterThan(20);
+  expect(home.scenery.buildings).toBe(0);
+  expect(home.obstacles).toBe(home.scenery.trees);
+
+  const village = await overVillage(page);
+  // Two kilometres of slack in the question, half a metre in the answer: the
+  // centre comes from the lattice, not from the guess above.
+  expect(Math.hypot(village.site.x - VILLAGE.x, village.site.z - VILLAGE.z)).toBeLessThan(5);
+  expect(village.site.radius).toBeGreaterThanOrEqual(120);
+  expect(village.site.radius).toBeLessThanOrEqual(250);
+  expect(village.buildings).toBeGreaterThan(20);
+  // A plan is raised whole or not at all -- a village with half its houses is
+  // worse than a village a frame late -- so the houses standing are its lots.
+  expect(village.buildings).toBe(village.site.lots);
+  // And every one of them is something the flight has to fly around: over this
+  // ground the registry now holds the ring's trees plus the houses, and nothing
+  // else got in on their way through the ring.
+  expect(village.obstacles).toBe(village.trees + village.buildings);
+  expect(errors).toEqual([]);
+});
+
+test('the ground under the village is flat, because one lattice hit both chose it and flattened it', async ({
+  page,
+}) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overVillage(page);
+  const relief = await page.evaluate((s) => {
+    const w = window.__world!;
+    // The worst a ring of eight points rises or falls against its own centre.
+    const ring = (cx: number, cz: number, r: number) =>
+      Math.max(
+        ...Array.from({ length: 8 }, (_, k) => {
+          const a = (k / 8) * Math.PI * 2;
+          return Math.abs(w.heightAt(cx + Math.cos(a) * r, cz + Math.sin(a) * r) - w.heightAt(cx, cz));
+        }),
+      );
+    return {
+      centre: ring(s.x, s.z, 80),
+      // Six hundred metres out, past the plateau's radius and its feather both.
+      around: [
+        ring(s.x + 600, s.z, 80),
+        ring(s.x - 600, s.z, 80),
+        ring(s.x, s.z + 600, 80),
+        ring(s.x, s.z - 600, 80),
+      ],
+    };
+  }, site);
+  // Eighty metres from its centre the village's ground holds to within ten. It
+  // is not a table and is not meant to be one: the plateau's strength is 0.3, so
+  // it pulls the ground three tenths of the way to the centre's height and
+  // leaves the hill reading as a hill. What makes that number mean anything is
+  // the country beside it, which swings three to six times as far over the same
+  // eighty metres. Both halves come from one lattice hit -- it refuses a cell
+  // too steep to seat on, and it flattens what it seats -- so a hash between the
+  // seat and the plateau would leave this village on ground as rough as its
+  // neighbours', and that is what this catches.
+  expect(relief.centre).toBeLessThan(12);
+  for (const around of relief.around) expect(around).toBeGreaterThan(25);
+  expect(errors).toEqual([]);
+});
+
+test('the forest keeps off the village and stands again outside it', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overVillage(page);
+  // scenerySample hands out four trees of a rebuild, in the order the ring's
+  // rows emit them, so it cannot say where the trees of a place are. What the
+  // flight reads can: floorAt is the top of whatever stands over a point and
+  // heightAt is the ground under it, so the difference is what is standing
+  // there -- and asked on a grid it also counts what is not.
+  const standing = await page.evaluate((s) => {
+    const w = window.__world!;
+    const scan = (from: number, to: number, step: number) => {
+      let ground = 0,
+        anything = 0,
+        canopy = 0,
+        tallest = 0;
+      for (let x = s.x - to; x <= s.x + to; x += step)
+        for (let z = s.z - to; z <= s.z + to; z += step) {
+          const d = Math.hypot(x - s.x, z - s.z);
+          if (d < from || d > to) continue;
+          ground++;
+          const over = w.floorAt(x, z) - w.heightAt(x, z);
+          if (over > 0.5) anything++;
+          if (over > 15) canopy++;
+          tallest = Math.max(tallest, over);
+        }
+      return { ground, anything, canopy, tallest };
+    };
+    return { inside: scan(0, s.radius, 4), outside: scan(s.radius * 1.4, s.radius * 2.4, 6) };
+  }, site);
+  // Inside the radius the village is the only thing standing: something is over
+  // a tenth of the probes, and nothing at all is taller than a roof. A tree of
+  // this world stands 20 to 60 m and the tallest house of this one is 11.2, so
+  // fifteen metres is a line neither crosses by accident.
+  expect(standing.inside.anything).toBeGreaterThan(200);
+  expect(standing.inside.tallest).toBeLessThan(15);
+  expect(standing.inside.canopy).toBe(0);
+  // Outside it the wood is back and is a wood: a canopy over a good tenth of the
+  // ground and sixty metres of it at its tallest. The reservations and the
+  // village's own weight in the cell are what keep the trees off; neither of
+  // them reaches out here.
+  expect(standing.outside.canopy / standing.outside.ground).toBeGreaterThan(0.1);
+  expect(standing.outside.tallest).toBeGreaterThan(40);
+  expect(errors).toEqual([]);
+});
+
+test('the flight does not fly through the village', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overVillage(page);
+  const flown = await page.evaluate((s) => {
+    const w = window.__world!;
+    // Four roofs spread across the village, found the way the forest is counted:
+    // by asking what stands over the ground.
+    const roofs: Array<[number, number]> = [];
+    for (let x = s.x - s.radius; x <= s.x + s.radius; x += 4)
+      for (let z = s.z - s.radius; z <= s.z + s.radius; z += 4)
+        if (Math.hypot(x - s.x, z - s.z) <= s.radius && w.floorAt(x, z) - w.heightAt(x, z) > 5)
+          roofs.push([x, z]);
+    const legs = [0, 0.25, 0.5, 0.75].map((f) => roofs[Math.floor(f * roofs.length)]!);
+    let worst = Infinity;
+    const out = [];
+    for (const [hx, hz] of legs) {
+      const roof = w.floorAt(hx, hz) - w.heightAt(hx, hz);
+      w.state.x = hx;
+      w.state.z = hz;
+      // A metre under the clearance the ground alone would ask for, so the
+      // envelope has to lift the figure over the house rather than over the
+      // field it stands in.
+      w.state.y = w.heightAt(hx, hz) + 26;
+      w.state.vy = 0;
+      w.state.heading = Math.atan2(s.x - hx, s.z - hz); // across the village, not away from it
+      w.step(0.05);
+      let closest = Infinity,
+        buildings = 0;
+      // fifteen seconds a leg, four legs: a minute of flight, sampled every step
+      for (let k = 0; k < 15 * 50; k++) {
+        w.step(0.02);
+        worst = Math.min(worst, w.state.y - w.floorAt(w.state.x, w.state.z));
+        const d = Math.hypot(w.state.x - s.x, w.state.z - s.z);
+        if (d < closest) {
+          closest = d;
+          buildings = w.scenery!.buildings;
+        }
+      }
+      out.push({ roof, closest, buildings });
+    }
+    return { worst, legs: out };
+  }, site);
+  expect(flown.legs).toHaveLength(4);
+  for (const leg of flown.legs) {
+    // it really did start over a house, with the whole village standing under it
+    expect(leg.roof).toBeGreaterThan(5);
+    expect(leg.closest).toBeLessThan(site.radius);
+    expect(leg.buildings).toBeGreaterThan(20);
+  }
+  // The same envelope that holds over the canopy, over the roofs: the figure
+  // hangs 0.3 m below the clearance, and one step of the integrator is worth
+  // less than the rest of the half metre.
+  expect(flown.worst).toBeGreaterThanOrEqual(MIN_CLEARANCE - 0.5);
+  expect(errors).toEqual([]);
+});
+
+test('the plan queue does not stall a frame', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  await overVillage(page);
+  // The next village out is 8.3 km away, further than the height window reaches,
+  // so its plan cannot have been built before the jump: whatever the queue
+  // spends on it falls inside the frames sampled here.
+  const queue = await page.evaluate((n) => {
+    const w = window.__world!;
+    w.state.x = n.x;
+    w.state.z = n.z;
+    w.state.y = w.heightAt(n.x, n.z) + 120;
+    w.state.vy = 0;
+    const ms: number[] = [];
+    for (let frame = 0; frame < 12; frame++) {
+      w.step(0.05);
+      ms.push(w.scenery!.sitesMs);
+    }
+    return { ms, site: w.siteNear(n.x, n.z), buildings: w.scenery!.buildings };
+  }, NEXT_VILLAGE);
+  // A different village, planned inside those twelve frames and standing at the
+  // end of them: the samples are of a queue that had work to do.
+  expect(queue.site!.id).not.toBe('village:0,0');
+  expect(queue.site!.lots).toBeGreaterThan(20);
+  expect(queue.buildings).toBeGreaterThan(20);
+  // The budget is 4 ms a frame. Eight leaves room for a software rasteriser
+  // having a bad moment and still fails if a plan ever costs half a frame.
+  expect(Math.max(...queue.ms)).toBeLessThanOrEqual(8);
+  expect(errors).toEqual([]);
+});
+
+test('the village draws: the road and the houses compile', async ({ page }) => {
+  // The first capture compiles the whole scene a second time for its own target,
+  // which is ten seconds on this rasteriser -- and is the point: a material is
+  // compiled when something is first drawn with it, so a paused flight that
+  // never drew the village would prove nothing about the village's materials.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const { site } = await overVillage(page);
+  const drawn = await page.evaluate(async (s) => {
+    const w = window.__world!;
+    // Back off and turn to face it, so the roads and the houses are in front of
+    // the camera in the frame that follows rather than under it.
+    const x = s.x - 700,
+      z = s.z - 700;
+    w.state.x = x;
+    w.state.z = z;
+    w.state.y = w.heightAt(x, z) + 90;
+    w.state.vy = 0;
+    w.state.heading = Math.atan2(s.x - x, s.z - z);
+    w.step(0.05);
+    const before = w.memory();
+    const shot = await w.capture(128, 72);
+    return {
+      before,
+      after: w.memory(),
+      buildings: w.scenery!.buildings,
+      pixels: shot ? shot.data.length : 0,
+      finite: shot ? shot.data.every(Number.isFinite) : false,
+    };
+  }, site);
+  expect(drawn.buildings).toBeGreaterThan(20);
+  expect(drawn.pixels).toBe(128 * 72 * 4);
+  expect(drawn.finite).toBe(true);
+  // The renderer counts the geometry it has actually drawn, and the loop has
+  // been stopped since before the village came into reach, so this rise is the
+  // ribbon of road and the houses reaching the GPU in that one frame.
+  expect(drawn.after.geometries).toBeGreaterThan(drawn.before.geometries);
+  // Nothing in the console is what proves their materials compiled.
   expect(errors).toEqual([]);
 });

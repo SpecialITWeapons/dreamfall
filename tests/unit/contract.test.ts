@@ -12,7 +12,10 @@ import {
   type GroundHook,
   type Prop,
   type ScatterSpec,
+  type SitesSpec,
+  type Structure,
   type Species,
+  defineStructure,
 } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 
@@ -109,6 +112,7 @@ describe('validateLibrary', () => {
     expect(BUDGET.propTriangles).toBe(6000);
     expect(BUDGET.propInstances).toBe(2000);
     expect(BUDGET.siteInstances).toBe(4);
+    expect(BUDGET.siteReach).toBe(1900);
     expect(BUDGET.speciesScale).toBe(3);
   });
 });
@@ -194,6 +198,89 @@ describe('validateLibrary: species and props', () => {
   });
 });
 
+const structure = (over: Partial<Structure> = {}): Structure =>
+  defineStructure({
+    id: 'cottage',
+    name: 'cottage',
+    footprint: [7, 9],
+    floors: [1, 2],
+    roof: 'gable',
+    palette: { wall: 'sandPale', roof: 'terracotta', trim: 'barkDark', window: 'gold' },
+    ...over,
+  });
+const sites = (over: Partial<SitesSpec> = {}): SitesSpec =>
+  ({
+    cell: 6000,
+    radius: [120, 250],
+    structures: { cottage: 1 },
+    fits: () => true,
+    build: () => {},
+    ...over,
+  }) as SitesSpec;
+
+/** A biome that can actually carry a settlement: sites are seated off a lattice. */
+const settled = (over: Partial<Biome> = {}): Biome =>
+  biome({ presence: { type: 'lattice', cell: 6000, radius: 250 }, sites: sites(), ...over });
+
+describe('validateLibrary: structures and the sites that place them', () => {
+  it('accepts a library whose settlement names a structure it baked', () => {
+    expect(
+      validateLibrary({
+        biomes: [settled()],
+        structures: [structure()],
+      }),
+    ).toEqual([]);
+  });
+  it('refuses a structure that is not a building, by name of what is wrong', () => {
+    const errors = validateLibrary({
+      biomes: [biome()],
+      structures: [
+        structure({ id: 'flat', footprint: [0, 9] }),
+        structure({ id: 'sinking', floors: [3, 1] }),
+        structure({ id: 'odd', roof: 'dome' as Structure['roof'] }),
+        structure({ id: 'neon', palette: { wall: '#00ff00', roof: 'terracotta' } }),
+        structure({ id: 'huge', budget: { triangles: 9000 } }),
+        // every storey count is its own bake and its own pool, so the range is
+        // a budget and not a preference
+        structure({ id: 'tower', floors: [1, 9] }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('structure flat.footprint: needs two positive meters');
+    expect(all).toContain('structure sinking.floors: [3, 1] does not rise');
+    expect(all).toContain('structure odd.roof: unknown roof "dome"');
+    expect(all).toContain('structure neon.palette.wall: #00ff00 is outside the palette envelope');
+    expect(all).toContain(`structure huge.budget.triangles: 9000, the budget is ${BUDGET.propTriangles}`);
+    expect(all).toContain(`structure tower.floors: 9 storey counts, the budget is ${BUDGET.floorSpan}`);
+  });
+  it('names a structure the settlement asks for and nobody baked', () => {
+    const errors = validateLibrary({
+      biomes: [settled({ id: 'village', sites: sites({ structures: { manor: 1 } }) })],
+      structures: [structure()],
+    });
+    expect(errors.join('\n')).toContain('biome village.sites: unknown structure "manor"');
+  });
+  it('holds the site budgets: a radius the ring cannot hold is refused', () => {
+    const errors = validateLibrary({
+      biomes: [
+        settled({ id: 'sprawl', sites: sites({ radius: [400, 1200] }) }),
+        // a settlement is seated at the centre of its presence lattice, so a
+        // climate biome has nowhere to put one
+        biome({ id: 'drifting', sites: sites() }),
+        settled({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
+        // a lattice this fine is a town's, and a town is its own entry
+        settled({ id: 'crowded', sites: sites({ cell: 900 }) }),
+      ],
+      structures: [structure()],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome sprawl.sites.radius: 1200 m, the budget is 900');
+    expect(all).toContain('biome drifting.sites: needs a lattice presence to stand on');
+    expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 25 sites in the ring, the budget is 4');
+    expect(all).toContain('biome hookless.sites: needs a build hook');
+  });
+});
+
 describe('validateLibrary: what a biome asks to grow in it', () => {
   it('accepts a scatter of known species and props, and a populate hook written in code', () => {
     expect(
@@ -242,12 +329,17 @@ describe('validateLibrary: what a biome asks to grow in it', () => {
 });
 
 describe('the library itself', () => {
-  it('ships ten biomes that pass their own validator', () => {
+  it('ships ten climate biomes and one settlement, and they pass their own validator', () => {
     const library = createLibrary();
-    expect(library.biomes).toHaveLength(10);
+    expect(library.biomes).toHaveLength(11);
     expect(library.biomes[0]!.id).toBe('wildsong'); // the fallback for an unclaimed texel
     expect(validateLibrary(library)).toEqual([]);
-    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(10);
+    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(11);
+    // The settlement is the odd one and the only one: it is claimed off a
+    // lattice rather than out of climate space, and it is the last in the list
+    // because the first biome is the one that takes unclaimed ground.
+    expect(library.biomes.filter((b) => b.sites).map((b) => b.id)).toEqual(['village']);
+    expect(library.biomes.at(-1)!.id).toBe('village');
     for (const biome of library.biomes) {
       expect(biome.kind).toBe('biome');
       expect(biome.name.length).toBeGreaterThan(2);
@@ -260,21 +352,29 @@ describe('the library itself', () => {
     expect(library.props).toHaveLength(2);
     expect(validateLibrary(library)).toEqual([]);
     const baked = new Set(library.species!.map((s) => s.id));
-    for (const biome of library.biomes) {
+    // Every biome that grows anything grows something baked; the settlement
+    // grows nothing, which is how its ground stays a village and not a wood.
+    const growing = library.biomes.filter((b) => !b.sites);
+    expect(growing).toHaveLength(10);
+    for (const biome of growing) {
       const sown = biome.populate as ScatterSpec;
       expect(sown.type).toBe('scatter');
       expect(Object.keys(sown.species).length).toBeGreaterThan(0);
       for (const id of Object.keys(sown.species)) expect(baked.has(id)).toBe(true);
     }
+    for (const biome of library.biomes) if (biome.sites) expect(biome.populate).toBeUndefined();
     // one species grows its own way, so the bake hook has a live example
     expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
     // and every crown fits the budget the baker will enforce again at bake time
     for (const s of library.species!) expect(s.crown?.cards ?? 0).toBeLessThanOrEqual(BUDGET.crownCards);
   });
   it('spreads them across climate space, so no two claim the same ground', () => {
-    const points = createLibrary().biomes.map(
-      (b) => (b.presence as { point: [number, number, number] }).point,
-    );
+    // The settlement stands apart: it claims a lattice cell, not a climate, so
+    // it neither has a point here nor crowds anyone else's.
+    const points = createLibrary()
+      .biomes.filter((b) => !b.sites)
+      .map((b) => (b.presence as { point: [number, number, number] }).point);
+    expect(points).toHaveLength(10);
     for (let i = 0; i < points.length; i++)
       for (let j = i + 1; j < points.length; j++) {
         const d = Math.hypot(...points[i]!.map((v, k) => v - points[j]![k]!));

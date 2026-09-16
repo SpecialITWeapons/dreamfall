@@ -366,6 +366,7 @@ installDebug(window, {
     return world.scenery?.stats ?? null;
   },
   scenerySample: (i: number) => world.scenery?.sample(i) ?? null,
+  siteNear: (x: number, z: number) => world.scenery?.siteNear(x, z) ?? null,
   get obstacles() {
     return world.obstacles.size;
   },

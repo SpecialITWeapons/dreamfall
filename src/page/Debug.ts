@@ -53,6 +53,8 @@ export interface WorldDebug {
   readonly scenery: SceneryStats | null;
   /** The i-th tree of the last rebuild, in the world and in the scene. */
   scenerySample(i: number): { world: [number, number]; local: [number, number] } | null;
+  /** The settlement nearest a world point, with its plan's size, or null. */
+  siteNear(x: number, z: number): { id: string; x: number; z: number; radius: number; lots: number } | null;
   /** How many things the flight has to fly around. */
   readonly obstacles: number;
   /** The ground or the top of whatever stands on it, m: what the flight keeps its clearance over. */

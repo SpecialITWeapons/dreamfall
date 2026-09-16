@@ -7,3 +7,6 @@ test-results/
 .DS_Store
 .superpowers/
 .worktrees/
+
+# the agent tooling's own directory: worktrees, scratch, local state
+.claude/

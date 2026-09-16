@@ -119,7 +119,20 @@ export const BUDGET = {
   crownCards: 200,
   propTriangles: 6000,
   propInstances: 2000,
+  /**
+   * Settlements of one biome the streamed ring is sized to hold at once, and
+   * the reach it holds them over. A lattice fine enough to put more than this
+   * in front of the flight is refused: the ring would be raising villages
+   * shoulder to shoulder, which is a town, and a town is its own entry.
+   */
   siteInstances: 4,
+  siteReach: 1900,
+  /**
+   * Distinct floor counts one structure may be baked at. A building is
+   * instanced whole, so every count in `floors` gets its own bake and its own
+   * pool: a recipe spanning twenty storeys would bake twenty buildings at load.
+   */
+  floorSpan: 4,
   speciesScale: 3,
 } as const;
 
@@ -163,6 +176,14 @@ export interface LatticeHit {
   cz: number;
   /** Distance to the centre, m. */
   d: number;
+  /** Base height at the centre, m: what a plateau flattens its ground toward. */
+  h: number;
+  /**
+   * Temperature at the centre, 0..1. Like `h`, it is the cell's own answer
+   * rather than this texel's, so a hook can refuse a whole cell on climate
+   * without its edge disagreeing with its middle.
+   */
+  t: number;
   u(k: number): number;
 }
 
@@ -191,13 +212,37 @@ export interface Fields {
 export type PresenceDescriptor =
   | { type: 'climatePoint'; point: [number, number, number]; radius?: number }
   | { type: 'heightBand'; from: number; to: number; feather?: number }
+  | {
+      type: 'lattice';
+      cell: number;
+      radius?: number;
+      feather?: number;
+      odds?: number;
+      salt?: number;
+      /** Metres of height the centre must have; the sea claims nothing. */
+      land?: number;
+      /** Temperature the centre must have, 0..1; nobody settles a glacier. */
+      minTemp?: number;
+      maxSlope?: number;
+      shoreBonus?: number;
+    }
   | { type: 'mul'; of: PresenceDescriptor[] }
   | { type: 'max'; of: PresenceDescriptor[] };
 /** How much of this place is this biome's, 0..1. The engine normalises across the registry. */
 export type Presence = ((f: Fields) => number) | PresenceDescriptor;
 
 export type HeightDescriptor =
-  { type: 'offset'; meters: number } | { type: 'terraces'; step: number; sharpness?: number };
+  | { type: 'offset'; meters: number }
+  | { type: 'terraces'; step: number; sharpness?: number }
+  /** The same lattice the presence hook reads, or the village sits beside its own square. */
+  | {
+      type: 'plateau';
+      cell: number;
+      salt?: number;
+      radius?: number;
+      feather?: number;
+      strength?: number;
+    };
 /** The new height in meters; the engine clips the change to BUDGET.heightDelta. */
 export type HeightHook = ((f: Fields, base: number) => number) | HeightDescriptor;
 
@@ -318,13 +363,84 @@ export interface Site {
   fields: Fields;
 }
 export interface SiteKit extends SceneryKit {
+  /**
+   * The ground the site stands on. A plan needs it -- a street that ignores the
+   * slope is a street up a cliff -- and taking it through the kit is what keeps
+   * the plan a pure function: a test in Node hands it a stub and reads the
+   * answer, with no window of terrain anywhere.
+   */
+  height(x: number, z: number): number;
+  slope(x: number, z: number): number;
   road(points: Array<[number, number]>, width: number, opts?: { color?: SceneryColor }): void;
+  /**
+   * Anything else that runs in a line: a fence across a field, a wall, a hedge.
+   * It is a ribbon along a polyline, the same mechanism as a road, which is why
+   * it lives here and not in a thin scatter of props. M4a knows the shape and
+   * throws; M4b builds it.
+   */
+  line(points: Array<[number, number]>, kind: string, opts?: { height?: number }): void;
   reserve(x: number, z: number, radius: number): void;
 }
+/** One ribbon of road along a polyline, in world metres. */
+export interface RoadSpec {
+  points: Array<[number, number]>;
+  width: number;
+  color?: SceneryColor;
+}
+/** One plot: what stands there, turned how, how many floors of it. */
+export interface LotSpec {
+  x: number;
+  z: number;
+  yaw: number;
+  structure: string;
+  floors: number;
+  tint?: SceneryColor;
+}
+/** Ground spoken for: no tree, no prop, nothing scattered. */
+export interface Reservation {
+  x: number;
+  z: number;
+  radius: number;
+}
+/**
+ * What a site's build hook produces. Data, never geometry: the pools make the
+ * geometry out of this, which is what lets a plan be a pure function with a
+ * test in Node -- and what will let the editor of M6 change one.
+ */
+export interface SitePlan {
+  id: string;
+  x: number;
+  z: number;
+  radius: number;
+  roads: RoadSpec[];
+  lots: LotSpec[];
+  reservations: Reservation[];
+}
+
+/**
+ * Where a settlement stands and what it puts there.
+ *
+ * It carries no odds and no land line of its own: the biome's presence hook
+ * decides whether a lattice cell carries a site, and the site is seated at the
+ * centre that hook believes in. That is not tidiness -- it is the only way the
+ * ground that is painted and flattened for a village is the ground the village
+ * stands on. Two draws on one cell agree about half the time, which is what two
+ * coins do.
+ */
 export interface SitesSpec {
+  /** The lattice, m: the same cell the presence hook is given. */
   cell: number;
-  odds: number;
+  /** The lattice's salt: again the hook's. Defaults to the hook's own default. */
+  salt?: number;
   radius: [number, number];
+  /** Relative weights by structure id; the validator checks them against the registry. */
+  structures?: Record<string, number>;
+  /**
+   * The settlement's own last word, asked at the centre the hook chose. It can
+   * only refuse what the hook allowed, so a `fits` narrower than the presence
+   * hook leaves ground painted for a village that never comes: keep the two
+   * saying the same thing, as `library/settlements/settlement.js` does.
+   */
   fits(f: Fields): boolean;
   build(site: Site, kit: SiteKit): void;
 }
@@ -449,10 +565,50 @@ export interface Prop {
   bake(kit: PropKit): BufferGeometry;
   place(cell: Cell, kit: PropKit): Placement[] | void;
 }
+/**
+ * What a building recipe is baked through: the prop kit, plus what a wall needs,
+ * plus the two things that vary per bake. A recipe that bakes itself reads
+ * `floors` here -- it is the one number that changes between two bakes of the
+ * same entry, and `library/` cannot name a type that lives in `src/`.
+ */
+export interface StructureKit extends PropKit {
+  spec: Structure;
+  floors: number;
+  box(w: number, h: number, d: number, color: SceneryColor): BufferGeometry;
+  roof(kind: Structure['roof'], w: number, d: number, rise: number, color: SceneryColor): BufferGeometry;
+  /**
+   * A band of windows around one floor, painted the window colour and carrying
+   * a `glow` attribute of 1 -- what the night reads, multiplied by the
+   * instance's own `lit` and the sky's `uNight`.
+   *
+   * It **cuts** the band into the geometry rather than painting whatever
+   * vertices happen to be near it: a box has no vertices where its windows go,
+   * so painting alone would either miss the band or smear it up the whole
+   * storey. Call it after merging, never before: a merge carries position,
+   * normal, colour and uv across, and would drop the glow.
+   */
+  windows(geometry: BufferGeometry, y: number, height: number, color: SceneryColor): void;
+}
 export interface Structure {
   kind?: 'structure';
   id: string;
-  [key: string]: unknown;
+  name: string;
+  /** Plan at ground level, m. */
+  footprint: [number, number];
+  floors: [number, number];
+  floorHeight?: number;
+  roof: 'gable' | 'hip' | 'flat';
+  roofPitch?: number;
+  chimney?: boolean;
+  palette: { wall: SceneryColor; roof: SceneryColor; trim?: SceneryColor; window?: SceneryColor };
+  budget?: { triangles?: number };
+  /**
+   * How much sky it takes. The bake measures the shape it built and the larger
+   * of the two wins: an entry may ask the flight for more room than it fills,
+   * never for less.
+   */
+  obstacle?: { radius: number; height: number };
+  bake?(kit: StructureKit): BufferGeometry;
 }
 
 export interface Library {
@@ -477,10 +633,13 @@ export const defineStructure = (structure: Structure): Structure => ({ kind: 'st
 // not start on a library that fails either.
 // ---------------------------------------------------------------------------
 
-const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'mul', 'max']);
-const HEIGHT_TYPES = new Set(['offset', 'terraces']);
+const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'lattice', 'mul', 'max']);
+const HEIGHT_TYPES = new Set(['offset', 'plateau', 'terraces']);
 const GROUND_TYPES = new Set(['layers']);
 const POPULATE_TYPES = new Set(['scatter']);
+const ROOFS = new Set(['gable', 'hip', 'flat']);
+/** The widest a site may be, m (spec 5.5): past this the ring cannot hold one. */
+const SITE_RADIUS = 900;
 
 /** Everything wrong with a library, by entry name; empty when it may load. */
 export function validateLibrary({ biomes, species = [], props = [], structures = [] }: Library): string[] {
@@ -499,7 +658,7 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
   idsOf(biomes, 'biome');
   const speciesIds = idsOf(species, 'species');
   const propIds = idsOf(props, 'prop');
-  idsOf(structures, 'structure');
+  const structureIds = idsOf(structures, 'structure');
 
   const colorAt = (where: string, value: unknown) => {
     const problem = colorProblem(value);
@@ -541,6 +700,33 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
           errors.push(`${where}.populate.density: ${sown.density} is not a density`);
         if (sown.grass) colorAt(`${where}.populate.grass.tint`, sown.grass.tint);
       }
+    }
+    if (biome?.sites) {
+      const site = biome.sites;
+      if (typeof site.fits !== 'function') errors.push(`${where}.sites: needs a fits hook`);
+      if (typeof site.build !== 'function') errors.push(`${where}.sites: needs a build hook`);
+      if (!(site.cell > 0)) errors.push(`${where}.sites.cell: ${site.cell} is not a lattice`);
+      // A settlement is seated off its presence hook, so a biome that carries
+      // sites and no lattice under them has nothing to seat them on.
+      if (typeof biome.presence !== 'function' && biome.presence?.type !== 'lattice')
+        errors.push(`${where}.sites: needs a lattice presence to stand on`);
+      // One site a cell, so how many can face the flight at once is the lattice
+      // against the ring's reach. Counted the way the ring counts: every cell
+      // the reach touches, plus the one the flight stands in.
+      const across = Math.floor((2 * BUDGET.siteReach) / site.cell) + 1;
+      if (site.cell > 0 && across * across > BUDGET.siteInstances)
+        errors.push(
+          `${where}.sites.cell: ${site.cell} m puts up to ${across * across} sites in the ring, the budget is ${BUDGET.siteInstances}`,
+        );
+      const radius = site.radius;
+      if (!Array.isArray(radius) || radius.length !== 2 || !(radius[0] > 0 && radius[1] >= radius[0]))
+        errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);
+      else if (radius[1] > SITE_RADIUS)
+        errors.push(`${where}.sites.radius: ${radius[1]} m, the budget is ${SITE_RADIUS}`);
+      // The ids a settlement asks for are checked here for the same reason a
+      // biome's species are: the site builds years after someone types them.
+      for (const id of Object.keys(site.structures ?? {}))
+        if (!structureIds.has(id)) errors.push(`${where}.sites: unknown structure "${id}"`);
     }
     // A colour in params is written as a swatch name or a hex string: a bare
     // number is a number (a density, a metre count), and every number is also
@@ -585,6 +771,34 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       errors.push(`${where}.budget.triangles: ${triangles}, the budget is ${BUDGET.propTriangles}`);
     if (typeof instances === 'number' && instances > BUDGET.propInstances)
       errors.push(`${where}.budget.instances: ${instances}, the budget is ${BUDGET.propInstances}`);
+    const obstacle = entry?.obstacle;
+    if (obstacle && !(obstacle.radius > 0 && obstacle.height > 0))
+      errors.push(`${where}.obstacle: radius and height must both be positive`);
+  }
+
+  for (const entry of structures) {
+    const where = `structure ${entry?.id}`;
+    const footprint = entry?.footprint;
+    if (!Array.isArray(footprint) || footprint.length !== 2 || !footprint.every((v) => v > 0))
+      errors.push(`${where}.footprint: needs two positive meters`);
+    const floors = entry?.floors;
+    if (!Array.isArray(floors) || floors.length !== 2 || !floors.every((v) => Number.isInteger(v) && v > 0))
+      errors.push(`${where}.floors: needs a [min, max] of whole floors`);
+    else if (floors[1] < floors[0])
+      errors.push(`${where}.floors: [${floors[0]}, ${floors[1]}] does not rise`);
+    else if (floors[1] - floors[0] + 1 > BUDGET.floorSpan)
+      errors.push(
+        `${where}.floors: ${floors[1] - floors[0] + 1} storey counts, the budget is ${BUDGET.floorSpan}`,
+      );
+    if (!ROOFS.has(entry?.roof)) errors.push(`${where}.roof: unknown roof "${String(entry?.roof)}"`);
+    for (const role of ['wall', 'roof', 'trim', 'window'] as const) {
+      const value = entry?.palette?.[role];
+      if (value !== undefined) colorAt(`${where}.palette.${role}`, value);
+      else if (role === 'wall' || role === 'roof') errors.push(`${where}.palette.${role}: missing`);
+    }
+    const triangles = entry?.budget?.triangles;
+    if (typeof triangles === 'number' && triangles > BUDGET.propTriangles)
+      errors.push(`${where}.budget.triangles: ${triangles}, the budget is ${BUDGET.propTriangles}`);
     const obstacle = entry?.obstacle;
     if (obstacle && !(obstacle.radius > 0 && obstacle.height > 0))
       errors.push(`${where}.obstacle: radius and height must both be positive`);

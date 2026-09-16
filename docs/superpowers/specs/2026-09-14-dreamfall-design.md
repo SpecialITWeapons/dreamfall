@@ -156,7 +156,13 @@ export interface Fields {
   noise(scale: number, salt: number, octaves?: number): number;  // fbm -1..1
   lattice(cell: number, salt: number): LatticeHit;  // najbliższe centrum kraty
 }
-export interface LatticeHit { cx: number; cz: number; d: number; u(k: number): number }
+// 2026-09-16: `h` i `t` — wysokość bazowa i temperatura centrum komórki,
+// próbkowane raz na komórkę kraty i zapamiętane. Bez nich `plateau` musiałby
+// w środku wypełniania okna pytać sampler o texel inny niż swój własny;
+// komórka kraty ma kilometry boku, więc jedna zapamiętana odpowiedź starcza
+// niemal na całe wypełnienie, a hak rozstrzyga całą komórkę bez drugiego
+// próbkowania — i rozstrzyga ją tak samo na jej środku, co na jej brzegu.
+export interface LatticeHit { cx: number; cz: number; d: number; h: number; t: number; u(k: number): number }
 
 export type Presence = ((f: Fields) => number) | PresenceDescriptor;           // 0..1
 export type HeightHook = ((f: Fields, base: number) => number) | HeightDescriptor;  // nowa wysokość w m
@@ -204,14 +210,28 @@ export type PopulateHook = ((cell: Cell, kit: SceneryKit) => void) | PopulateDes
 // stanowiska
 export interface SitesSpec {
   cell: number;                       // bok kraty, m
-  odds: number;                       // 0..1 szansa na komórkę kraty
+  // 2026-09-16: `odds` tu nie ma. O tym, czy komórka niesie osadę, decyduje hak
+  // obecności biomu, a `Sites` sadza osadę, wołając ten hak w środku komórki
+  // kraty. Dwie loterie o jednej komórce zgadzają się w połowie przypadków
+  // (zmierzone: 625 komórek ziarna 42, zgoda 50 %). `salt` jest tu po to, żeby
+  // wskazać tę samą kratę, co hak.
+  salt?: number;                      // domyślnie tyle, co w haku (0x5117)
   radius: [number, number];           // m
+  // 2026-09-16: wagi rodzajów budynków; walidator sprawdza po nich
+  // identyfikatory w rejestrze, tak jak gatunki biomu.
+  structures?: Record<string, number>;
   fits(f: Fields): boolean;           // np. ląd > 10 m, łagodny teren
   build(site: Site, kit: SiteKit): void;
 }
 export interface Site { id: string; x: number; z: number; radius: number; yaw: number; random(): number; fields: Fields }
+// 2026-09-16: `height` i `slope` — plan czyta grunt przez kit, nie przez okno
+// terenu, i tylko dlatego zostaje czystą funkcją z testem w Node. `line` to
+// wstęga, która nie jest drogą (płot, murek, żywopłot): w M4a jest w kontrakcie
+// i rzuca, buduje ją M4b.
 export interface SiteKit extends SceneryKit {
+  height(x, z): number; slope(x, z): number;
   road(points: Array<[number, number]>, width: number, opts?: { color? }): void;
+  line(points: Array<[number, number]>, kind: string, opts?: { height? }): void;
   reserve(x, z, radius): void;        // zajmuje teren dla cell.occupied
 }
 
@@ -223,8 +243,13 @@ export interface AmbienceSpec {
 
 ### 5.3 Standardowe haki (`library/standard/`)
 
-- Obecność: `climatePoint({ point: [t, m, r], radius })`, `lattice({ cell, radius, feather, odds, salt, land?, maxSlope?, shoreBonus? })`, `heightBand({ from, to, feather })`, kombinatory `mul([...])`, `max([...])`.
-- Wysokość: `plateau({ lattice, radius, feather, strength })`, `terraces({ step, sharpness })`, `offset({ meters })`.
+- Obecność: `climatePoint({ point: [t, m, r], radius })`, `lattice({ cell, radius, feather, odds, salt, land?, minTemp?, maxSlope?, shoreBonus? })`, `heightBand({ from, to, feather })`, kombinatory `mul([...])`, `max([...])`.
+- Wysokość: `plateau({ cell, salt, radius, feather, strength })`, `terraces({ step, sharpness })`, `offset({ meters })`.
+  2026-09-16: `plateau` bierze parę (bok kraty, salt), a nie jeden parametr
+  `lattice`, jak stało tu wcześniej: dokładnie tę samą parę dostaje hak
+  obecności `lattice`, a wspólny domyślny salt `0x5117` jest po to, żeby
+  pominięty parametr nie rozjechał obu haków po cichu. Wysokość, do której
+  hak ciągnie ziemię, bierze się z `hit.h`.
 - Ziemia: `layers([{ color, mask: 'base' | 'slope' | 'height' | 'noise' | 'weight', ...params }])` — malarz warstw, każda warstwa mieszana maską.
 - Rozmieszczanie: `scatter({ species: {id: w}, density, props: {id: w}, grass })`.
   2026-09-16: `scatter` stawia **wyłącznie drzewa**. `props` to wagi, które czyta
@@ -247,6 +272,10 @@ fan | bare`, paleta liści, odcienie klimatyczne, skala; opcjonalny własny
 kolorów ról: `suit`, `trim`, `helmet`, `skin`, `boots`, plus `accent`),
 `definePattern` (reguła nad wierzchołkiem postaci, pierwszy wzór nie maluje
 nic).
+
+2026-09-16: `obstacle` w przepisie budynku jest opcjonalny, nie „zawsze” —
+prześwit mierzy wypieczony kształt, a `obstacle` wpisu może prosić o więcej
+miejsca, nigdy o mniej.
 
 ### 5.5 Koperta kolorów i budżety
 
@@ -431,6 +460,68 @@ wierzchołków albo malowana na canvasie fasada); jedna pula na rodzaj i liczbę
 kondygnacji; parcela wybiera hashem rodzaj, obrót i odcień. Każdy budynek
 zostawia rekord przeszkody. Wynik generatora dla stanowiska jest czystą
 funkcją `(seed, komórka kraty, params)`, więc testuje się w Node.
+
+Poprawki z 2026-09-16, z wykonania M4a (wieś; miasteczko idzie do M4b):
+
+- **Jedna loteria, jeden środek.** To jest największa poprawka M4a i została
+  zmierzona. `Sites.seat` losował własnym ziarnem, na własnej soli, i sadzał
+  wieś w losowym punkcie komórki — a hak obecności losował swoim, malował ziemię
+  i uruchamiał płaskowyż wokół swojego środka. Na 625 komórkach ziarna 42: 64
+  komórki, gdzie obie strony mówiły „wieś", 247, gdzie obie mówiły „nic", 72
+  płaskie place wydeptanej gliny bez jednego domu i 242 wsie na gruncie, którego
+  nikt dla nich nie spłaszczył. Zgoda 50 % — tyle, co dwie monety. Teraz decyzja
+  jest jedna: `seat` woła hak obecności biomu w środku kraty i stawia osadę
+  właśnie tam. Po poprawce: 132 komórki niosą wieś, 132 są posadzone, odstęp
+  między siedziskiem a środkiem 0,00 m. Dlatego `SitesSpec` nie ma własnych
+  `odds` ani własnej linii lądu — trzyma je hak, i nie mają jak się rozjechać.
+- **Krata a okno wysokości.** Sadzanie czyta sampler, który odpowiada wszędzie,
+  więc okno nie decyduje już o tym, które komórki istnieją. Czyta je dopiero
+  **plan**: dalej niż okno `heightAt` zawija się po torusie i odpowiada drugą
+  stroną świata, więc stanowisko, o które okno nie umie zapytać, czeka w
+  kolejce na swoją kolej zamiast położyć ulicę po drugiej stronie świata.
+- **Drogi wsi.** Nie ma przełącznika `roads: 'organic' | 'grid'`: kształt ulic
+  jest kodem planu (`settlements/plan.js`), a parametry niosą `spacing`, `width`
+  oraz `reach` i `maxSlope` bocznej ścieżki. `jitter`, `ringRoad`, `radials` i
+  `plaza` należą do miasteczka i nie powstały.
+- **Parcele i kondygnacje.** `lotDepth` to `lots.depth`, a `density(r)` nie jest
+  funkcją: parametrem jest jedna liczba, a rzednięcie ku krawędzi `(1 - (r/R)^2)`
+  siedzi w planie. Nie ma `floors(r)` — liczbę kondygnacji daje rodzaj (młyn 3)
+  i losowanie strumienia stanowiska (2 z szansą 0,3, inaczej 1). Nie ma też
+  parametru `landmark`: młyn jest wagą w mieszance (0,05), więc wieś może mieć
+  kilka młynów albo żaden. Paleta osady jako parametr czeka na M4b.
+- **Co wybiera hash parceli.** Rodzaj i kondygnacje losuje strumień stanowiska
+  w ustalonej kolejności (to ona jest powtarzalnością wsi), obrót bierze się
+  z ulicy, przy której parcela stoi, a hash samej parceli decyduje wyłącznie
+  o `lit` — jak bardzo świecą jej okna po zmroku. Odcienia parcela nie dostaje.
+- **Okna.** Pas okien jest **wcinany** w ścianę (pudełko nie ma wierzchołków
+  tam, gdzie mają być okna) i niesie atrybut `glow`; w nocy materiał mnoży
+  kolor · `glow` · `lit` instancji · `uNight`. Malowanej na canvasie fasady nie
+  ma, a przepis bez koloru okna nie ma okien i nie świeci — po tym z góry
+  poznaje się stodołę.
+- **Jedne liczby na grunt.** Do wymogów z tabeli dochodzi `minTemp` (nikt nie
+  stawia wsi na lodowcu), a hak obecności i `fits` czytają te same trzy:
+  `land`, `minTemp`, `maxSlope`. Inaczej ziemia byłaby malowana i spłaszczana
+  pod wieś, której osadnik nie posadzi. `shoreBonus` jest w haku obecności, ale
+  wieś go nie ustawia.
+- **Wieś staje w całości albo wcale.** Pierścień nie przycina parcel planu
+  odległością. Wstęga drogi powstaje z planu, a nie z zasięgu pierścienia, więc
+  przycinanie parcela po parceli pokazywało całą ulicę z ośmioma domami przy
+  niej — dokładnie tę pół-wieś, przed którą broni się ten punkt. Plan ma najwyżej
+  `SITE_RADIUS` średnicy, więc wystawanie poza pierścień jest ograniczone.
+- **Budynki i kondygnacje w pulach.** Pule pieką każdy rodzaj raz na każdą
+  liczbę kondygnacji z jego zakresu, nie tylko na jego końce, bo parcela może
+  poprosić o dwupiętrowy dom z przepisu `[1, 3]`. `BUDGET.floorSpan` ogranicza
+  ten zakres, a plan, który nazwie budynek spoza rejestru albo liczbę pięter
+  spoza przepisu, mówi to od razu — w kolejce, nie w pętli klatki.
+- **Ile wsi naraz.** `BUDGET.siteInstances` przestał być martwą liczbą:
+  walidator liczy kratę przeciw zasięgowi pierścienia (`BUDGET.siteReach`)
+  i odrzuca kratę tak gęstą, że przed lotem stanęłyby więcej niż cztery osady.
+  To już miasteczko, a miasteczko jest osobnym wpisem.
+- **Czystość planu i dodatki.** `build(site, kit)` jest czystą funkcją
+  stanowiska, parametrów i tego, co kit odpowie o gruncie (`kit.height`,
+  `kit.slope`); grunt wchodzi przez kit właśnie po to, żeby plan liczył się
+  w Node bez okna terenu. Propsów wzdłuż dróg, płotów i sadów nie ma —
+  `kit.line` rzuca do M4b.
 
 Pierwsza wersja świadomie bez: malowanych pól na ziemi, mostów (po rzekach w
 M6: przeszkody z `bottom`, `kit.bridge(from, to, width)` z filarami, wykrywanie

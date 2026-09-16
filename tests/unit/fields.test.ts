@@ -82,12 +82,23 @@ describe('createFields', () => {
     const here = createFields(createWorldSampler(7)).at(2000, 3000);
     const noise = here.noise(370, 1),
       hash = here.hash(7);
+    // the lattice too: it is where the sites of M4 will stand, and two worlds
+    // whose villages sit on the same grid are one world with two palettes
+    const centre = here.lattice(6000, 3),
+      where = [centre.cx, centre.cz],
+      stream = centre.u(0);
     const other = createFields(createWorldSampler(8)).at(2000, 3000);
     expect(other.noise(370, 1)).not.toBe(noise);
     expect(other.hash(7)).not.toBe(hash);
+    const elsewhere = other.lattice(6000, 3);
+    expect([elsewhere.cx, elsewhere.cz]).not.toEqual(where);
+    expect(elsewhere.u(0)).not.toBe(stream);
     const again = createFields(createWorldSampler(7)).at(2000, 3000);
     expect(again.noise(370, 1)).toBe(noise); // and one seed is still one world
     expect(again.hash(7)).toBe(hash);
+    const back = again.lattice(6000, 3);
+    expect([back.cx, back.cz]).toEqual(where);
+    expect(back.u(0)).toBe(stream);
     expect(noise).toBeGreaterThanOrEqual(-1);
     expect(noise).toBeLessThanOrEqual(1);
     expect(hash).toBeGreaterThanOrEqual(0);
@@ -105,6 +116,44 @@ describe('createFields', () => {
     const deep = walkTo((h) => h < -40);
     expect(f.at(deep, 0).shore).toBe(0);
   });
+  it('gives every lattice cell a stream of its own, unbiased', () => {
+    const f = createFields(createWorldSampler(42));
+    const keys = new Set<string>();
+    let below = 0,
+      sum = 0;
+    const n = 30;
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const hit = f.at((i + 0.5) * 6000, (j + 0.5) * 6000).lattice(6000, 0x5117);
+        // two cells may share a centre only by sharing an index, which they cannot
+        keys.add(`${hit.u(0)},${hit.u(1)}`);
+        sum += hit.u(0);
+        if (hit.u(0) < 0.5) below++;
+      }
+    expect(keys.size).toBe(n * n);
+    // Keyed on the rounded centre instead of the index, this read 0.43 and 0.63:
+    // the key collided with the neighbour's and correlated with the jitter hash.
+    expect(sum / (n * n)).toBeGreaterThan(0.45);
+    expect(sum / (n * n)).toBeLessThan(0.55);
+    expect(below / (n * n)).toBeGreaterThan(0.42);
+    expect(below / (n * n)).toBeLessThan(0.58);
+  });
+
+  it('carries the height of the lattice centre, sampled once per cell', () => {
+    const sampler = createWorldSampler(42);
+    const f = createFields(sampler);
+    const hit = f.at(3000, 3000).lattice(6000, 3);
+    // the centre's own height, not this point's: that is what a plateau flattens toward
+    const there = new Float64Array(5);
+    sampler.baseFields(hit.cx, hit.cz, there);
+    expect(hit.h).toBeCloseTo(there[0]!, 9);
+    expect(hit.h).not.toBeCloseTo(f.at(3000, 3000).baseHeight, 3);
+    // a neighbour in the same lattice cell gets the same centre and the same height
+    const same = f.at(3400, 2600).lattice(6000, 3);
+    expect(same.cx).toBe(hit.cx);
+    expect(same.h).toBe(hit.h);
+  });
+
   it('gives one lattice centre per cell, with its own random stream', () => {
     const f = fields();
     const hit = f.at(3000, 3000).lattice(6000, 3);

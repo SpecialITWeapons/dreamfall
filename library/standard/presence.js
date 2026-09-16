@@ -59,6 +59,78 @@ export function heightBand({ from, to, feather = 60 }) {
 }
 
 /**
+ * How near the water line a lattice centre counts as a shore, m. The engine's
+ * `shore` field is the same reach around the same line; the library may not
+ * import from src/, and the bonus wants the shore of the centre rather than the
+ * shore of whatever texel the hook is standing on.
+ */
+const SHORE_REACH = 25;
+
+/**
+ * The stream a cell draws its site from. Not stream 0: `Fields.lattice` keys the
+ * streams on the rounded centre and salts the first of them exactly as it salts
+ * the jitter, so a cell whose centre jittered towards the lower corner of itself
+ * draws under a half every time -- with odds of a half that is two cells in
+ * three carrying a site rather than one in two. The streams after it are clean.
+ */
+const CARRY = 1;
+
+/**
+ * A place someone built on: one centre per cell of a lattice, and a circle of
+ * presence around the centre that fades over a feather.
+ *
+ * Everything that decides whether a cell carries anything at all reads the
+ * centre -- the cell's own stream against the odds, the centre's height against
+ * `land`, its nearness to the water against `shoreBonus`. So a cell answers the
+ * same everywhere inside itself, which is the whole point: odds read where the
+ * hook happens to stand would let one cell say yes at its wet edge and no at its
+ * dry one, and a fringe of presence around a village that is not there reads as
+ * a bug in the terrain.
+ *
+ * `maxSlope` refuses the ground a plateau on this same lattice would have to
+ * cut: the rise from the centre to here is the only slope a hook sampling one
+ * texel can measure, and it is the one that matters, because that rise is the
+ * cut. Inside the radius it is measured against the radius, so a single rough
+ * texel by the centre cannot punch a hole in the village.
+ *
+ * The carry draw is the cell's stream 1, not its stream 0; whatever else stands
+ * on this lattice -- the plan of the settlement, its buildings -- takes the
+ * streams after it.
+ *
+ * `minTemp` is the last of the cell-level refusals and reads the centre's own
+ * temperature for the same reason `land` reads its height: a settlement that
+ * refuses a glacier must refuse the whole cell, or the ground is painted and
+ * flattened for a village the site finder will not seat.
+ *
+ * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, shoreBonus?: number }} spec
+ * @returns {(f: import('../contract').Fields) => number}
+ */
+export function lattice({
+  cell,
+  radius = 200,
+  feather = 150,
+  odds = 0.5,
+  salt = 0x5117,
+  land = -Infinity,
+  minTemp = -Infinity,
+  maxSlope = Infinity,
+  shoreBonus = 0,
+}) {
+  return (f) => {
+    const hit = f.lattice(cell, salt);
+    // Nearly every texel of a cell kilometres wide is nowhere near its centre,
+    // so the distance is asked first and the rest of the cell costs nothing.
+    const near = 1 - sstep(radius, radius + feather, hit.d);
+    if (near === 0 || hit.h < land || hit.t < minTemp) return 0;
+    const shore = 1 - sstep(0, SHORE_REACH, Math.abs(hit.h));
+    if (hit.u(CARRY) >= odds * (1 + shoreBonus * shore)) return 0;
+    if (maxSlope === Infinity) return near; // unset, it is no ceiling at all
+    const room = maxSlope * Math.max(hit.d, radius);
+    return near * (1 - sstep(room, room * 2, Math.abs(f.baseHeight - hit.h)));
+  };
+}
+
+/**
  * Everything at once: the product, so any zero is a zero.
  * @param {import('../contract').Presence[]} of
  * @returns {(f: import('../contract').Fields) => number}
@@ -92,6 +164,8 @@ export function resolve(hook) {
       return climatePoint(hook);
     case 'heightBand':
       return heightBand(hook);
+    case 'lattice':
+      return lattice(hook);
     case 'mul':
       return mul(hook.of);
     case 'max':

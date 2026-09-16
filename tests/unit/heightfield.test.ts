@@ -49,6 +49,18 @@ describe('createHeightfield', () => {
     for (let iz = 1 - 16; iz < 1 + 16; iz++)
       for (let ix = 5 - 16; ix < 5 + 16; ix++) expect(a.texel(ix, iz, 0)).toBe(b.texel(ix, iz, 0));
   });
+  it('fills the whole window the first time, however small the move', () => {
+    // A scroll writes the rows it walks into and nothing else, so a window
+    // nobody filled would keep a flat sea in its middle and answer with it.
+    const a = createHeightfield(plane(0.5, 0), { size: 16 });
+    expect(a.update(CELL, 0)).toBe('jump');
+    const b = createHeightfield(plane(0.5, 0), { size: 16 });
+    b.fillAll(1, 0);
+    for (let iz = -8; iz < 8; iz++)
+      for (let ix = 1 - 8; ix < 1 + 8; ix++) expect(a.texel(ix, iz, 0)).toBe(b.texel(ix, iz, 0));
+    // and afterwards it scrolls like any other window
+    expect(a.update(2 * CELL, 0)).toBe('incremental');
+  });
   it('treats a move of more than a quarter window as a jump and refills everything', () => {
     const hf = createHeightfield(plane(0.5, 0), { size: 16 });
     hf.fillAll(0, 0);

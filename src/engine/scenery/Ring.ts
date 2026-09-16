@@ -17,6 +17,7 @@ import {
   type PropKit,
   type Prop,
   type SceneryKit,
+  type SitePlan,
   type Species,
 } from '../../../library/contract';
 import { CELL_TREES, resolvePopulate } from '../../../library/standard/index.js';
@@ -25,8 +26,9 @@ import type { Heightfield } from '../terrain/Heightfield';
 import { sstep } from '../terrain/noise';
 import { hash2, mulberry32 } from '../terrain/noise';
 import { SLOTS, type WorldSampler } from '../terrain/WorldSampler';
-import type { Obstacles } from './Obstacles';
+import { OBSTACLE_CELL, type Obstacles } from './Obstacles';
 import { cellKey, type Overrides } from './Overrides';
+import type { Site, Sites } from './Sites';
 
 /** The side of one streaming cell, m. */
 export const TREE_CELL = 96;
@@ -38,7 +40,23 @@ export const MAX_TREES = 4000;
 export const POPULATE_FLOOR = 0.05;
 /** Ground above this is land, in the only sense the scenery cares about. */
 const LAND = 3;
+/** The claim index's cell, m: the obstacles' own, because the question has the same shape. */
+const CLAIM_CELL = OBSTACLE_CELL;
 const TAU = Math.PI * 2;
+
+/**
+ * One piece of ground a site plan speaks for: a road's segment with its half
+ * width, or a reservation, which is the same thing with no length. One shape
+ * answers both, so the index holds one kind of record.
+ */
+interface Claim {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  /** Squared, because that is the only way the query ever asks. */
+  r2: number;
+}
 
 export interface TreeInstance {
   species: string;
@@ -66,12 +84,32 @@ export interface PropInstance {
 }
 
 /** Where the placements go: an array in a test, instanced pools in the browser. */
+export interface StructureInstance {
+  structure: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  floors: number;
+  /** How awake this house is after dark, 0..1; the window band is multiplied by it. */
+  lit: number;
+  /** Scratch, as above. */
+  tint: Color;
+}
+
 export interface ScenerySink {
   /** (x, z) is where the rebuild is centred, in the world: the crowns are handed out by distance from it. */
   begin(x: number, z: number): void;
   /** False when that pool is full; the ring stops offering to it until the next rebuild. */
   tree(tree: TreeInstance): boolean;
   prop(prop: PropInstance): boolean;
+  structure(building: StructureInstance): boolean;
+  /**
+   * A plan whose ground this rebuild covers, offered whole before its lots are.
+   * Its roads are not instances -- one site, one ribbon -- so the sink keeps a
+   * mesh per plan and drops the ones a rebuild stopped offering.
+   */
+  site(plan: SitePlan): void;
   end(): void;
 }
 
@@ -79,6 +117,8 @@ export interface ScenerySink {
 export interface SceneryMetrics {
   species(id: string): { top: number; radius: number } | null;
   prop(id: string): { radius: number; height: number } | null;
+  /** A building is baked per floor count, so its size is asked for per floor count. */
+  structure(id: string, floors: number): { top: number; radius: number } | null;
 }
 
 export interface Ring {
@@ -87,6 +127,7 @@ export interface Ring {
   readonly cells: number;
   readonly trees: number;
   readonly props: number;
+  readonly buildings: number;
   /** Milliseconds the last rebuild took. */
   readonly ms: number;
   /** Where the ring is centred, m in the world: the shade sheet is anchored here. */
@@ -102,6 +143,8 @@ export interface RingDeps {
   obstacles: Obstacles;
   overrides: Overrides;
   metrics: SceneryMetrics;
+  /** The settlements. Without them nothing is spoken for and the ring sows as it always did. */
+  sites?: Sites;
   sink: ScenerySink;
   /** What a prop's place() is handed; the baking half of it is never called here. */
   propKit: PropKit;
@@ -118,7 +161,7 @@ const idHash = (id: string) => {
 };
 
 export function createRing(deps: RingDeps): Ring {
-  const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sink, propKit } = deps;
+  const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sites, sink, propKit } = deps;
   const size = deps.cell ?? TREE_CELL;
   const radius = deps.radius ?? TREE_RADIUS;
   const maxTrees = deps.maxTrees ?? MAX_TREES;
@@ -169,6 +212,67 @@ export function createRing(deps: RingDeps): Ring {
   let here = fields.at(0, 0);
   let roll: () => number = () => 0;
 
+  // The ground the site plans in reach speak for, in a hash grid of 64 m cells
+  // -- the obstacles' cell, for the obstacles' reason. occupied() is asked once
+  // per tree, three times a cell and seventeen hundred cells a rebuild, so it
+  // may not walk the plans: each claim is written into every cell it touches,
+  // once per rebuild, and the query reads the single cell it lands in.
+  const claims = new Map<string, Claim[]>();
+  const nearby: Site[] = [];
+
+  const claim = (x0: number, z0: number, x1: number, z1: number, r: number) => {
+    const record: Claim = { x0, z0, x1, z1, r2: r * r };
+    const cx0 = Math.floor((Math.min(x0, x1) - r) / CLAIM_CELL),
+      cx1 = Math.floor((Math.max(x0, x1) + r) / CLAIM_CELL),
+      cz0 = Math.floor((Math.min(z0, z1) - r) / CLAIM_CELL),
+      cz1 = Math.floor((Math.max(z0, z1) + r) / CLAIM_CELL);
+    for (let cz = cz0; cz <= cz1; cz++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const key = `${cx},${cz}`,
+          bucket = claims.get(key);
+        if (bucket) bucket.push(record);
+        else claims.set(key, [record]);
+      }
+  };
+
+  /** Reads the plans in reach into the index, from nothing, at every rebuild. */
+  const indexPlans = (x: number, z: number) => {
+    claims.clear();
+    if (!sites) return;
+    for (const site of sites.near(x, z, radius, nearby)) {
+      // A site still in the queue has no plan yet, so it speaks for no ground:
+      // the same frame has nothing of it to build either.
+      const plan = sites.planFor(site);
+      if (!plan) continue;
+      for (const spot of plan.reservations) claim(spot.x, spot.z, spot.x, spot.z, spot.radius);
+      for (const road of plan.roads) {
+        const half = road.width / 2;
+        for (let i = 1; i < road.points.length; i++) {
+          const a = road.points[i - 1]!,
+            b = road.points[i]!;
+          claim(a[0], a[1], b[0], b[1], half);
+        }
+      }
+    }
+  };
+
+  const occupied = (x: number, z: number) => {
+    // A world with no settlements pays one comparison per tree for the question.
+    if (claims.size === 0) return false;
+    const bucket = claims.get(`${Math.floor(x / CLAIM_CELL)},${Math.floor(z / CLAIM_CELL)}`);
+    if (!bucket) return false;
+    for (const c of bucket) {
+      const dx = c.x1 - c.x0,
+        dz = c.z1 - c.z0,
+        len2 = dx * dx + dz * dz;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - c.x0) * dx + (z - c.z0) * dz) / len2)) : 0;
+      const ox = x - (c.x0 + t * dx),
+        oz = z - (c.z0 + t * dz);
+      if (ox * ox + oz * oz <= c.r2) return true;
+    }
+    return false;
+  };
+
   const cell: Cell = {
     size,
     corner: { x: 0, z: 0 },
@@ -214,12 +318,12 @@ export function createRing(deps: RingDeps): Ring {
     slope: (x, z) => heightfield.slopeAt(x, z),
     land: (x, z) => heightfield.heightAt(x, z) > LAND,
     roll: () => roll(),
-    // Sites reserve ground from M4; until then nothing is spoken for.
-    occupied: () => false,
+    occupied,
   };
 
   let trees = 0,
     props = 0,
+    buildings = 0,
     cells = 0,
     ms = 0;
   const full = new Set<string>();
@@ -292,11 +396,74 @@ export function createRing(deps: RingDeps): Ring {
     props++;
   };
 
+  /**
+   * The lots of every plan whose ground the ring covers. A plan is placed whole
+   * or not at all -- a village with half its houses is worse than a village a
+   * frame late -- and the ring never asks a site for anything: it reads a plan
+   * that was built in the queue, or it reads nothing.
+   */
+  const raise = (x: number, z: number) => {
+    if (!sites) return;
+    for (const site of sites.near(x, z, radius, nearby)) {
+      const plan = sites.planFor(site);
+      if (!plan) continue;
+      sink.site(plan);
+      for (const lot of plan.lots) {
+        // No distance test here on purpose. The site is what the reach decided;
+        // once it is in, its lots come with it, however far the far side of the
+        // street is. Culling lot by lot would put a whole road ribbon in the
+        // scene -- the ribbon is built from the plan, not from the ring's own
+        // reach -- with eight houses standing on it, which is the half a village
+        // this is written to avoid. A plan is at most SITE_RADIUS across, so the
+        // overhang past the ring is bounded and small.
+        const y = heightfield.heightAt(lot.x, lot.z);
+        // A lot with no floors is a prop the plan asked for: a well, a trough.
+        if (lot.floors <= 0) {
+          standProp(lot.structure, { x: lot.x, z: lot.z, yaw: lot.yaw, tint: lot.tint });
+          continue;
+        }
+        const shape = metrics.structure(lot.structure, lot.floors);
+        if (!shape) continue;
+        // Which windows are awake is the lot's own business, fixed by where it
+        // stands, so a village looks the same on two nights and different from
+        // house to house.
+        const lit = hash2(Math.round(lot.x), Math.round(lot.z), seed ^ 0x11a7) / 4294967296;
+        const tint = lot.tint === undefined ? scratch.setRGB(1, 1, 1) : scratch.set(swatchColor(lot.tint));
+        if (
+          !sink.structure({
+            structure: lot.structure,
+            x: lot.x,
+            y,
+            z: lot.z,
+            yaw: lot.yaw,
+            floors: lot.floors,
+            lit,
+            tint,
+          })
+        )
+          continue;
+        obstacles.add({
+          x: lot.x,
+          z: lot.z,
+          ground: y,
+          top: y + shape.top,
+          radius: shape.radius,
+        });
+        buildings++;
+      }
+    }
+  };
+
   const kit: SceneryKit = {
     tree: (speciesId, x, z, opts) => plantTree(speciesId, x, z, opts),
     prop: (propId, x, z, opts) => standProp(propId, { x, z, ...opts }),
     structure: () => {
-      throw new Error('scenery: structures land in M4');
+      // Not unfinished work: a scatter says what grows on a cell, and a
+      // building is not something that grows. Buildings stand on site plans,
+      // which are placed whole by `raise`.
+      throw new Error(
+        'scenery library: a biome scatters, it does not build; a building belongs to a site plan',
+      );
     },
     color: (value) => new Color(swatchColor(value)),
   };
@@ -307,7 +474,8 @@ export function createRing(deps: RingDeps): Ring {
     const started = performance.now();
     sink.begin(x, z);
     obstacles.clear();
-    trees = props = cells = 0;
+    indexPlans(x, z);
+    trees = props = buildings = cells = 0;
     full.clear();
     const span = Math.ceil(radius / size);
     for (let iz = cz - span; iz <= cz + span && trees < maxTrees; iz++)
@@ -359,6 +527,7 @@ export function createRing(deps: RingDeps): Ring {
           entry.hook(cell, kit);
         }
       }
+    raise(x, z);
     sink.end();
     ms = performance.now() - started;
   };
@@ -383,6 +552,9 @@ export function createRing(deps: RingDeps): Ring {
     },
     get props() {
       return props;
+    },
+    get buildings() {
+      return buildings;
     },
     get ms() {
       return ms;
