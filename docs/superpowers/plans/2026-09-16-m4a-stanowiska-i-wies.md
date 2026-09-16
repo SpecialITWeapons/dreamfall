@@ -157,9 +157,9 @@ export interface SitePlan {
 - `SiteKit` dostaje `line(points, kind, opts?)` — wstęga wzdłuż łamanej, która nie jest drogą (płot, murek, żywopłot). W M4a **istnieje w typach i rzuca `Error('lines land in M4b')`**, dokładnie tak, jak `structure` rzucał w M3b. Powód: to jest odpowiedź na pytanie właściciela i ma być widoczna w kontrakcie od momentu, w którym wiadomo, gdzie należy — a nie zbudowana na zapas.
 - `validateLibrary` dostaje blok budynków (identyfikator, duplikaty, `footprint` i `floors` rosnące i dodatnie, `palette` w kopercie, `roof` ze znanego zbioru, `obstacle` dodatni) i sprawdza odwołania: każdy identyfikator budynku wymieniony przez osadę musi istnieć w rejestrze — ta sama reguła, która w M3b złapała literówkę w gatunku.
 
-- [ ] **Step 1: Test, który nie przechodzi** — przypadki jak w M3b: budżety, brakujące pola, kolor poza kopertą, nieznany rodzaj dachu, osada wskazująca budynek, którego nikt nie wypiekł.
-- [ ] **Step 2: Implementacja.** Trzymaj `validateLibrary` płaskie: jeden `for` na rodzaj wpisu, ta sama pomocnicza `colorAt`, ten sam kształt komunikatu.
-- [ ] **Step 3:** `npm run check` **do pliku, z odczytem kodu wyjścia** (nie przez `grep` — potok zwraca kod `grep`-a i zjada porażkę; ta sesja dała się na tym złapać). Commit.
+- [x] **Step 1: Test, który nie przechodzi** — przypadki jak w M3b: budżety, brakujące pola, kolor poza kopertą, nieznany rodzaj dachu, osada wskazująca budynek, którego nikt nie wypiekł.
+- [x] **Step 2: Implementacja.** Trzymaj `validateLibrary` płaskie: jeden `for` na rodzaj wpisu, ta sama pomocnicza `colorAt`, ten sam kształt komunikatu.
+- [x] **Step 3:** `npm run check` **do pliku, z odczytem kodu wyjścia** (nie przez `grep` — potok zwraca kod `grep`-a i zjada porażkę; ta sesja dała się na tym złapać). Commit.
 
 ---
 
@@ -173,8 +173,8 @@ export interface SitePlan {
 - `plateau({ cell, salt, radius, feather, strength })` → hak wysokości. Ta sama krata, ten sam salt; w promieniu ciągnie wysokość do wysokości **środka** kraty, z siłą `strength`, gasnąc przez `feather`. Wysokość środka bierze się z `f.baseHeight` **w środku**, więc hak musi umieć zapytać o pole gdzie indziej niż stoi — dlatego dostaje ją z `hit`, a nie z drugiego próbkowania: **`LatticeHit` zyskuje `h`**, wysokość bazową swojego środka, liczoną raz przy trafieniu.
 - To jest jedyna zmiana w `Fields` w tym kamieniu i jest konieczna: bez niej płaskowyż musiałby wołać sampler rekurencyjnie w trakcie próbkowania texela.
 
-- [ ] **Step 1: Test, który nie przechodzi.** Obecność: jedna komórka na `1/odds` niesie stanowisko; ta sama komórka zawsze to samo; dwa ziarna nie zgadzają się (krata jest zasolona); poza promieniem zero, w `feather` monotonicznie. Płaskowyż: w środku wysokość dokładnie środka; przy `strength: 0` teren nietknięty; przy 1 płasko; w `feather` gładko; **i test, który przechodzi tylko wtedy, gdy obie funkcje trafiają w ten sam środek** — to jest ten błąd, który plan nazywa najdroższym.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 1: Test, który nie przechodzi.** Obecność: jedna komórka na `1/odds` niesie stanowisko; ta sama komórka zawsze to samo; dwa ziarna nie zgadzają się (krata jest zasolona); poza promieniem zero, w `feather` monotonicznie. Płaskowyż: w środku wysokość dokładnie środka; przy `strength: 0` teren nietknięty; przy 1 płasko; w `feather` gładko; **i test, który przechodzi tylko wtedy, gdy obie funkcje trafiają w ten sam środek** — to jest ten błąd, który plan nazywa najdroższym.
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
@@ -205,8 +205,8 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - **Kolejka**: `work(budgetMs)` bierze z kolejki najbliższe stanowiska i buduje ich plany, aż wyczerpie budżet. `planFor` zwraca `null`, dopóki plan nie jest gotowy — pierścień ma wtedy po prostu nic do postawienia, co jest poprawne: wieś pojawia się o klatkę później, nie połowicznie.
 - **Nadpisania**: przed budową `overrides.for(siteKey(...))`; `skip` znaczy „tu nie ma osady".
 
-- [ ] **Step 1: Test, który nie przechodzi.** Na prawdziwym samplerze ziarna 42 i sztucznej bibliotece z jednym biomem osady: ta sama komórka zawsze to samo stanowisko; dwa ziarna różne miejsca; stanowisko stoi na lądzie powyżej progu i na nachyleniu poniżej; `near` zwraca tylko to, co w zasięgu; `work(0)` nie buduje nic, `work(100)` buduje wszystko, `planFor` przed budową jest `null`; pamięć podręczna nie rośnie w nieskończoność przy locie 50 km w linii prostej (to jest test na wyciek, nie na wydajność).
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 1: Test, który nie przechodzi.** Na prawdziwym samplerze ziarna 42 i sztucznej bibliotece z jednym biomem osady: ta sama komórka zawsze to samo stanowisko; dwa ziarna różne miejsca; stanowisko stoi na lądzie powyżej progu i na nachyleniu poniżej; `near` zwraca tylko to, co w zasięgu; `work(0)` nie buduje nic, `work(100)` buduje wszystko, `planFor` przed budową jest `null`; pamięć podręczna nie rośnie w nieskończoność przy locie 50 km w linii prostej (to jest test na wyciek, nie na wydajność).
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
@@ -221,8 +221,8 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - `planVillage(site, params)` jest czystą funkcją. Kolejność, którą trzeba zachować, bo od niej zależy powtarzalność: (1) główna droga wzdłuż warstwicy przez centrum — kierunek z gradientu wysokości w środku, spróbkowanego czterema punktami o 40 m; (2) boczne ścieżki co `spacing`, po obu stronach, skracane tam, gdzie nachylenie rośnie ponad próg; (3) parcele wzdłuż dróg z `setback`, z gęstością malejącą od centrum; (4) rodzaj i obrót budynku z hasha parceli; (5) rezerwacje: krąg wokół każdej parceli i pas wzdłuż każdej drogi.
 - Żaden krok nie czyta `heightAt` — plan dostaje wysokości przez `site.fields` i przez sondy, które podaje mu silnik. Inaczej nie da się go policzyć w Node bez okna terenu.
 
-- [ ] **Step 1: Test, który nie przechodzi.** Plan tej samej komórki dwa razy jest identyczny; liczba budynków mieści się w 30..150; żadna parcela nie leży bliżej niż `setback` od osi drogi; żadne dwie parcele nie zachodzą na siebie; rezerwacje pokrywają wszystkie parcele; plan dla promienia 120 m ma mniej budynków niż dla 250 m; wszystkie identyfikatory budynków są w rejestrze.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 1: Test, który nie przechodzi.** Plan tej samej komórki dwa razy jest identyczny; liczba budynków mieści się w 30..150; żadna parcela nie leży bliżej niż `setback` od osi drogi; żadne dwie parcele nie zachodzą na siebie; rezerwacje pokrywają wszystkie parcele; plan dla promienia 120 m ma mniej budynków niż dla 250 m; wszystkie identyfikatory budynków są w rejestrze.
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
@@ -236,8 +236,8 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - Koszt: komórka pierścienia pyta najwyżej o stanowiska w swoim zasięgu (zwykle zero), a `occupied` woła się raz na drzewo, nie raz na komórkę. Rezerwacje trzymane są w siatce haszującej o komórce 64 m, jak przeszkody.
 - Standardowy `scatter` już to woła (M3b, Task 3) — to jest ta linijka, która wtedy nic nie robiła.
 
-- [ ] **Step 1: Test, który nie przechodzi.** Pierścień z jednym stanowiskiem: żadne drzewo nie stoi w rezerwacji ani na drodze; ten sam pierścień bez stanowiska ma tam drzewa; liczba drzew poza osadą nie zmienia się.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 1: Test, który nie przechodzi.** Pierścień z jednym stanowiskiem: żadne drzewo nie stoi w rezerwacji ani na drodze; ten sam pierścień bez stanowiska ma tam drzewa; liczba drzew poza osadą nie zmienia się.
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
@@ -253,8 +253,8 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - Droga **nie jest maską na terenie**: 16 m texela nie oddałoby ulicy (spec §7). To jest powód, dla którego wstęga w ogóle istnieje, i warto go zostawić w komentarzu, bo wygląda na redundancję wobec malarza ziemi.
 - Geometria jest w **układzie świata stanowiska**, a instancja przesuwa ją do układu sceny — jak wszystko inne w M3b.
 
-- [ ] **Step 1: Test, który nie przechodzi** (to jest czysta geometria, więc idzie w Node): odcinek prosty o długości 100 m i szerokości 6 m ma tyle wierzchołków, ile mówi próbkowanie; każdy wierzchołek leży 0,15 m nad tym, co zwraca atrapa `heightAt`; wstęga na zakręcie 90° nie ma szerokości mniejszej niż zadana w żadnej próbce; przekroczenie budżetu rzuca.
-- [ ] **Step 2: Implementacja i commit.**
+- [x] **Step 1: Test, który nie przechodzi** (to jest czysta geometria, więc idzie w Node): odcinek prosty o długości 100 m i szerokości 6 m ma tyle wierzchołków, ile mówi próbkowanie; każdy wierzchołek leży 0,15 m nad tym, co zwraca atrapa `heightAt`; wstęga na zakręcie 90° nie ma szerokości mniejszej niż zadana w żadnej próbce; przekroczenie budżetu rzuca.
+- [x] **Step 2: Implementacja i commit.**
 
 ---
 
@@ -269,8 +269,8 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - `top` i `radius` z pudełka otaczającego, nigdy z danych wpisu — ta sama reguła, co przy drzewach, i z tego samego powodu: rekordy przeszkód budują się z tych liczb.
 - Trzy rodzaje wsi: `cottage` (mały, dwuspadowy, komin), `barn` (dłuższy, niższy, bez okien), `mill` (wąski, wysoki, czterospadowy — kandydat na dominantę). Każdy z paletą z próbek.
 
-- [ ] **Step 1: Implementacja**, sprawdzenie liczby trójkątów wszystkich sześciu geometrii skryptem jednorazowym w piaskownicy (jak przy zestawie drzewa), **skasowanym po odczytaniu**.
-- [ ] **Step 2: Commit.**
+- [x] **Step 1: Implementacja**, sprawdzenie liczby trójkątów wszystkich sześciu geometrii skryptem jednorazowym w piaskownicy (jak przy zestawie drzewa), **skasowanym po odczytaniu**.
+- [x] **Step 2: Commit.**
 
 ---
 
@@ -286,7 +286,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - Pierścień, po przejściu przez propsy i biomy, stawia **parcele planów**, których stanowiska leżą w jego zasięgu: `sink.structure(...)` obok `sink.tree` i `sink.prop`. Limit trzech drzew na komórkę nie dotyczy budynków — parcela jest z planu, nie z rozrzutu.
 - Każdy budynek zostawia rekord przeszkody z `top` i `radius` swojej wypieczonej geometrii.
 
-- [ ] **Step 1: Implementacja**, rozszerzenie testu pierścienia o parcele (stanowisko z atrapy planu → instancje i przeszkody), **Step 2: commit.**
+- [x] **Step 1: Implementacja**, rozszerzenie testu pierścienia o parcele (stanowisko z atrapy planu → instancje i przeszkody), **Step 2: commit.**
 
 ---
 
@@ -301,7 +301,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 - `WorldDebug` zyskuje `siteNear(x, z)`: najbliższe stanowisko z jego promieniem i liczbą parcel, albo `null`. To jest oczko, przez które test przeglądarkowy znajduje wieś, nie czytając pikseli.
 - Zasłona: pieczenie budynków dokłada się do etapu `scenery`; jeśli przekroczy on 3 s w kontenerze, **zmierz i zapisz**, zanim cokolwiek z tym zrobisz.
 
-- [ ] **Step 1: Implementacja, Step 2: `npm run check` do pliku, commit.**
+- [x] **Step 1: Implementacja, Step 2: `npm run check` do pliku, commit.**
 
 ---
 
@@ -326,10 +326,10 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 
 **Files:** `AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `docs/perf-notes.md`, spec
 
-- [ ] **Step 1: `AGENTS.md`** — sekcja „Settlements", nie więcej niż cztery zdania: jedna krata dla obecności, płaskowyża i stanowiska; plan jest danymi i czystą funkcją, geometrię robią pule; plan buduje się w kolejce z budżetem i żyje w pamięci podręcznej szerszej niż pierścień; `cell.occupied` czyta rezerwacje i dlatego las nie rośnie na rynku.
-- [ ] **Step 2: `CONTRIBUTING.md`** — „Adding a structure" i „Adding a settlement": czym jest przepis budynku, czym plan osady, dlaczego plan nie tworzy geometrii, i gdzie przebiega granica między osadą (co gdzie stoi) a budynkiem (jak wygląda).
-- [ ] **Step 3: spec** — poprawki z datą: `LatticeHit` zyskuje `h`; `SiteKit.line` istnieje w kontrakcie od M4a, działa od M4b; każda różnica planu wsi wobec §8, jeśli wykonanie jakąś wymusi.
-- [ ] **Step 4: `perf-notes.md`** — koszt budowy planu wsi, koszt pieczenia budynków, koszt wstęg dróg, i wpływ osady na przebudowę pierścienia. **Mierz, nie szacuj.**
+- [x] **Step 1: `AGENTS.md`** — sekcja „Settlements", nie więcej niż cztery zdania: jedna krata dla obecności, płaskowyża i stanowiska; plan jest danymi i czystą funkcją, geometrię robią pule; plan buduje się w kolejce z budżetem i żyje w pamięci podręcznej szerszej niż pierścień; `cell.occupied` czyta rezerwacje i dlatego las nie rośnie na rynku.
+- [x] **Step 2: `CONTRIBUTING.md`** — „Adding a structure" i „Adding a settlement": czym jest przepis budynku, czym plan osady, dlaczego plan nie tworzy geometrii, i gdzie przebiega granica między osadą (co gdzie stoi) a budynkiem (jak wygląda).
+- [x] **Step 3: spec** — poprawki z datą: `LatticeHit` zyskuje `h`; `SiteKit.line` istnieje w kontrakcie od M4a, działa od M4b; każda różnica planu wsi wobec §8, jeśli wykonanie jakąś wymusi.
+- [x] **Step 4: `perf-notes.md`** — koszt budowy planu wsi, koszt pieczenia budynków, koszt wstęg dróg, i wpływ osady na przebudowę pierścienia. **Mierz, nie szacuj.**
 
 ---
 
