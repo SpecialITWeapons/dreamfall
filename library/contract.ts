@@ -592,23 +592,38 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
   return errors;
 }
 
+/** What validateBaked reads of an attribute; a BufferAttribute is one of these. */
+interface BakedAttribute {
+  count: number;
+  getX(i: number): number;
+  getY(i: number): number;
+  getZ(i: number): number;
+}
+/**
+ * A baked geometry, as little of one as this needs. It is spelled through
+ * getAttribute rather than attributes.position because BufferGeometry types its
+ * attributes as an index signature, and an index signature never satisfies a
+ * required named property -- so the obvious shape would refuse the one kind of
+ * argument this function exists to take.
+ */
+interface BakedGeometry {
+  index?: { count: number } | null;
+  getAttribute(name: string): BakedAttribute | undefined;
+}
+
 /** Problems with a baked geometry against its entry's budget and the color envelope; empty when clean. */
 export function validateBaked(
   entry: { kind?: string; id: string; budget?: { triangles?: number } },
-  geometry: {
-    index?: { count: number } | null;
-    attributes: {
-      position: { count: number };
-      color?: { count: number; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
-    };
-  },
+  geometry: BakedGeometry,
 ): string[] {
   const errors: string[] = [];
   const where = `${entry.kind ?? 'entry'} ${entry.id}`;
-  const triangles = (geometry.index ? geometry.index.count : geometry.attributes.position.count) / 3;
+  const position = geometry.getAttribute('position');
+  if (!position) return [`${where}: baked nothing`];
+  const triangles = (geometry.index ? geometry.index.count : position.count) / 3;
   const cap = entry.budget?.triangles ?? BUDGET.propTriangles;
   if (triangles > cap) errors.push(`${where}: ${triangles} triangles, the budget is ${cap}`);
-  const colors = geometry.attributes.color;
+  const colors = geometry.getAttribute('color');
   if (colors) {
     const stride = Math.max(1, Math.floor(colors.count / 200)),
       c = new Color();

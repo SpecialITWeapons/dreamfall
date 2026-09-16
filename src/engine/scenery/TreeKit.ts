@@ -357,13 +357,7 @@ export function bakeSpecies(species: Species, deps: TreeKitDeps): BakedSpecies {
   // The attributes are handed over one by one because the validator asks for a
   // shape a BufferGeometry's open attribute record does not satisfy.
   const checked = (geometry: BufferGeometry): BufferGeometry => {
-    const problems = validateBaked(species, {
-      index: geometry.index,
-      attributes: {
-        position: attributeOf(geometry, 'position'),
-        color: geometry.getAttribute('color'),
-      },
-    });
+    const problems = validateBaked(species, geometry);
     if (problems.length) throw new Error(`scenery library: ${problems.join('; ')}`);
     return geometry;
   };
