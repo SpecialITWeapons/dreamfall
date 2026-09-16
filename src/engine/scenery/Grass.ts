@@ -19,6 +19,13 @@ import { CELL, SLOTS } from '../terrain/WorldSampler';
 import type { GroundShade } from './GroundShade';
 import type { SceneryMaterials } from './Painted';
 
+/**
+ * How far the flyer moves before the window is written again, m. The original
+ * rebuilt on its 16 m terrain cell; measured at 7 ms a rebuild (docs/perf-notes),
+ * that is a hitch twice a second on a low pass, and the window reaches 260 m
+ * with the blades faded out by 190, so nobody can see it lag half a cell.
+ */
+const STEP = CELL * 2;
 /** The side of one placement tile, m. */
 const TILE = 64;
 /** Tiles either side of the flyer's own, so eleven by eleven of them. */
@@ -185,8 +192,8 @@ export function createGrass(deps: GrassDeps): Grass {
       // From any normal altitude the whole window costs that one height read:
       // the material has faded the last blade out long before this.
       if (!visible) return;
-      const ix = Math.floor(x / CELL),
-        iz = Math.floor(z / CELL);
+      const ix = Math.floor(x / STEP),
+        iz = Math.floor(z / STEP);
       if (!jumped && ix === atX && iz === atZ) return;
       jumped = false;
       atX = ix;

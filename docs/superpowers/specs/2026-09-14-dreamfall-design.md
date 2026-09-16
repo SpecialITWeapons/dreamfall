@@ -179,6 +179,15 @@ export type GroundHook = ((g: GroundCtx) => GroundOut) | GroundDescriptor;
 // CPU, na komórkę 96 m w pierścieniu streamingu
 export interface Cell {
   size: number; corner: { x: number; z: number }; center: { x: number; z: number };
+  // 2026-09-16: hak biegnie raz na biom, więc pyta o swój udział przez `share`,
+  // a o sąsiadów przez `weight(id)`; `fields` (leniwe) niesie temperaturę pod
+  // linię drzew i odcień, `mix` wagi propsów złożone po biomach, `blend` kolor
+  // z `params`. Bez tej trójki standardowy `scatter` i porty propsów nie mają
+  // z czego liczyć.
+  readonly share: number;
+  readonly fields: Fields;
+  mix(id: string): number;
+  blend(param: string): Color;
   weight(biomeId: string): number;    // wagi w środku komórki
   height(x, z): number; slope(x, z): number; land(x, z): boolean;
   roll(): number;                     // własny strumień komórki
@@ -218,6 +227,11 @@ export interface AmbienceSpec {
 - Wysokość: `plateau({ lattice, radius, feather, strength })`, `terraces({ step, sharpness })`, `offset({ meters })`.
 - Ziemia: `layers([{ color, mask: 'base' | 'slope' | 'height' | 'noise' | 'weight', ...params }])` — malarz warstw, każda warstwa mieszana maską.
 - Rozmieszczanie: `scatter({ species: {id: w}, density, props: {id: w}, grass })`.
+  2026-09-16: `scatter` stawia **wyłącznie drzewa**. `props` to wagi, które czyta
+  `place()` danego propsa przez `cell.mix(id)`, a `grass` to dane okna trawy —
+  biom mówi, ile czego chce, props mówi, jak stoi. Biom z hakiem `populate`
+  napisanym w kodzie nie ma więc ani propsów, ani trawy: jedno i drugie czyta
+  się z deskryptora (`resolvePopulate` zwraca hak **i** deskryptor), a nie woła.
 
 Pomocnik `lattice(cell, salt)` w `Fields` jest jednym źródłem centrów dla
 obecności, modyfikatora wysokości i stanowisk, więc plateau, granica biomu i
@@ -242,7 +256,7 @@ jest nośnikiem odcienia.
 
 | Budżet | Wartość startowa |
 | --- | --- |
-| karty korony drzewa | 200 |
+| karty korony drzewa (dla `dome`: `limbs.count x crown.cards`) | 200 |
 | trójkąty propsa lub budynku | 6 000 |
 | instancje jednego rodzaju propsa lub budynku w pierścieniu | 2 000 |
 | stanowiska jednego biomu w pierścieniu | 4 |
@@ -353,6 +367,13 @@ Dwa poziomy:
   losowy z hasha, więc zmiana jednego wpisu nie przetasowuje innych.
   Standardowy `scatter` odtwarza logikę drzew z oryginału: gęstość z wag,
   gatunek z mieszanki, do 3 drzew na komórkę, linia drzew z linii śniegu.
+  Trzy poprawki z 2026-09-16, wszystkie z wykonania: (1) limit trzech drzew na
+  komórkę należy do **kitu**, bo `populate` biegnie raz na biom i trzy biomy
+  postawiłyby dziewięć; (2) przebudowa zachodzi także przy skoku `Origin` —
+  instancje są zapisane w układzie lokalnym, więc po skoku wskazują na początek
+  układu, którego już nie ma; (3) strumień wpisu haszuje **cały** identyfikator,
+  nie jego długość jak w oryginale, bo długość zderza `boulders` z każdym innym
+  ośmioznakowym wpisem.
 - **Stanowiska** na kracie biomu (`sites`). Gdy komórka kraty wchodzi w zasięg
   `pierścień + promień`, silnik sprawdza `odds` i `fits`, woła `build(site,
   kit)` raz, trzyma wynik (drogi, rezerwacje, rozmieszczenia) do wyjścia poza
@@ -611,6 +632,10 @@ spadochron i lądowanie, VR, wielu użytkowników,
 tunele i nawisy (niemożliwe na heightfieldzie), wnętrza, telemetria
 użytkowników, drugi wygląd na stronie. Mosty i rzeki nie są poza zakresem,
 tylko odłożone do M6.
+
+Obiekty liniowe (płoty przez pole, murki, żywopłoty) nie są propsami rzucanymi
+rzadko: to wstęgi wzdłuż łamanej, czyli ten sam mechanizm co droga. Wchodzą
+razem z `RoadKit`-em w M4 (2026-09-16, odpowiedź na pytanie właściciela).
 
 ## 17. Ryzyka
 

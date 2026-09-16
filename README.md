@@ -39,3 +39,4 @@ M0 Skeleton: engine, empty world, veil and gate, tests, CI, Pages.
 M1 World: heightfield terrain, water, sky and day cycle, floating origin, display chain.
 M2 Flight and figure: flight controller with clearance and ceiling, steering, third- and first-person camera, procedural human, memory and resume, synthesized sound, wind in the clouds. Then: airspeed that follows the dive, an autopilot the arrow keys switch off, and a figure that holds a skydiver's arch.
 M3a Contract and ground: the library contract with its validators, standard hooks, three biome slots in the height window, a ground shader composed from the biomes' own hooks, and the ten biomes of the original as biomes made of data.
+M3b Scenery: a streamed ring of 96 m cells, instanced pools that shrink into the ground and morph their crowns with distance, nine tree species, props, grass, the shade under the trees, and an empty override layer the editor will fill.

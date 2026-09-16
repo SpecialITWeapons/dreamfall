@@ -13,7 +13,9 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `scenery/` (obstacle
 registry), `avatar/` (character interface, procedural human, outfits),
-`terrain/` (noise, base fields, heightfield window, terrain mesh), `sky/`
+`terrain/` (noise, base fields, heightfield window, terrain mesh), `scenery/`
+(obstacle registry, streamed ring, pools, tree kit, painted textures, ground
+shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
 (ambience model and sound graph), `render/` (color grade, lighting model,
 display chain), `time/` (day clock). `three` is aliased to
@@ -147,6 +149,24 @@ subdirectory.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.
+
+## Scenery
+
+- The ring (96 m cells, 1.9 km) rebuilds when the flight crosses a cell **and
+  when `Origin` jumps**: the instances the pools wrote are relative to an origin
+  that no longer exists. Positions are decided in the world, matrices are written
+  in the local frame, and that is the only conversion.
+- `populate` runs once per biome with more than 0.05 of a cell, so the density
+  is scaled by that share and the cap of three trees per cell belongs to the kit,
+  not to the hook. The biome says how much grows; the prop's own `place` says
+  how it stands.
+- `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
+  own top and radius -- never the entry's data, so a generator cannot understate
+  how much sky it takes.
+- Everything that decides what stands where is behind `ScenerySink` and runs in
+  Node with a test; everything past it is instancing and is checked in the
+  browser. Leaves and grass sway on `uniforms.time`, so a paused flight is a
+  still forest.
 
 ## Checking
 

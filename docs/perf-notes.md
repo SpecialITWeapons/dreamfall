@@ -85,3 +85,62 @@ its colours from a uniform array, so the shader stops growing with the registry
 behind a veil. Revisit it when the registry is two or three times longer, or if
 a frame ever stops fitting; the number to watch is `__world.gpuMs`, not the
 start.
+
+## M3b: what the scenery costs
+
+Measured in the development container, which is slower than the one M3a was
+measured on: a full window fill is **754 ms** here against the 528 ms recorded
+above, so read these as an upper bound and compare them with each other rather
+than with the M3a section.
+
+A ring rebuild (Node 22, 96 m cells out to 1.9 km, the real ten-biome library,
+eleven rebuilds a few cells apart, seed 42):
+
+| place                    | cells | trees | props | min    | median     | max     |
+| ------------------------ | ----- | ----- | ----- | ------ | ---------- | ------- |
+| woods (-48 000, -42 000) | 424   | 761   | 123   | 3.6 ms | **4.7 ms** | 15.5 ms |
+| origin (0, 0)            | 674   | 1338  | 164   | 4.7 ms | **7.5 ms** | 10.7 ms |
+
+The budget the plan set was 6 ms and the median sits on either side of it. A
+rebuild happens every 96 m, which is one every 2.4 s at cruise, so the median is
+a 10 ms frame twice a minute and the tail is a dropped one. That is worth
+watching and not worth fixing yet: the escape hatch, cutting the rebuild into
+rows across frames, is written down in the plan and stays unbuilt. Note that
+only about half the ring is ever visited -- a cell whose centre is below 3 m
+never asks a hook anything -- and that the lazy `Fields` in the cell is what
+keeps a sea cell free.
+
+Start, same container, `?profile=1`, ms from the module's first line:
+
+| step                               | M3a  | M3b  |
+| ---------------------------------- | ---- | ---- |
+| `graphics` (renderer)              | 135  | 211  |
+| `ground` (window, materials)       | 839  | 758  |
+| `scenery` (species, props, canvas) | --   | 3015 |
+| `sky` (first frame, its shaders)   | 5228 | 8879 |
+
+Baking the nine species, the two props and the four painted canvases is
+**2202 ms** of that, which is why it has a veil stage of its own rather than
+hiding inside the ground's. The first frame grew by about 0.6 s: roughly twenty
+new node materials, each compiled once. The escape hatch for that one -- a
+single leaf atlas and one crown material for the whole world instead of nine --
+also stays unbuilt, because 0.6 s of software rasteriser is perhaps 0.2 s of
+real GPU and the bake dwarfs it.
+
+In flight, over the woods of seed 42: 619 trees, 277 props and 5292 blades of
+grass standing at once, 51 geometries and 28 textures on the renderer, 98.8 MB
+of graphics memory. The pools are allocated for the ceiling rather than for what
+stands: nine species times three meshes times 4000 instances is about 10 MB of
+instance data on each side of the bus, whether the ring is over a forest or over
+the sea. That is the price of the port's fixed allocation, and the knob if it
+ever matters is the per-species capacity, not the ceiling.
+
+The grass window takes **6.9 ms** to write, against a budget of 4 ms. The work
+per rebuild is what it is -- 121 tiles of 256 attempts, each with a height and a
+slope -- so what changed is how often it is paid: the window now rebuilds every
+32 m rather than on the terrain's own 16 m cell, which halves it to a hitch
+about once a second on a low pass. It reaches 260 m and fades its last blade
+out by 190, so half a cell of lag is not visible. Writing only the tiles that
+entered the window would be the real fix and is a redesign of the port.
+
+The bundle grew from 938 kB to 1158 kB (267 kB to 332 kB gzipped).
