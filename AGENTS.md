@@ -11,11 +11,10 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 `library/standard/` imports TSL: a ground hook is handed `color`, `mix` and
 `ramp` through its context, which is what lets the layer painter be read by a
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
-`flight/` (controller, sky pulls, steering, camera), `scenery/` (obstacle
-registry), `avatar/` (character interface, procedural human, outfits),
-`terrain/` (noise, base fields, heightfield window, terrain mesh), `scenery/`
-(obstacle registry, streamed ring, pools, tree kit, painted textures, ground
-shade, grass), `sky/`
+`flight/` (controller, sky pulls, steering, camera), `avatar/` (character
+interface, procedural human, outfits), `terrain/` (noise, base fields,
+heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
+ring, pools, tree kit, painted textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
 (ambience model and sound graph), `render/` (color grade, lighting model,
 display chain), `time/` (day clock). `three` is aliased to
