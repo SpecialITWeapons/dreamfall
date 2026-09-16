@@ -78,6 +78,21 @@ describe('createFields', () => {
     }
     expect(fields().at(2000, 3000).noise(600, 1)).toBe(a);
   });
+  it('salts noise and hashes with the world seed, so two worlds are two worlds', () => {
+    const here = createFields(createWorldSampler(7)).at(2000, 3000);
+    const noise = here.noise(370, 1),
+      hash = here.hash(7);
+    const other = createFields(createWorldSampler(8)).at(2000, 3000);
+    expect(other.noise(370, 1)).not.toBe(noise);
+    expect(other.hash(7)).not.toBe(hash);
+    const again = createFields(createWorldSampler(7)).at(2000, 3000);
+    expect(again.noise(370, 1)).toBe(noise); // and one seed is still one world
+    expect(again.hash(7)).toBe(hash);
+    expect(noise).toBeGreaterThanOrEqual(-1);
+    expect(noise).toBeLessThanOrEqual(1);
+    expect(hash).toBeGreaterThanOrEqual(0);
+    expect(hash).toBeLessThan(1);
+  });
   it('shores at the water line and lets go of the high ground', () => {
     const f = fields();
     const coast = waterLine();
