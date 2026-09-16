@@ -234,18 +234,26 @@ Rzeczy, które trzeba rozstrzygnąć w trakcie i zapisać:
    o kondygnację bez wypieku **rzuca w kolejce**. Zakres jest więc zapisany
    w parametrach, a test trzyma go przy zakresach z przepisów.
 
-- [ ] **Step 1: Test, który nie przechodzi** — plan tej samej komórki dwa razy
-      jest identyczny; liczba budynków mieści się w 500..2000; żadne dwie
-      parcele nie zachodzą na siebie; parcela trzyma odstęp od osi każdej
-      drogi, przy której stoi; rezerwacje pokrywają parcele, plac i obwodnicę;
-      kondygnacje maleją od centrum (średnia w środku wyższa niż na obrzeżu);
-      promień 400 m ma mniej budynków niż 900 m; wszystkie identyfikatory
-      budynków są w rejestrze.
-- [ ] **Step 2: Implementacja.**
-- [ ] **Step 3: POMIAR** — koszt planu miasteczka przy 400, 650 i 900 m,
-      mediana z pięciu, oraz liczba parcel, dróg i rezerwacji. **To jest ten
-      pomiar, który rozstrzyga o (a) albo (b)** z sekcji wyżej. Zapisać
-      w `perf-notes.md` niezależnie od wyniku. Commit.
+- [x] **Step 1: Test, który nie przechodzi** — `tests/unit/townPlan.test.ts`,
+      12 przypadków: cała lista wyżej, plus trzy rzeczy, których lista nie
+      wymieniała — tinty tylko z palety, nachylenie tnie ulicę na odcinki
+      zamiast ją kończyć, i **każda para (rodzaj, kondygnacje) leży w zakresie
+      z samego przepisu**, a nie w `storeys`. To ostatnie jest jedyną rzeczą,
+      która trzyma `storeys` przy wypiekach: kontrakt o tej liście nie wie.
+- [x] **Step 2: Implementacja.** `library/settlements/plan-town.js`.
+- [x] **Step 3: POMIAR — rozstrzygnięty na (a), miasteczko budowane w całości.**
+      Na prawdziwym gruncie ziarna 42, mediana z pięciu: **4,3 ms** przy 400 m
+      (537 budynków), **10,3 ms** przy 650 (1228), **18,8 ms** przy 900 (1902).
+      Prawdziwe miasteczko 9,2 km od środka świata: promień 804 m, 1635
+      budynków, 18,9 ms przez kolejkę.
+
+      Za pierwszym razem wyszło **24,6 ms** przy 900 m — w progu o dwa procent,
+      czyli na innej maszynie decyzja byłaby inna. Cała różnica siedziała
+      w kluczach: plan pyta swoje dwie kraty haszujące około piętnastu tysięcy
+      razy, a każde pytanie budowało dziewięć kluczy `` `${cx},${cz}` ``.
+      Spakowanie dwóch indeksów w jedną liczbę: 24,6 → 18,8 ms, przy identycznym
+      miasteczku na wyjściu. `docs/perf-notes.md`, sekcja „M4b: what a town
+      costs to plan".
 
 ---
 

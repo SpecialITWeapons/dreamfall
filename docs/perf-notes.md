@@ -297,3 +297,47 @@ lattice cell beside its height and temperature and remembered in the same
 seats. A full window fill is 789 ms against 783 before, and 824 with the second
 lattice against 828: inside the noise, because a lattice cell covers thousands
 of texels and the samples are paid once for all of them.
+
+## M4b: what a town costs to plan
+
+The plan for M4b set a threshold before anything was written: a town's `build`
+hook runs whole inside the site queue, whose budget is 4 ms a frame, so if one
+town cost more than **1.5 frames (25 ms)** the town would have to be cut into
+quarters built over several frames -- a change to the model, since a plan is
+otherwise raised whole or not at all.
+
+Measured on this container against the real ground of seed 42, with the site's
+own `height` and `slope` reading the filled height window, median of five after
+a warm-up call:
+
+| radius | roads | buildings | reservations | plan    |
+| ------ | ----- | --------- | ------------ | ------- |
+| 400 m  | 23    | 537       | 538          | 4.3 ms  |
+| 650 m  | 39    | 1228      | 1229         | 10.3 ms |
+| 900 m  | 51    | 1902      | 1903         | 18.8 ms |
+
+and the town seed 42 actually seats 9.2 km from the origin, through the queue
+rather than through a harness: radius 804 m, 47 roads, 1635 buildings, 18.9 ms.
+
+**So the threshold holds and the town is built whole**, which is the cheap
+answer the plan preferred: the lattice is 20 km and only 0.6 of its cells carry
+a town on ground that will take one, so seed 42 puts them 41 km apart -- eleven
+to seventeen minutes of flying. One long frame at that interval is cheaper than
+any machinery that would remove it.
+
+It did not hold at first. The first measurement was **24.6 ms at 900 m**, which
+is inside the threshold by two per cent -- close enough that another machine
+would decide differently. The whole of the difference was string keys: the plan
+asks its two hash grids -- is this on a road, is there a building here already
+-- some fifteen thousand times, and each question built nine `` `${cx},${cz}` ``
+keys. Packing the two cell indices into one number instead took 24.6 ms to
+18.8, with the same town coming out: the same 1902 buildings on the same 51
+roads. Collisions are possible past four million cells from the origin and
+harmless when they happen, because the bucket's own distance test is what
+answers.
+
+The cost is linear in the lots the grid offers, not in the buildings raised: a
+900 m town walks 7576 places a building could stand, keeps 4233 of them, and
+builds 1902. That is why the count is chosen as a share of what the grid offers
+rather than by stopping at a cap -- a cap walks the streets in the order they
+were laid and builds a town with one side missing.

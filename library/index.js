@@ -39,13 +39,17 @@ import tower from './structures/tower.js';
 import cairns from './props/cairns.js';
 import { settlement } from './settlements/settlement.js';
 import { VILLAGE } from './settlements/village.js';
+import { TOWN } from './settlements/town.js';
 import { planVillage } from './settlements/plan.js';
+import { planTown } from './settlements/plan-town.js';
 
 /** @returns {import('./contract').Library} */
 export function createLibrary() {
   return {
-    // The village goes last: the first biome takes any texel no other claims,
-    // and a settlement claims its own ground and nothing else.
+    // The settlements go last: the first biome takes any texel no other claims,
+    // and a settlement claims its own ground and nothing else. They stand on
+    // two different lattices with two different salts, so a town is never
+    // seated on a village -- measured over 65 536 seed masks, not once.
     biomes: [
       wildsong,
       elderwood,
@@ -58,6 +62,7 @@ export function createLibrary() {
       jungle,
       blossom,
       settlement(VILLAGE, planVillage),
+      settlement(TOWN, planTown),
     ],
     species: [acacia, birch, blossomTree, cypress, deadwood, elder, oak, palm, pine],
     props: [boulders, cairns],

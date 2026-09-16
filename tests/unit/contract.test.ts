@@ -343,17 +343,21 @@ describe('validateLibrary: what a biome asks to grow in it', () => {
 });
 
 describe('the library itself', () => {
-  it('ships ten climate biomes and one settlement, and they pass their own validator', () => {
+  it('ships ten climate biomes and two settlements, and they pass their own validator', () => {
     const library = createLibrary();
-    expect(library.biomes).toHaveLength(11);
+    expect(library.biomes).toHaveLength(12);
     expect(library.biomes[0]!.id).toBe('wildsong'); // the fallback for an unclaimed texel
     expect(validateLibrary(library)).toEqual([]);
-    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(11);
-    // The settlement is the odd one and the only one: it is claimed off a
-    // lattice rather than out of climate space, and it is the last in the list
-    // because the first biome is the one that takes unclaimed ground.
-    expect(library.biomes.filter((b) => b.sites).map((b) => b.id)).toEqual(['village']);
-    expect(library.biomes.at(-1)!.id).toBe('village');
+    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(12);
+    // The settlements are the odd ones: they are claimed off a lattice rather
+    // than out of climate space, and they come last in the list because the
+    // first biome is the one that takes unclaimed ground. Two lattices, two
+    // salts, two cell sizes -- one for a village every 13 km and one for a town
+    // every 41.
+    expect(library.biomes.filter((b) => b.sites).map((b) => b.id)).toEqual(['village', 'town']);
+    expect(library.biomes.at(-1)!.id).toBe('town');
+    const lattices = library.biomes.filter((b) => b.sites).map((b) => `${b.sites!.cell}:${b.sites!.salt}`);
+    expect(new Set(lattices).size).toBe(lattices.length);
     for (const biome of library.biomes) {
       expect(biome.kind).toBe('biome');
       expect(biome.name.length).toBeGreaterThan(2);
@@ -381,7 +385,7 @@ describe('the library itself', () => {
     }
     // and a settlement grows less than the country: it is a place people cleared
     const settled = library.biomes.filter((b) => b.sites);
-    expect(settled.map((b) => b.id)).toEqual(['village']);
+    expect(settled.map((b) => b.id)).toEqual(['village', 'town']);
     const wildest = Math.max(
       ...library.biomes.filter((b) => !b.sites).map((b) => (b.populate as ScatterSpec).density),
     );
