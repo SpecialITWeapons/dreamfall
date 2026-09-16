@@ -247,5 +247,17 @@ describe('createSites', () => {
     }
     // the cache holds what is near, not everything ever seen
     expect(s.built).toBeLessThan(20);
+    // and so does the queue. A site is seated wherever the reach touches its
+    // cell, but a plan needs the height window, so a site out of the window
+    // goes back on the queue -- and a flight that never returns would otherwise
+    // leave it there for ever, with the budget walking past it every frame.
+    expect(s.queued).toBeLessThan(20);
+    // and once the old ground is well behind, what is left is only what the new
+    // ground seats: a Sites that has flown eighty kilometres holds no more than
+    // one that has just arrived
+    s.near(400_000, 400_000, 3000, []);
+    const fresh = sites(library([village()]));
+    fresh.near(400_000, 400_000, 3000, []);
+    expect(s.queued).toBe(fresh.queued);
   });
 });

@@ -223,6 +223,15 @@ export function createSites(deps: {
     const keep = reach + KEEP_PAD;
     for (const [id, plan] of plans) if (Math.hypot(plan.x - x, plan.z - z) > keep) plans.delete(id);
     for (const [key, site] of found) if (site && Math.hypot(site.x - x, site.z - z) > keep) found.delete(key);
+    // The queue too. Seating reads the sampler, so a cell is decided wherever
+    // the reach touches it, and a site whose ground the window cannot answer
+    // for goes back on the queue: without this, a flight across the world would
+    // leave behind a queue of villages it is never coming back to, and the
+    // budget would spend itself walking past them.
+    if (queue.length > 0) {
+      const kept = queue.filter((site) => Math.hypot(site.x - x, site.z - z) <= keep);
+      if (kept.length !== queue.length) queue.splice(0, queue.length, ...kept);
+    }
     if (built > plans.size) built = plans.size;
   };
 
