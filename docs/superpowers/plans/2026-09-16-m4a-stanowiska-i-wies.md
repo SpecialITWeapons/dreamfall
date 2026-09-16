@@ -117,10 +117,23 @@ export interface StructureKit extends PropKit {
   box(w: number, h: number, d: number, color: SceneryColor): BufferGeometry;
   /** A gable, hip or flat roof over a footprint. */
   roof(kind: StructureSpec['roof'], w: number, d: number, rise: number, color: SceneryColor): BufferGeometry;
-  /** A band of windows around a floor, as vertex colour on the wall. */
+  /**
+   * A band of windows around a floor: vertex colour on the wall, and a `glow`
+   * attribute of 1 on exactly those vertices. The colour is what you see by
+   * day; the glow is what the night reads.
+   */
   windows(geometry: BufferGeometry, y: number, height: number, color: SceneryColor): void;
 }
 ```
+
+- **Okna świecą w nocy, i decyduje się to tutaj, nie później.** Budynek niesie
+  atrybut wierzchołka `glow` (0 albo 1, pisany przez `windows`), a instancja
+  niesie `lit` (0..1, z hasha parceli), więc nie każdy dom świeci i nie każdy
+  tak samo. Materiał składa z tego jedną linijkę:
+  `emissiveNode = kolorOkna · glow · lit · uNight`. `uNight` jest już
+  uniformem nieba, a `emissiveNode` obsługuje materiał świata — dokładanie tego
+  po wypieczeniu znaczyłoby przepiec wszystkie budynki, a teraz kosztuje cztery
+  bajty na wierzchołek ścian.
 
 - Plan stanowiska — dane, nie geometria:
 
@@ -251,7 +264,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 
 **Interfaces:**
 
-- `bakeStructure(spec, floors, kit)` → `{ geometry, top, radius }`: ściany jako pudełko `footprint × (floors · floorHeight)`, dach `gable | hip | flat` o `roofPitch`, opcjonalny komin, pasy okien jako kolor wierzchołków. `validateBaked` na wyniku — budżet 6000 trójkątów.
+- `bakeStructure(spec, floors, kit)` → `{ geometry, top, radius }`: ściany jako pudełko `footprint × (floors · floorHeight)`, dach `gable | hip | flat` o `roofPitch`, opcjonalny komin, pasy okien jako kolor wierzchołków **plus atrybut `glow`** na tych samych wierzchołkach. `validateBaked` na wyniku — budżet 6000 trójkątów. Kolor okna jest w kopercie jak każdy inny, więc świeci ciepło, a nie neonowo.
 - Jedna wypieczona geometria **na rodzaj i na liczbę kondygnacji** (spec §8): przy wsi to trzy rodzaje × dwie kondygnacje = sześć geometrii.
 - `top` i `radius` z pudełka otaczającego, nigdy z danych wpisu — ta sama reguła, co przy drzewach, i z tego samego powodu: rekordy przeszkód budują się z tych liczb.
 - Trzy rodzaje wsi: `cottage` (mały, dwuspadowy, komin), `barn` (dłuższy, niższy, bez okien), `mill` (wąski, wysoki, czterospadowy — kandydat na dominantę). Każdy z paletą z próbek.
@@ -268,6 +281,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 **Interfaces:**
 
 - `createPools` piecze budynki i zakłada pulę na (rodzaj, kondygnacje) o pojemności `BUDGET.propInstances`; materiał ten sam, co propsy (kolor z geometrii, odcień per instancja), `positionNode = grown(positionLocal)`, więc budynek na krawędzi pierścienia kurczy się w ziemię jak drzewo.
+- **Światło w oknach**: pula pisze atrybut instancji `lit` obok `base` — ta sama maszyneria, jedna liczba więcej — z hasha parceli, żeby część domów była ciemna. Materiał budynku dostaje `emissiveNode = attribute('color') · attribute('glow') · attribute('lit') · uNight`. Nic nie pulsuje i nic się nie zapala z opóźnieniem: świeci to, co ma świecić, wtedy, kiedy `uNight` rośnie.
 - Drogi: jedna siatka **nieinstancjonowana** na stanowisko, budowana raz przy pierwszym wejściu planu w pierścień i trzymana z planem; usuwana ze sceny, gdy plan wypada z pamięci podręcznej. Nie ma sensu instancjonować czegoś, czego jest jedno.
 - Pierścień, po przejściu przez propsy i biomy, stawia **parcele planów**, których stanowiska leżą w jego zasięgu: `sink.structure(...)` obok `sink.tree` i `sink.prop`. Limit trzech drzew na komórkę nie dotyczy budynków — parcela jest z planu, nie z rozrzutu.
 - Każdy budynek zostawia rekord przeszkody z `top` i `radius` swojej wypieczonej geometrii.
@@ -340,4 +354,5 @@ Dwie rzeczy, które M4b odziedziczy jako ryzyko i lepiej je wypisać teraz niż 
   2. **`MAX_HEIGHT_DELTA` przycina płaskowyż.** Osada na zboczu, które trzeba ściąć o więcej niż 300 m, dostanie pochyły plac i nikt nie zobaczy dlaczego. Albo `fits` odrzuca takie miejsca (tanio, i tak ich nie chcemy), albo przycięcie przestaje obowiązywać osady (drogo i niebezpiecznie). Plan wybiera pierwsze: `maxSlope` w `fits` ma być dobrane tak, żeby płaskowyż nigdy nie sięgał budżetu.
   3. **Kolejka zacina klatkę.** 4 ms to budżet, nie obietnica: plan wsi może okazać się droższy. Mierz `sitesMs` od pierwszego dnia i tnij plan na kawałki, zanim zaczniesz obwiniać kolejkę.
   4. **Rezerwacje kosztują w każdej komórce pierścienia.** `occupied` woła się raz na drzewo, czyli do trzech razy na komórkę, 1681 razy na przebudowę. Siatka haszująca, nie pętla po planach.
-  5. **Drogi jako geometria, nie instancje.** Jedna siatka na stanowisko żyje tak długo, jak plan; łatwo ją przeciec przy wypadaniu z pamięci podręcznej. Test na wyciek jest w Tasku 3 i ma objąć też siatki dróg.
+  5. **Okna świecą, ale nie oświetlają.** Silnik ma jeden model światła, jedno światło kierunkowe i jedną mgłę (spec §5.7): rozświetlone okno jest jasnym pikselem, a nie źródłem, więc nie rzuci plamy na ulicę ani nie podświetli ściany obok. Z powietrza, skąd się na tę wieś patrzy, to jest dokładnie to, co trzeba — rozsypane ciepłe punkty. Z bliska to jest świecący pas, nie szyba. Prawdziwe światła punktowe są poza tym silnikiem; tanie udawanie (malowana plama pod oknem) należy do M5, razem z resztą dopieszczenia.
+  6. **Drogi jako geometria, nie instancje.** Jedna siatka na stanowisko żyje tak długo, jak plan; łatwo ją przeciec przy wypadaniu z pamięci podręcznej. Test na wyciek jest w Tasku 3 i ma objąć też siatki dróg.
