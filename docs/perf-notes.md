@@ -175,6 +175,10 @@ and a village is at most SITE_RADIUS across, so a rebuild can meet at most a
 handful. If it ever bites, the ribbon belongs in the plan queue beside the plan
 it is built from, not in the rebuild.
 
+In the browser, on the software rasteriser, the same work reads smaller:
+`sitesMs` peaks at **0.2 ms** on the frame that plans a fresh village, against
+the 4 ms budget. The browser test asserts 8 and has never been near it.
+
 What the settlements did not cost: nothing was added to the bake. Three
 buildings at two storey counts each is six more baked geometries inside the
 `scenery` stage that already bakes nine species, and it did not move the stage

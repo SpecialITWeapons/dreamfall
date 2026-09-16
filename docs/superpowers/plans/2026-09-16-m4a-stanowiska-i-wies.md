@@ -309,7 +309,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 
 **Files:** Modify `tests/e2e/smoke.spec.ts`
 
-- [ ] **Step 1: Testy** (wszystkie na pauzie, z twardo wpisanym miejscem ziarna 42 — szukanie wsi w locie kosztuje wypełnienie okna na próbę):
+- [x] **Step 1: Testy** (wszystkie na pauzie, z twardo wpisanym miejscem ziarna 42 — szukanie wsi w locie kosztuje wypełnienie okna na próbę):
 
 1. **Wieś stoi**: w miejscu, gdzie `siteNear` zwraca stanowisko, `scenery.buildings > 20`, a przeszkody rosną o tyle samo.
 2. **Ziemia pod nią jest płaska**: `heightAt` w środku i w ośmiu punktach o 80 m różni się mniej niż o kilka metrów — to jest test na to, że płaskowyż i krata trafiają w ten sam środek.
@@ -318,7 +318,7 @@ export function createSites(deps: { seed; library; sampler; heightfield }): Site
 5. **Kolejka nie zacina klatki**: `scenery.sitesMs` nie przekracza 8 ms w żadnej próbce (budżet 4 ms plus tolerancja na wolny rasteryzator).
 6. **Brak błędów konsoli** — dowód, że materiały dróg i budynków się skompilowały.
 
-- [ ] **Step 2: Uruchomienie** (`npx playwright test`, a w tym kontenerze z `--config pw.local.config.ts`, bo przypięty Playwright chce przeglądarki, której obraz nie ma) **i commit.**
+- [x] **Step 2: Uruchomienie** (`npx playwright test`, a w tym kontenerze z `--config pw.local.config.ts`, bo przypięty Playwright chce przeglądarki, której obraz nie ma) **i commit.**
 
 ---
 
