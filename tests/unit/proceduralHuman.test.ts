@@ -49,6 +49,37 @@ const meshes = (root: Object3D) => {
 };
 
 describe('createProceduralHuman', () => {
+  /** A point of the figure in the figure's own frame, whatever the flight is doing to it. */
+  const inBody = (human: ReturnType<typeof createProceduralHuman>, name: string) =>
+    human.object.worldToLocal(parts(human.object, name)[0]!.clone());
+
+  it('folds into a track in a dive: the arms come back along the body and straighten', () => {
+    const human = createProceduralHuman(lit);
+    human.update(pose(), 0);
+    const boxHand = inBody(human, 'hand');
+    const shoulder = inBody(human, 'shoulderL');
+    const bend = (h: ReturnType<typeof createProceduralHuman>) => {
+      const s = inBody(h, 'shoulderL'),
+        e = inBody(h, 'elbowL'),
+        hand = inBody(h, 'hand');
+      return e.clone().sub(s).angleTo(hand.clone().sub(e));
+    };
+    // in the box the hands are out in front, and the elbow is well bent
+    expect(boxHand.z).toBeGreaterThan(shoulder.z);
+    expect(bend(human)).toBeGreaterThan(1.2);
+
+    human.update(pose({ pitch: -0.5 }), 0); // full dive
+    const trackHand = inBody(human, 'hand');
+    // the hands come back past the shoulder, in toward the hips, and the arm
+    // straightens, which together is what a track looks like
+    expect(trackHand.z).toBeLessThan(shoulder.z);
+    expect(Math.abs(trackHand.x)).toBeLessThan(Math.abs(boxHand.x));
+    expect(bend(human)).toBeLessThan(0.7);
+
+    human.update(pose({ pitch: 0.6 }), 0); // a climb spreads them again
+    expect(inBody(human, 'hand').z).toBeGreaterThan(boxHand.z);
+  });
+
   it('hangs the arms on the torso rather than beside it', () => {
     const human = createProceduralHuman(lit);
     for (const side of ['shoulderL', 'shoulderR']) {

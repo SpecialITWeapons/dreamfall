@@ -68,6 +68,28 @@ const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normaliz
 const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
 const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
 const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
+/**
+ * Where the upper arms go in a full dive. A track is not the box turned about
+ * the figure's own up axis -- that swings the arms out sideways, which is the
+ * one direction a track does not go. It is a second pose, arms back along the
+ * body, and a dive walks from one to the other.
+ */
+const trackDir = (side: number) => new Vector3(side * 0.15, -0.02, -0.99).normalize();
+/**
+ * The track. A dive folds the box into it: the upper arms swing back through
+ * this many radians about the figure's own up axis, the elbows straighten by
+ * this share of their bend, and the knees give up some of theirs -- so the
+ * forearms end up along the body with the hands at the hips, which is the
+ * position the owner asked for and the one that actually goes fast. `at` is the
+ * pitch that counts as all the way down.
+ */
+/**
+ * How far a full dive folds the box into a track: all the way to trackDir at
+ * the shoulder, this share of the elbow's bend and of the knee's. `at` is the
+ * pitch that counts as all the way down.
+ */
+const TRACK = { at: 0.5, elbow: 0.85, knee: 0.4 };
+const IDENTITY = new Quaternion();
 
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
 function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
@@ -99,6 +121,8 @@ function limb(radius: number, length: number): BufferGeometry {
 interface Hinge {
   pivot: Group;
   rest: Quaternion;
+  /** Where a full dive takes this joint, when it has somewhere else to be. */
+  track?: Quaternion;
   /** Orientation in the figure's frame, for the child hinge's rest. */
   world: Quaternion;
   side: 1 | -1;
@@ -171,15 +195,22 @@ export function createProceduralHuman(
     dir: Vector3,
     above: Hinge | null,
     side: 1 | -1,
+    tracked?: Vector3,
   ): Hinge => {
     const world = new Quaternion().setFromUnitVectors(UP, dir);
     const rest = above ? above.world.clone().invert().multiply(world) : world.clone();
+    const track = tracked
+      ? (() => {
+          const w = new Quaternion().setFromUnitVectors(UP, tracked);
+          return above ? above.world.clone().invert().multiply(w) : w;
+        })()
+      : undefined;
     const pivot = new Group();
     pivot.name = name;
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
-    const h = { pivot, rest, world, side, kind };
+    const h: Hinge = { pivot, rest, track, world, side, kind };
     hinges.push(h);
     return h;
   };
@@ -193,6 +224,7 @@ export function createProceduralHuman(
       upperDir(side),
       null,
       side,
+      trackDir(side),
     );
     // The cap rides on the joint, so it turns with the arm as a deltoid does
     // and closes the seam at every sweep rather than only at rest.
@@ -253,7 +285,11 @@ export function createProceduralHuman(
       // straightens the knees, a climb spreads the arms forward and wide. Both
       // are rotations around the figure's own up axis, so the arms travel in
       // the plane of the shoulders instead of flapping.
-      const sweep = pose.pitch < 0 ? Math.min(-pose.pitch, 0.5) * 0.75 : -Math.min(pose.pitch, 0.6) * 0.32;
+      const dive = Math.min(Math.max(-pose.pitch, 0), TRACK.at) / TRACK.at;
+      // A climb still spreads the arms about the up axis; only the dive has
+      // somewhere specific to be.
+      const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
+      const straighten = dive * TRACK.elbow;
       for (const h of hinges) {
         const phase = h.side > 0 ? 0 : 2.1;
         let swing = 0,
@@ -267,20 +303,27 @@ export function createProceduralHuman(
             break;
           case 'elbow':
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
-            back = sweep * 0.5;
+            // In a climb the elbows help spread the arms; in a dive they have
+            // nothing to add, because straightening is what folds them in.
+            back = sweep < 0 ? sweep * 0.5 : 0;
             break;
           case 'hip':
             swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
             break;
           case 'knee':
-            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4 - sweep * 0.3;
+            swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4 - dive * TRACK.knee;
             break;
           case 'ankle':
             swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
+        h.pivot.quaternion.copy(h.rest);
+        if (h.track && dive > 0) h.pivot.quaternion.slerp(h.track, dive);
+        // Straightening is a walk of the joint's own bend back toward none of
+        // it, so the forearm ends up along the upper arm whatever direction the
+        // upper arm is pointing by then.
+        if (h.kind === 'elbow' && straighten > 0) h.pivot.quaternion.slerp(IDENTITY, straighten);
         h.pivot.quaternion
-          .copy(h.rest)
           .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * drop))
           .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * back))
           .premultiply(qx.setFromAxisAngle(AXIS_X, swing));
