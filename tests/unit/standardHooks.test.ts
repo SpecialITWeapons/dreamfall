@@ -222,6 +222,30 @@ describe('lattice', () => {
       lattice({ ...plain })(at({ baseHeight: 40, lattice: () => hit({ s: 9, h: 40, u: () => 0.1 }) })),
     ).toBe(1);
   });
+  it('fades on a cut in metres when it is given one, and ignores the slope for it', () => {
+    const plain = { cell: SITE.cell, radius: SITE.radius, feather: SITE.feather };
+    // A settlement hundreds of metres wide says how deep a cut it will take.
+    // The same texel, the same centre, at four heights above it.
+    const off = (h: number, spec: Parameters<typeof lattice>[0]) =>
+      lattice(spec)(at({ baseHeight: h, lattice: () => hit({ d: 100, h: 0, u: () => 0.1 }) }));
+    const cut = { ...plain, maxCut: 120 };
+    expect(off(60, cut)).toBe(1); // inside the allowance
+    expect(off(180, cut)).toBeCloseTo(0.5, 9); // half way out of it
+    expect(off(240, cut)).toBe(0); // not this settlement's ground
+    // It is the same everywhere in the settlement: said in metres, the
+    // allowance does not grow with the distance the way a slope's does.
+    const far = (d: number) =>
+      lattice(cut)(at({ baseHeight: 180, lattice: () => hit({ d, h: 0, u: () => 0.1 }) }));
+    expect(far(10)).toBeCloseTo(far(SITE.radius), 9);
+    // And it wins over the slope, which is left to refuse the steep centre it
+    // was written for: a cell this steep is refused whatever the cut allows.
+    expect(off(60, { ...cut, maxSlope: 0.9 })).toBe(1);
+    expect(
+      lattice({ ...cut, maxSlope: 0.45 })(
+        at({ baseHeight: 0, lattice: () => hit({ s: 0.6, h: 0, u: () => 0.1 }) }),
+      ),
+    ).toBe(0);
+  });
 });
 
 describe('plateau', () => {

@@ -9,25 +9,52 @@
  * take the same cell and the same salt from the parameters. A disagreement of
  * one hash puts the village on the slope beside its own flat square, which
  * reads as a terrain bug and is not one.
+ *
+ * One entry serves every size of settlement: a village and a town differ in
+ * their numbers and in the plan that reads them, and in nothing else. That is
+ * why the parameters carry the settlement's own id and name -- a factory that
+ * knew the word "village" could only ever make one.
  */
 import { defineBiome } from '../contract';
-import { planVillage } from './plan.js';
-import { VILLAGE } from './village.js';
 
 /**
- * @param {typeof VILLAGE} [params]
+ * What every settlement's parameters must carry, whatever else they add for
+ * their own plan. `settlement` reads exactly this much and no more.
+ *
+ * @typedef {object} SettlementParams
+ * @property {string} id
+ * @property {string} name
+ * @property {{ cell: number, salt: number }} lattice
+ * @property {number} odds
+ * @property {[number, number]} radius
+ * @property {{ strength: number, feather: number }} plateau
+ * @property {{ land: number, minTemp: number, maxSlope: number, maxCut?: number }} ground
+ * @property {Record<string, number>} buildings
+ * @property {string} [landmark] The one building placed by name rather than drawn by weight.
+ * @property {import('../contract').SceneryColor[]} [palette]
+ * @property {{ base: import('../contract').SceneryColor, alt: import('../contract').SceneryColor, rock: import('../contract').SceneryColor }} [paint]
+ */
+
+/** Trodden ground, if the settlement does not say otherwise: earth where people walk. */
+const PAINT = { base: 'clay', alt: 'ochre', rock: 'rockPale' };
+
+/**
+ * @template {SettlementParams} P
+ * @param {P} params
+ * @param {(site: import('../contract').Site, params: P, kit: import('../contract').SiteKit) => void} plan
  * @returns {import('../contract').Biome}
  */
-export function settlement(params = VILLAGE) {
+export function settlement(params, plan) {
   const { cell, salt } = params.lattice;
   // The widest a site of this kind may be: the ground is claimed and flattened
-  // for that, whatever this particular village turns out to be. A narrow one
+  // for that, whatever this particular settlement turns out to be. A narrow one
   // then sits in a slightly wider clearing, which is what a village does.
   const reach = params.radius[1];
+  const paint = params.paint ?? PAINT;
   return defineBiome({
-    id: 'village',
-    name: 'Village',
-    params: { base: 'clay', alt: 'ochre', rock: 'rockPale' },
+    id: params.id,
+    name: params.name,
+    params: { base: paint.base, alt: paint.alt, rock: paint.rock },
     presence: {
       type: 'lattice',
       cell,
@@ -38,6 +65,7 @@ export function settlement(params = VILLAGE) {
       land: params.ground.land,
       minTemp: params.ground.minTemp,
       maxSlope: params.ground.maxSlope,
+      maxCut: params.ground.maxCut,
     },
     height: {
       type: 'plateau',
@@ -47,29 +75,34 @@ export function settlement(params = VILLAGE) {
       feather: params.plateau.feather,
       strength: params.plateau.strength,
     },
-    // Trodden ground: earth where people walk, with the grass of the country
-    // around it coming back at the edges through the weight of the biome.
+    // Earth where people walk, with the grass of the country around it coming
+    // back at the edges through the weight of the biome.
     ground: {
       type: 'layers',
       layers: [
-        { color: 'clay' },
-        { color: 'ochre', mask: 'noise', scale: 0.03, salt: 5, from: -0.1, to: 0.5 },
-        { color: 'rockPale', mask: 'slope', from: 0.3, to: 0.5 },
+        { color: paint.base },
+        { color: paint.alt, mask: 'noise', scale: 0.03, salt: 5, from: -0.1, to: 0.5 },
+        { color: paint.rock, mask: 'slope', from: 0.3, to: 0.5 },
       ],
     },
     sites: {
       cell,
       salt,
       radius: params.radius,
-      structures: params.buildings,
+      // The landmark is placed by name and never drawn by weight, so it is not
+      // among the buildings -- but it is a structure this settlement will ask
+      // for years from now, and this is the list the validator checks against
+      // the registry. A weight of zero is how it gets checked without being
+      // drawn: every plan in this library draws from weights above zero.
+      structures: params.landmark ? { ...params.buildings, [params.landmark]: 0 } : params.buildings,
       palette: params.palette,
       // The same two numbers the presence hook above reads, asked of the same
-      // point: the site finder seats a village at the lattice centre, so
+      // point: the site finder seats a settlement at the lattice centre, so
       // `fits` is evaluated there and answers exactly as the hook does. A
       // third number here would be a third lottery, and the ground would be
-      // painted for villages that never arrive.
+      // painted for settlements that never arrive.
       fits: (f) => f.baseHeight >= params.ground.land && f.temp >= params.ground.minTemp,
-      build: (site, kit) => planVillage(site, params, kit),
+      build: (site, kit) => plan(site, params, kit),
     },
   });
 }

@@ -248,6 +248,23 @@ export type PresenceDescriptor =
       /** Temperature the centre must have, 0..1; nobody settles a glacier. */
       minTemp?: number;
       maxSlope?: number;
+      /**
+       * Metres the ground may depart from the centre before the settlement
+       * fades, in place of `maxSlope` times the radius.
+       *
+       * They are two different questions and one number answered both until a
+       * town asked. `maxSlope` refuses a centre whose own ground is steep,
+       * measured across `LATTICE_SLOPE_PROBE`; the fade asks how far the ground
+       * has run away from the centre by the time it reaches here, which over
+       * hundreds of metres is a matter of the terrain's relief and not of the
+       * slope at one point in it. Measured on seed 42 over 895 seats: tightening
+       * a town's `maxSlope` from 0.45 to 0.06 moved the median departure inside
+       * 900 m from 167 m to 146 m -- that is to say, not at all -- while
+       * refusing two seats in three. A settlement wide enough for the two to
+       * come apart says how deep a cut it will take and leaves the slope to
+       * refuse the hillside it was written for.
+       */
+      maxCut?: number;
       shoreBonus?: number;
     }
   | { type: 'mul'; of: PresenceDescriptor[] }

@@ -7,6 +7,9 @@
  * entry that carries them into the world is `settlement.js`.
  */
 export const VILLAGE = {
+  /** Its own name in the registry, and the name a site's plan is keyed by. */
+  id: 'village',
+  name: 'Village',
   /** The lattice the presence hook, the plateau and the site finder all share. */
   lattice: { cell: 6000, salt: 0x5117 },
   odds: 0.5,

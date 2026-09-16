@@ -38,6 +38,8 @@ import mill from './structures/mill.js';
 import tower from './structures/tower.js';
 import cairns from './props/cairns.js';
 import { settlement } from './settlements/settlement.js';
+import { VILLAGE } from './settlements/village.js';
+import { planVillage } from './settlements/plan.js';
 
 /** @returns {import('./contract').Library} */
 export function createLibrary() {
@@ -55,7 +57,7 @@ export function createLibrary() {
       autumn,
       jungle,
       blossom,
-      settlement(),
+      settlement(VILLAGE, planVillage),
     ],
     species: [acacia, birch, blossomTree, cypress, deadwood, elder, oak, palm, pine],
     props: [boulders, cairns],

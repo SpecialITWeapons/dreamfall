@@ -107,7 +107,15 @@ const CARRY = 1;
  * refuses a glacier must refuse the whole cell, or the ground is painted and
  * flattened for a village the site finder will not seat.
  *
- * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, shoreBonus?: number }} spec
+ * `maxCut` is the second of those two, said in metres instead: how far the
+ * ground may have run from the centre by the time it reaches here. A settlement
+ * a few hundred metres wide can leave it unsaid and let the slope stand for
+ * both, which is what a village does. One nine hundred metres wide cannot: over
+ * that distance the departure is the terrain's relief and has almost nothing to
+ * do with the slope at the centre, so the one number would have to be chosen
+ * for the fade and would then refuse most of the seats for no gain.
+ *
+ * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, maxCut?: number, shoreBonus?: number }} spec
  * @returns {(f: import('../contract').Fields) => number}
  */
 export function lattice({
@@ -119,6 +127,7 @@ export function lattice({
   land = -Infinity,
   minTemp = -Infinity,
   maxSlope = Infinity,
+  maxCut = undefined,
   shoreBonus = 0,
 }) {
   return (f) => {
@@ -134,8 +143,12 @@ export function lattice({
     if (hit.s > maxSlope) return 0;
     const shore = 1 - sstep(0, SHORE_REACH, Math.abs(hit.h));
     if (hit.u(CARRY) >= odds * (1 + shoreBonus * shore)) return 0;
-    if (maxSlope === Infinity) return near; // unset, it is no ceiling at all
-    const room = maxSlope * Math.max(hit.d, radius);
+    if (maxCut === undefined && maxSlope === Infinity) return near; // neither set: no ceiling at all
+    // Said in metres, the allowance is the same everywhere in the settlement.
+    // Said as a slope it grows with the distance, which is the older reading
+    // and the one a village keeps: out past the radius the fade is already
+    // doing the work and the term only has to stop fighting it.
+    const room = maxCut ?? maxSlope * Math.max(hit.d, radius);
     return near * (1 - sstep(room, room * 2, Math.abs(f.baseHeight - hit.h)));
   };
 }
