@@ -47,9 +47,17 @@ const UP = new Vector3(0, 1, 0),
 // directions. The elbow bends 80 degrees and the knee 57, so both read as
 // joints rather than as one stiff limb; the hands end up ahead of the eye and
 // the feet above the back.
-const SHOULDER = new Vector3(0.24, 0.03, 0.26),
+/** The chest, and where it sits: the shoulders have to reach it. */
+export const TORSO = { rx: 0.21, ry: 0.13, rz: 0.31, at: new Vector3(0, 0, 0.05) };
+/**
+ * The shoulder used to sit at x = 0.24, which is 8 cm outside the chest it
+ * hangs on -- more than the arm is thick, so there was daylight between the two.
+ * At 0.20 the arm's own capsule reaches the surface, and the cap below covers
+ * the joint the way a suit's shoulder does.
+ */
+const SHOULDER = new Vector3(0.2, 0.03, 0.26),
   HIP = new Vector3(0.1, -0.02, -0.42);
-const UPPER = { r: 0.055, len: 0.3 },
+export const UPPER = { r: 0.055, len: 0.3 },
   FORE = { r: 0.045, len: 0.27 },
   THIGH = { r: 0.075, len: 0.42 },
   SHIN = { r: 0.055, len: 0.4 };
@@ -141,7 +149,7 @@ export function createProceduralHuman(
   object.rotation.order = 'YXZ';
   const body = new Group();
   object.add(body);
-  part('torso', ellipsoid(0.21, 0.13, 0.31), 'suit', body, 0, 0, 0.05);
+  part('torso', ellipsoid(TORSO.rx, TORSO.ry, TORSO.rz), 'suit', body, TORSO.at.x, TORSO.at.y, TORSO.at.z);
   part('pelvis', ellipsoid(0.18, 0.12, 0.16), 'suit', body, 0, -0.01, -0.3);
   const head = new Group();
   head.position.set(0, 0.02, 0.42);
@@ -186,6 +194,9 @@ export function createProceduralHuman(
       null,
       side,
     );
+    // The cap rides on the joint, so it turns with the arm as a deltoid does
+    // and closes the seam at every sweep rather than only at rest.
+    part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot);
     part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot);
     const elbow = hinge(
       'elbow',

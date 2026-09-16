@@ -6,6 +6,8 @@ import { DEFAULT_OUTFIT, DEFAULT_PATTERN, outfitById } from '../../src/engine/av
 import {
   HUMAN_BOUNDS,
   HUMAN_TRIANGLE_BUDGET,
+  TORSO,
+  UPPER,
   createProceduralHuman,
 } from '../../src/engine/avatar/ProceduralHuman';
 
@@ -47,6 +49,21 @@ const meshes = (root: Object3D) => {
 };
 
 describe('createProceduralHuman', () => {
+  it('hangs the arms on the torso rather than beside it', () => {
+    const human = createProceduralHuman(lit);
+    for (const side of ['shoulderL', 'shoulderR']) {
+      const joint = world(human.object, side);
+      // Where the torso's surface is in the direction of the joint: the
+      // ellipsoid's own radius at that bearing. A joint further out than the
+      // arm is thick leaves daylight between the arm and the body, which is
+      // exactly what it used to do (8.3 cm of it).
+      const local = joint.clone().sub(TORSO.at);
+      const reach = Math.hypot(local.x / TORSO.rx, local.y / TORSO.ry, local.z / TORSO.rz);
+      const gap = local.length() * (1 - 1 / reach);
+      expect(gap).toBeLessThan(UPPER.r);
+    }
+  });
+
   it('stays inside the triangle budget, casts shadows, and has an eye ahead of the chest', () => {
     const human = createProceduralHuman(lit);
     expect(human.triangles).toBeLessThanOrEqual(HUMAN_TRIANGLE_BUDGET);
@@ -57,7 +74,7 @@ describe('createProceduralHuman', () => {
     expect(HUMAN_BOUNDS.below).toBeGreaterThan(0);
     expect(HUMAN_BOUNDS.radius).toBeGreaterThan(0.8);
     const all = meshes(human.object);
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(20);
     expect(all.every((m) => m.castShadow)).toBe(true);
   });
   it('holds the box position: elbows and knees bent, hands ahead of the eye, feet above the back', () => {
