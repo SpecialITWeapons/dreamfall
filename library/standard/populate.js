@@ -45,8 +45,16 @@ export function scatter(spec) {
     const thin = 1 - sstep(line - TREE_LINE.thin, line, ground);
     const count = Math.min(CELL_TREES, Math.floor(density * cell.share * grove * thin));
     for (let k = 0; k < count; k++) {
-      // Every tree draws the same four numbers whether it stands or not, so the
-      // ground may refuse one without moving the others.
+      // Every tree draws the same four numbers here whether it stands or not, so
+      // this hook's own stream does not shift when the ground refuses one.
+      //
+      // The promise stops at this hook: the kit draws two more for the scale and
+      // the height of a tree that actually stands, from the same cell stream. So
+      // a refusal does move the trees after it within its cell -- a shore, a
+      // steep slope and a village square all do it. Making it literally true
+      // would mean drawing the size here, in a unit the kit maps onto the
+      // species' own range, and it is not worth a contract change for a few
+      // trees standing a few metres off.
       const x = cell.corner.x + cell.roll() * cell.size,
         z = cell.corner.z + cell.roll() * cell.size,
         pick = cell.roll() * total,

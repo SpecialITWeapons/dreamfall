@@ -25,8 +25,9 @@ import type { Heightfield } from '../terrain/Heightfield';
 import { sstep } from '../terrain/noise';
 import { hash2, mulberry32 } from '../terrain/noise';
 import { SLOTS, type WorldSampler } from '../terrain/WorldSampler';
-import type { Obstacles } from './Obstacles';
+import { OBSTACLE_CELL, type Obstacles } from './Obstacles';
 import { cellKey, type Overrides } from './Overrides';
+import type { Site, Sites } from './Sites';
 
 /** The side of one streaming cell, m. */
 export const TREE_CELL = 96;
@@ -38,7 +39,23 @@ export const MAX_TREES = 4000;
 export const POPULATE_FLOOR = 0.05;
 /** Ground above this is land, in the only sense the scenery cares about. */
 const LAND = 3;
+/** The claim index's cell, m: the obstacles' own, because the question has the same shape. */
+const CLAIM_CELL = OBSTACLE_CELL;
 const TAU = Math.PI * 2;
+
+/**
+ * One piece of ground a site plan speaks for: a road's segment with its half
+ * width, or a reservation, which is the same thing with no length. One shape
+ * answers both, so the index holds one kind of record.
+ */
+interface Claim {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  /** Squared, because that is the only way the query ever asks. */
+  r2: number;
+}
 
 export interface TreeInstance {
   species: string;
@@ -102,6 +119,8 @@ export interface RingDeps {
   obstacles: Obstacles;
   overrides: Overrides;
   metrics: SceneryMetrics;
+  /** The settlements. Without them nothing is spoken for and the ring sows as it always did. */
+  sites?: Sites;
   sink: ScenerySink;
   /** What a prop's place() is handed; the baking half of it is never called here. */
   propKit: PropKit;
@@ -118,7 +137,7 @@ const idHash = (id: string) => {
 };
 
 export function createRing(deps: RingDeps): Ring {
-  const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sink, propKit } = deps;
+  const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sites, sink, propKit } = deps;
   const size = deps.cell ?? TREE_CELL;
   const radius = deps.radius ?? TREE_RADIUS;
   const maxTrees = deps.maxTrees ?? MAX_TREES;
@@ -169,6 +188,67 @@ export function createRing(deps: RingDeps): Ring {
   let here = fields.at(0, 0);
   let roll: () => number = () => 0;
 
+  // The ground the site plans in reach speak for, in a hash grid of 64 m cells
+  // -- the obstacles' cell, for the obstacles' reason. occupied() is asked once
+  // per tree, three times a cell and seventeen hundred cells a rebuild, so it
+  // may not walk the plans: each claim is written into every cell it touches,
+  // once per rebuild, and the query reads the single cell it lands in.
+  const claims = new Map<string, Claim[]>();
+  const nearby: Site[] = [];
+
+  const claim = (x0: number, z0: number, x1: number, z1: number, r: number) => {
+    const record: Claim = { x0, z0, x1, z1, r2: r * r };
+    const cx0 = Math.floor((Math.min(x0, x1) - r) / CLAIM_CELL),
+      cx1 = Math.floor((Math.max(x0, x1) + r) / CLAIM_CELL),
+      cz0 = Math.floor((Math.min(z0, z1) - r) / CLAIM_CELL),
+      cz1 = Math.floor((Math.max(z0, z1) + r) / CLAIM_CELL);
+    for (let cz = cz0; cz <= cz1; cz++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const key = `${cx},${cz}`,
+          bucket = claims.get(key);
+        if (bucket) bucket.push(record);
+        else claims.set(key, [record]);
+      }
+  };
+
+  /** Reads the plans in reach into the index, from nothing, at every rebuild. */
+  const indexPlans = (x: number, z: number) => {
+    claims.clear();
+    if (!sites) return;
+    for (const site of sites.near(x, z, radius, nearby)) {
+      // A site still in the queue has no plan yet, so it speaks for no ground:
+      // the same frame has nothing of it to build either.
+      const plan = sites.planFor(site);
+      if (!plan) continue;
+      for (const spot of plan.reservations) claim(spot.x, spot.z, spot.x, spot.z, spot.radius);
+      for (const road of plan.roads) {
+        const half = road.width / 2;
+        for (let i = 1; i < road.points.length; i++) {
+          const a = road.points[i - 1]!,
+            b = road.points[i]!;
+          claim(a[0], a[1], b[0], b[1], half);
+        }
+      }
+    }
+  };
+
+  const occupied = (x: number, z: number) => {
+    // A world with no settlements pays one comparison per tree for the question.
+    if (claims.size === 0) return false;
+    const bucket = claims.get(`${Math.floor(x / CLAIM_CELL)},${Math.floor(z / CLAIM_CELL)}`);
+    if (!bucket) return false;
+    for (const c of bucket) {
+      const dx = c.x1 - c.x0,
+        dz = c.z1 - c.z0,
+        len2 = dx * dx + dz * dz;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - c.x0) * dx + (z - c.z0) * dz) / len2)) : 0;
+      const ox = x - (c.x0 + t * dx),
+        oz = z - (c.z0 + t * dz);
+      if (ox * ox + oz * oz <= c.r2) return true;
+    }
+    return false;
+  };
+
   const cell: Cell = {
     size,
     corner: { x: 0, z: 0 },
@@ -214,8 +294,7 @@ export function createRing(deps: RingDeps): Ring {
     slope: (x, z) => heightfield.slopeAt(x, z),
     land: (x, z) => heightfield.heightAt(x, z) > LAND,
     roll: () => roll(),
-    // Sites reserve ground from M4; until then nothing is spoken for.
-    occupied: () => false,
+    occupied,
   };
 
   let trees = 0,
@@ -307,6 +386,7 @@ export function createRing(deps: RingDeps): Ring {
     const started = performance.now();
     sink.begin(x, z);
     obstacles.clear();
+    indexPlans(x, z);
     trees = props = cells = 0;
     full.clear();
     const span = Math.ceil(radius / size);
