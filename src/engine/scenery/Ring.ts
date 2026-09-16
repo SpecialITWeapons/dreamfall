@@ -67,7 +67,8 @@ export interface PropInstance {
 
 /** Where the placements go: an array in a test, instanced pools in the browser. */
 export interface ScenerySink {
-  begin(): void;
+  /** (x, z) is where the rebuild is centred, in the world: the crowns are handed out by distance from it. */
+  begin(x: number, z: number): void;
   /** False when that pool is full; the ring stops offering to it until the next rebuild. */
   tree(tree: TreeInstance): boolean;
   prop(prop: PropInstance): boolean;
@@ -304,7 +305,7 @@ export function createRing(deps: RingDeps): Ring {
 
   const rebuild = (x: number, z: number, cx: number, cz: number) => {
     const started = performance.now();
-    sink.begin();
+    sink.begin(x, z);
     obstacles.clear();
     trees = props = cells = 0;
     full.clear();
