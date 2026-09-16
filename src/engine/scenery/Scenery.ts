@@ -61,7 +61,7 @@ export function createScenery(deps: {
     uniforms: deps.uniforms,
     textures,
   });
-  const pools = createPools({ library, textures, materials, origin });
+  const pools = createPools({ library, textures, materials, uniforms: deps.uniforms, origin });
   const grass = createGrass({ seed, library, heightfield, materials, shade, uniforms: deps.uniforms });
   const bakeMs = Math.round(performance.now() - bakeStarted);
   for (const mesh of pools.meshes) scene.add(mesh);
@@ -96,6 +96,7 @@ export function createScenery(deps: {
       return true;
     },
     prop: (prop) => pools.sink.prop(prop),
+    structure: (building) => pools.sink.structure(building),
     end() {
       pools.sink.end();
       shadeRecords.length = shadeCount;

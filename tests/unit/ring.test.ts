@@ -8,6 +8,7 @@ import {
   type Fields,
   type GroundHook,
   type Library,
+  type LotSpec,
   type Prop,
   type Reservation,
   type RoadSpec,
@@ -23,6 +24,7 @@ import {
   type PropInstance,
   type SceneryMetrics,
   type ScenerySink,
+  type StructureInstance,
   type TreeInstance,
 } from '../../src/engine/scenery/Ring';
 import type { Site, Sites } from '../../src/engine/scenery/Sites';
@@ -71,12 +73,15 @@ const library = (biomes: Biome[], props: Prop[] = []): Library => ({
 const metrics: SceneryMetrics = {
   species: () => ({ top: 8, radius: 3 }),
   prop: (id) => (id === 'stones' ? { radius: 2, height: 3 } : null),
+  // a house is taller the more floors it has, which is all the ring needs of it
+  structure: (id, floors) => (id === 'cottage' ? { top: 3 + floors * 2.8, radius: 6 } : null),
 };
 
 /** A sink that keeps what the ring offered it, and may be told to fill up. */
 const collector = (capacity = Infinity) => {
   const trees: TreeInstance[] = [],
-    props: PropInstance[] = [];
+    props: PropInstance[] = [],
+    buildings: StructureInstance[] = [];
   let begun = 0,
     ended = 0;
   const sink: ScenerySink = {
@@ -84,6 +89,7 @@ const collector = (capacity = Infinity) => {
       begun++;
       trees.length = 0;
       props.length = 0;
+      buildings.length = 0;
     },
     tree(t) {
       if (trees.length >= capacity) return false;
@@ -94,11 +100,15 @@ const collector = (capacity = Infinity) => {
       props.push({ ...p, tint: p.tint.clone() });
       return true;
     },
+    structure(b) {
+      buildings.push({ ...b, tint: b.tint.clone() });
+      return true;
+    },
     end() {
       ended++;
     },
   };
-  return { sink, trees, props, counts: () => ({ begun, ended }) };
+  return { sink, trees, props, buildings, counts: () => ({ begun, ended }) };
 };
 
 /** A biome that asks instead of planting: what does the ground say about these points? */
@@ -121,14 +131,24 @@ const planOf = (parts: {
   z: number;
   roads?: RoadSpec[];
   reservations?: Reservation[];
+  lots?: LotSpec[];
 }): SitePlan => ({
   id: 'village:0,0',
   x: parts.x,
   z: parts.z,
   radius: 250,
   roads: parts.roads ?? [],
-  lots: [],
+  lots: parts.lots ?? [],
   reservations: parts.reservations ?? [],
+});
+
+/** A house on the plan, at the spot and with the storeys the test cares about. */
+const lotAt = (x: number, z: number, floors = 2, structure = 'cottage'): LotSpec => ({
+  x,
+  z,
+  yaw: 0.25,
+  structure,
+  floors,
 });
 
 /** A Sites stub: one site, already planned, reaching exactly as the real one does. */
@@ -184,6 +204,7 @@ const ring = (
   return {
     ...sink,
     obstacles,
+    heightfield,
     ring: createRing({
       seed: 42,
       library: lib,
@@ -391,6 +412,63 @@ describe('the streamed ring', () => {
     const r = ring(library([asker([[square.x, square.z]], answers)]), { sites: queued, radius: 150 });
     r.ring.update(0, 0, false);
     expect(answers).toEqual([false]);
+  });
+  it("stands the plan's houses on the ground, and hands the flight their tops", () => {
+    const here = lotAt(40, -20),
+      far = lotAt(500, 500);
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [here, far] })),
+      radius: 300,
+    });
+    r.ring.update(0, 0, false);
+    // the far lot belongs to the same plan, but the ring only covers so much ground
+    expect(r.buildings.map((b) => at(b))).toEqual([at(here)]);
+    expect(r.ring.buildings).toBe(1);
+    const raised = r.buildings[0]!;
+    expect(raised.floors).toBe(here.floors);
+    expect(raised.yaw).toBe(here.yaw);
+    expect(raised.y).toBe(r.heightfield.heightAt(here.x, here.z));
+    // the flight is told about a house the way it is told about a tree: by its top
+    const shape = metrics.structure('cottage', here.floors)!;
+    expect(r.obstacles.floorAt(here.x, here.z, 0)).toBeCloseTo(raised.y + shape.top, 6);
+  });
+  it('leaves a house it has no geometry for on the plan, unbuilt and unblocking', () => {
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [lotAt(40, -20, 2, 'palace')] })),
+      radius: 300,
+    });
+    r.ring.update(0, 0, false);
+    expect(r.buildings).toEqual([]);
+    expect(r.ring.buildings).toBe(0);
+    expect(r.obstacles.floorAt(40, -20, 0)).toBe(-Infinity);
+  });
+  it('reads a lot with no floors as the prop the plan asked for', () => {
+    const r = ring(library([everywhere('woods', 0)], [stones]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [lotAt(40, -20, 0, 'stones')] })),
+      radius: 300,
+    });
+    r.ring.update(0, 0, false);
+    expect(r.buildings).toEqual([]);
+    expect(r.props.map(at)).toEqual([at({ x: 40, z: -20 })]);
+    expect(r.ring.props).toBe(1);
+  });
+  it('lights the windows by where a house stands, so two nights agree and two houses do not', () => {
+    const lots = [lotAt(40, -20), lotAt(-60, 30), lotAt(10, 90), lotAt(-30, -70)];
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots })),
+      radius: 300,
+    });
+    r.ring.update(0, 0, false);
+    const first = r.buildings.map((b) => b.lit);
+    expect(first).toHaveLength(lots.length);
+    for (const lit of first) {
+      expect(lit).toBeGreaterThanOrEqual(0);
+      expect(lit).toBeLessThan(1);
+    }
+    expect(new Set(first).size).toBe(lots.length);
+    // the same ground, a rebuild later: the village does not blink
+    r.ring.update(0, 0, true);
+    expect(r.buildings.map((b) => b.lit)).toEqual(first);
   });
   it('tints a tree by the climate it stands in and a prop by the biome it stands on', () => {
     const r = ring(library([everywhere('woods', 1, { stones: 1 })], [stones]));

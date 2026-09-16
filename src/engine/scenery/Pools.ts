@@ -48,14 +48,17 @@ import {
 } from '../../../library/contract';
 import type { Origin } from '../sim/Origin';
 import { hash2, mulberry32, sstep } from '../terrain/noise';
+import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { SceneryMaterials, PaintedTextures } from './Painted';
 import {
   MAX_TREES,
   type PropInstance,
   type SceneryMetrics,
   type ScenerySink,
+  type StructureInstance,
   type TreeInstance,
 } from './Ring';
+import { bakeStructure, createStructureKit } from './StructureKit';
 import {
   bakeSpecies,
   crownThinning,
@@ -123,6 +126,15 @@ interface PropPool {
   capacity: number;
   count: number;
 }
+interface StructurePool {
+  mesh: InstancedMesh;
+  /** The instance attribute the night reads: how awake each house is. */
+  lit: InstancedBufferAttribute;
+  top: number;
+  radius: number;
+  capacity: number;
+  count: number;
+}
 
 export interface Pools {
   readonly sink: ScenerySink;
@@ -137,9 +149,10 @@ export function createPools(deps: {
   library: Library;
   textures: PaintedTextures;
   materials: SceneryMaterials;
+  uniforms: SkyUniforms;
   origin: Origin;
 }): Pools {
-  const { library, textures, materials, origin } = deps;
+  const { library, textures, materials, uniforms, origin } = deps;
   const meshes: InstancedMesh[] = [];
   const materialsMade: Material[] = [];
 
@@ -239,6 +252,41 @@ export function createPools(deps: {
     props.set(entry.id, { entry, mesh, capacity, count: 0 });
   }
 
+  // The buildings. One bake per kind and floor count, because a recipe's own
+  // range is its own: a mill starts at three storeys and a pool that assumed one
+  // and two would flatten it into a shed.
+  const structureKit = createStructureKit();
+  const buildingMaterial = materials.prop();
+  buildingMaterial.positionNode = grown(positionLocal);
+  // What lights a village after dark: the window colour the bake painted, only
+  // where the bake said `glow`, only as awake as this instance is, and only as
+  // far as the sky is night. No light leaves the window -- one lighting model,
+  // one sun -- so this is a bright pane, not a lamp on the street.
+  buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3')
+    .mul(attribute<'float'>('glow', 'float'))
+    .mul(attribute<'float'>('lit', 'float'))
+    .mul(uniforms.uNight);
+  const structures = new Map<string, StructurePool>();
+  for (const entry of library.structures ?? []) {
+    for (const floors of new Set(entry.floors)) {
+      const baked = bakeStructure(entry, floors, structureKit);
+      const capacity = BUDGET.propInstances;
+      const mesh = pool(baked.geometry, buildingMaterial, capacity);
+      mesh.castShadow = true;
+      const lit = new InstancedBufferAttribute(new Float32Array(capacity), 1);
+      lit.setUsage(DynamicDrawUsage);
+      mesh.geometry.setAttribute('lit', lit);
+      structures.set(`${entry.id}:${floors}`, {
+        mesh,
+        lit,
+        top: baked.top,
+        radius: baked.radius,
+        capacity,
+        count: 0,
+      });
+    }
+  }
+
   const m4 = new Matrix4(),
     q = new Quaternion(),
     at = new Vector3(),
@@ -277,6 +325,7 @@ export function createPools(deps: {
       flyerZ = z;
       for (const record of species.values()) record.count = record.near = record.far = 0;
       for (const record of props.values()) record.count = 0;
+      for (const record of structures.values()) record.count = 0;
     },
     tree(tree: TreeInstance) {
       const record = species.get(tree.species);
@@ -345,7 +394,20 @@ export function createPools(deps: {
       record.mesh.setColorAt(record.count++, put.tint);
       return true;
     },
+    structure(building: StructureInstance) {
+      const record = structures.get(`${building.structure}:${building.floors}`);
+      if (!record || record.count >= record.capacity) return false;
+      const lx = origin.localX(building.x),
+        lz = origin.localZ(building.z);
+      write(record.mesh, record.count, lx, building.y, lz, building.yaw, 1, 1, 1, building.tint);
+      record.lit.setX(record.count++, building.lit);
+      return true;
+    },
     end() {
+      for (const record of structures.values()) {
+        commit(record.mesh, record.count);
+        record.lit.needsUpdate = true;
+      }
       for (const record of species.values()) {
         commit(record.wood, record.count);
         if (record.crown) commit(record.crown, record.near);
@@ -361,6 +423,10 @@ export function createPools(deps: {
       return record ? { top: record.baked.top, radius: record.baked.radius } : null;
     },
     prop: (id) => props.get(id)?.entry.obstacle ?? null,
+    structure: (id, floors) => {
+      const record = structures.get(`${id}:${floors}`);
+      return record ? { top: record.top, radius: record.radius } : null;
+    },
   };
 
   return {
