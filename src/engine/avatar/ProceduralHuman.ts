@@ -228,8 +228,11 @@ export function createProceduralHuman(
     );
     // The cap rides on the joint, so it turns with the arm as a deltoid does
     // and closes the seam at every sweep rather than only at rest.
-    part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot);
-    part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot);
+    // The whole arm is what the first person keeps: a forearm on its own hangs
+    // in the air with nothing joining it to the viewer, and the cap is what
+    // makes the shoulder end of it something rather than a cut.
+    hands.add(part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot));
+    hands.add(part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot));
     const elbow = hinge(
       'elbow',
       `elbow${s}`,

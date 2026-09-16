@@ -197,12 +197,14 @@ describe('createProceduralHuman', () => {
     expect(restL.angleTo(shoulderL.quaternion)).toBeGreaterThan(0.1);
     expect(restR.angleTo(shoulderR.quaternion)).toBeLessThan(0.01);
   });
-  it('hides the body in the first person and keeps the forearms, unless told not to', () => {
+  it('hides the body in the first person and keeps the whole arm, unless told not to', () => {
     const human = createProceduralHuman(lit);
     human.update(pose({ view: 'fpp' }), 0.05);
     const visible = meshes(human.object).filter((m) => m.visible);
-    expect(visible.length).toBe(4);
-    expect(visible.every((m) => m.name === 'forearm' || m.name === 'hand')).toBe(true);
+    // both arms, shoulder cap to glove: forearms alone hung in the air with
+    // nothing joining them to the viewer
+    expect(visible.length).toBe(8);
+    expect(new Set(visible.map((m) => m.name))).toEqual(new Set(['deltoid', 'upperArm', 'forearm', 'hand']));
     human.update(pose({ view: 'tpp' }), 0.05);
     expect(meshes(human.object).every((m) => m.visible)).toBe(true);
     const bare = createProceduralHuman(lit, { fppHands: false });
