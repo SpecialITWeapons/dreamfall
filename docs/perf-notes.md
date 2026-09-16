@@ -341,3 +341,38 @@ The cost is linear in the lots the grid offers, not in the buildings raised: a
 builds 1902. That is why the count is chosen as a share of what the grid offers
 rather than by stopping at a cap -- a cap walks the streets in the order they
 were laid and builds a town with one side missing.
+
+## M4b: the pools a town fills, and the ones it does not
+
+The plan expected a town of two thousand buildings to threaten the pools, whose
+capacity is `BUDGET.propInstances` = 2000 **per kind and floor count**, and to
+do it unevenly: a town that is mostly one-storey cottages puts them all in one
+pool while eight others stand empty.
+
+Measured over 24 towns spread across the whole radius range, on seed 42's
+ground, taking the worst any single town put in each pool:
+
+| pool      | worst | share of the pool |
+| --------- | ----- | ----------------- |
+| cottage:2 | 655   | 33 %              |
+| cottage:1 | 607   | 30 %              |
+| cottage:3 | 277   | 14 %              |
+| barn:2    | 197   | 10 %              |
+| barn:1    | 116   | 6 %               |
+| mill:3    | 36    | 2 %               |
+| tower:3   | 1     | 0 %               |
+
+The largest of the 24 had 1871 buildings. **Nothing needs raising**: the worst
+pool is a third full, because the weights spread a town over three kinds and
+four floor counts and the biggest share of it is one of nine pools rather than
+all of it. Only one town can face the flight at once -- a 20 km lattice against
+the ring's 2.6 km reach -- and a village beside it adds some fifty houses.
+
+The other half of the task stands whatever the measurement said. A pool that
+refuses is a `continue` in the ring, so a building the plan asked for and the
+pools would not take disappeared without a number anywhere -- exactly the class
+of silent fault M4a spent a day finding in the floor counts. `SceneryStats` now
+carries `buildingsRefused` from the last rebuild, counting both ways a lot can
+fail to stand: a pool at its ceiling and a shape nobody baked. Nine pools of
+2000 cost about 1.4 MB of instance data whether or not anything stands in them,
+which is the price of not having to find out the hard way.

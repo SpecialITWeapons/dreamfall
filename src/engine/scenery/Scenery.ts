@@ -37,6 +37,14 @@ export interface SceneryStats {
   props: number;
   /** Houses the last rebuild raised out of the site plans it covered. */
   buildings: number;
+  /**
+   * Houses it was asked for and could not raise: a pool at its ceiling, or a
+   * shape nobody baked. A plan is placed whole, so any of these is a hole in a
+   * settlement, and the ring's own answer to both is a silent `continue`. The
+   * browser test demands a zero here over a town of two thousand buildings,
+   * which is the only way a raised ceiling stays raised.
+   */
+  buildingsRefused: number;
   grass: number;
   /** Sites whose plan is built and cached. */
   sites: number;
@@ -178,6 +186,7 @@ export function createScenery(deps: {
         trees: ring.trees,
         props: ring.props,
         buildings: ring.buildings,
+        buildingsRefused: ring.buildingsRefused,
         sites: sites.built,
         sitesQueued: sites.queued,
         // what is drawn, not what is buffered: above 250 m the window is off

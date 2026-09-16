@@ -272,13 +272,21 @@ Pierścień stawia plan w całości, więc pula, która odmówi, zjada dom **bez
 słowa** (`raise` robi `continue`) — dokładnie ta klasa cichej wady, którą M4a
 naprawiało przy piętrach.
 
-- [ ] **Step 1: POMIAR przed zmianą** — rozkład budynków miasteczka po
-      rodzajach i kondygnacjach, i najgorsza pula.
-- [ ] **Step 2:** Podnieść, co pomiar każe podnieść, i **uczynić odmowę puli
-      głośną** albo policzalną: `SceneryStats` niech niesie, ile budynków
-      odmówiono w ostatniej przebudowie, żeby test przeglądarkowy mógł żądać
-      zera. Cicha strata jest gorsza niż brzydka liczba.
-- [ ] **Step 3: Testy i commit.**
+- [x] **Step 1: POMIAR przed zmianą** — 24 miasteczka po całym zakresie
+      promienia, najgorsze, co pojedyncze miasteczko włożyło do każdej puli:
+      `cottage:2` 655, `cottage:1` 607, `cottage:3` 277, `barn:2` 197,
+      `barn:1` 116, `mill:3` 36, wieża 1. Największe z nich miało 1871
+      budynków. **Najgorsza pula jest w jednej trzeciej.**
+- [x] **Step 2: nie ma czego podnosić** — i to jest wynik pomiaru, nie
+      zaniechanie: wagi rozkładają miasteczko na trzy rodzaje i cztery liczby
+      kondygnacji, a krata 20 km przy zasięgu pierścienia 2,6 km stawia przed
+      lotem najwyżej jedno miasteczko naraz. Druga połowa zadania stoi mimo to:
+      `SceneryStats` niesie `buildingsRefused` z ostatniej przebudowy i liczy
+      **oba** sposoby, na jakie parcela może nie stanąć — pula przy suficie
+      i kształt, którego nikt nie upiekł. Do tej pory oba były cichym
+      `continue` w pierścieniu.
+- [x] **Step 3: Testy i commit.** Cztery przypadki w `ring.test.ts`; złamanie
+      licznika czerwieni trzy z nich.
 
 ---
 

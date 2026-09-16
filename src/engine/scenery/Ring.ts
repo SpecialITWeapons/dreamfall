@@ -144,6 +144,14 @@ export interface Ring {
   readonly trees: number;
   readonly props: number;
   readonly buildings: number;
+  /**
+   * Buildings the last rebuild was asked for and could not raise: a pool at its
+   * ceiling, or a plan naming a shape nobody baked. A plan is placed whole, so
+   * every one of these is a hole in a settlement that nothing else reports --
+   * the ring's own `continue`, silently. Counting it is what lets a test demand
+   * a zero rather than trust one.
+   */
+  readonly buildingsRefused: number;
   /** Milliseconds the last rebuild took. */
   readonly ms: number;
   /** Where the ring is centred, m in the world: the shade sheet is anchored here. */
@@ -340,6 +348,7 @@ export function createRing(deps: RingDeps): Ring {
   let trees = 0,
     props = 0,
     buildings = 0,
+    buildingsRefused = 0,
     cells = 0,
     ms = 0;
   const full = new Set<string>();
@@ -383,9 +392,10 @@ export function createRing(deps: RingDeps): Ring {
     trees++;
   };
 
+  /** @returns true when the prop actually stood: a pool at its ceiling refuses one. */
   const standProp = (propId: string, put: Placement) => {
     const entry = byId.get(propId);
-    if (!entry) return;
+    if (!entry) return false;
     const asked = put.scale ?? 1;
     const scale: [number, number, number] = Array.isArray(asked)
       ? [asked[0], asked[1], asked[2]]
@@ -399,7 +409,7 @@ export function createRing(deps: RingDeps): Ring {
           ? scratch.copy(put.tint)
           : scratch.set(swatchColor(put.tint));
     if (!sink.prop({ prop: propId, x: put.x, y, z: put.z, scale, yaw: put.yaw ?? 0, sink: sunk, tint }))
-      return;
+      return false;
     const obstacle = entry.obstacle;
     if (obstacle)
       obstacles.add({
@@ -410,6 +420,7 @@ export function createRing(deps: RingDeps): Ring {
         radius: obstacle.radius * Math.max(scale[0], scale[2]),
       });
     props++;
+    return true;
   };
 
   /**
@@ -435,11 +446,15 @@ export function createRing(deps: RingDeps): Ring {
         const y = heightfield.heightAt(lot.x, lot.z);
         // A lot with no floors is a prop the plan asked for: a well, a trough.
         if (lot.floors <= 0) {
-          standProp(lot.structure, { x: lot.x, z: lot.z, yaw: lot.yaw, tint: lot.tint });
+          if (!standProp(lot.structure, { x: lot.x, z: lot.z, yaw: lot.yaw, tint: lot.tint }))
+            buildingsRefused++;
           continue;
         }
         const shape = metrics.structure(lot.structure, lot.floors);
-        if (!shape) continue;
+        if (!shape) {
+          buildingsRefused++;
+          continue;
+        }
         // Which windows are awake is the lot's own business, fixed by where it
         // stands, so a village looks the same on two nights and different from
         // house to house.
@@ -456,8 +471,10 @@ export function createRing(deps: RingDeps): Ring {
             lit,
             tint,
           })
-        )
+        ) {
+          buildingsRefused++;
           continue;
+        }
         obstacles.add({
           x: lot.x,
           z: lot.z,
@@ -491,7 +508,7 @@ export function createRing(deps: RingDeps): Ring {
     sink.begin(x, z);
     obstacles.clear();
     indexPlans(x, z);
-    trees = props = buildings = cells = 0;
+    trees = props = buildings = buildingsRefused = cells = 0;
     full.clear();
     const span = Math.ceil(radius / size);
     for (let iz = cz - span; iz <= cz + span && trees < maxTrees; iz++)
@@ -571,6 +588,9 @@ export function createRing(deps: RingDeps): Ring {
     },
     get buildings() {
       return buildings;
+    },
+    get buildingsRefused() {
+      return buildingsRefused;
     },
     get ms() {
       return ms;
