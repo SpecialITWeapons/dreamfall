@@ -16,4 +16,11 @@ export default defineBiome({
       { color: 'rockPale', mask: 'slope', from: 0.32, to: 0.55 },
     ],
   },
+  populate: {
+    type: 'scatter',
+    species: { palm: 1 },
+    density: 0.08,
+    props: { boulders: 0.1 },
+    grass: { tint: 'grassGold', density: 0 },
+  },
 });

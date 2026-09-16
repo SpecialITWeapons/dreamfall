@@ -11,6 +11,7 @@ import {
   type Biome,
   type GroundHook,
   type Prop,
+  type ScatterSpec,
   type Species,
 } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
@@ -252,6 +253,23 @@ describe('the library itself', () => {
       expect(biome.name.length).toBeGreaterThan(2);
       expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock']);
     }
+  });
+  it('ships nine species and two props, and names only ids it baked', () => {
+    const library = createLibrary();
+    expect(library.species).toHaveLength(9);
+    expect(library.props).toHaveLength(2);
+    expect(validateLibrary(library)).toEqual([]);
+    const baked = new Set(library.species!.map((s) => s.id));
+    for (const biome of library.biomes) {
+      const sown = biome.populate as ScatterSpec;
+      expect(sown.type).toBe('scatter');
+      expect(Object.keys(sown.species).length).toBeGreaterThan(0);
+      for (const id of Object.keys(sown.species)) expect(baked.has(id)).toBe(true);
+    }
+    // one species grows its own way, so the bake hook has a live example
+    expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
+    // and every crown fits the budget the baker will enforce again at bake time
+    for (const s of library.species!) expect(s.crown?.cards ?? 0).toBeLessThanOrEqual(BUDGET.crownCards);
   });
   it('spreads them across climate space, so no two claim the same ground', () => {
     const points = createLibrary().biomes.map(
