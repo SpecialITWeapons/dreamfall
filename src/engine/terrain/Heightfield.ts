@@ -22,9 +22,11 @@ export interface Heightfield {
   readonly slots: Uint8Array;
   /** Grows on every write; the presentation uploads the texture when it changes. */
   readonly version: number;
+  /** Where the window sits, in cell indices: multiply by `cell` for metres. */
   readonly center: { cx: number; cz: number };
+  /** Fills the whole window around a cell index -- not a world metre; see `update`. */
   fillAll(cx: number, cz: number): void;
-  /** Recenters on a world position; says how much work it did. */
+  /** Recenters on a world position, in metres; says how much work it did. */
   update(x: number, z: number): 'none' | 'incremental' | 'jump';
   texel(ix: number, iz: number, channel: number): number;
   /** Height by barycentric interpolation on the grid's own triangles. */
@@ -82,7 +84,11 @@ export function createHeightfield(
     update(x, z) {
       const cx = Math.round(x / cell),
         cz = Math.round(z / cell);
-      if (Math.abs(cx - center.cx) > half / 2 || Math.abs(cz - center.cz) > half / 2) {
+      // A window nobody filled is all zeroes, and a scroll only writes the rows
+      // it walks into: the middle would stay a flat sea and say so with a
+      // straight face. The world fills on its first frame, so this costs it
+      // nothing and only catches a caller that did not.
+      if (version === 0 || Math.abs(cx - center.cx) > half / 2 || Math.abs(cz - center.cz) > half / 2) {
         fillAll(cx, cz);
         return 'jump';
       }

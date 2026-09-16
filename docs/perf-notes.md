@@ -144,3 +144,38 @@ out by 190, so half a cell of lag is not visible. Writing only the tiles that
 entered the window would be the real fix and is a redesign of the port.
 
 The bundle grew from 938 kB to 1158 kB (267 kB to 332 kB gzipped).
+
+## M4a: settlements
+
+Measured in Node against seed 42's nearest village, `village:0,0` at
+(1525, 1588), ground at 146 m: 47 lots (25 one-storey cottages, 13 two-storey,
+four barns of each height and one three-storey mill), 7 roads, 47 reservations,
+the furthest lot 216 m from the centre.
+
+| what                                      | ms   |
+| ----------------------------------------- | ---- |
+| building one village plan                 | 0.78 |
+| the road ribbons of one village, 532 tris | 2.97 |
+| ring rebuild, 890 cells, no village       | 7.8  |
+| ring rebuild, same cells, village raised  | 6.4  |
+
+The plan is the cheap part: at 0.78 ms a frame's 4 ms budget builds five
+villages, and the queue exists for the frame that meets a fresh lattice cell
+rather than for any sustained cost. The two ring numbers straddle each other,
+which is the honest reading -- 47 buildings and a plan lookup are lost inside
+the noise of 890 cells of scatter. Raising a plan is a lookup, a distance test
+per site and a matrix per lot; it is not where the time goes and there is
+nothing here to make faster.
+
+The road ribbon is the one number worth watching, because it is paid on the
+rebuild that first covers a plan rather than spread over frames like the plan
+queue: 3 ms in one frame, on top of that frame's 7 ms rebuild. It is bounded --
+one ribbon per site, built once, kept until the ring leaves the plan behind --
+and a village is at most SITE_RADIUS across, so a rebuild can meet at most a
+handful. If it ever bites, the ribbon belongs in the plan queue beside the plan
+it is built from, not in the rebuild.
+
+What the settlements did not cost: nothing was added to the bake. Three
+buildings at two storey counts each is six more baked geometries inside the
+`scenery` stage that already bakes nine species, and it did not move the stage
+out of its own noise.

@@ -409,7 +409,13 @@ export function createRing(deps: RingDeps): Ring {
       if (!plan) continue;
       sink.site(plan);
       for (const lot of plan.lots) {
-        if (Math.hypot(lot.x - x, lot.z - z) > radius) continue;
+        // No distance test here on purpose. The site is what the reach decided;
+        // once it is in, its lots come with it, however far the far side of the
+        // street is. Culling lot by lot would put a whole road ribbon in the
+        // scene -- the ribbon is built from the plan, not from the ring's own
+        // reach -- with eight houses standing on it, which is the half a village
+        // this is written to avoid. A plan is at most SITE_RADIUS across, so the
+        // overhang past the ring is bounded and small.
         const y = heightfield.heightAt(lot.x, lot.z);
         // A lot with no floors is a prop the plan asked for: a well, a trough.
         if (lot.floors <= 0) {

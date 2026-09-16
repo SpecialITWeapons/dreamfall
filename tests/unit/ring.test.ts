@@ -426,16 +426,29 @@ describe('the streamed ring', () => {
       radius: 300,
     });
     r.ring.update(0, 0, false);
-    // the far lot belongs to the same plan, but the ring only covers so much ground
-    expect(r.buildings.map((b) => at(b))).toEqual([at(here)]);
-    expect(r.ring.buildings).toBe(1);
-    const raised = r.buildings[0]!;
+    // A village in reach comes whole, the far side of its street included: its
+    // road ribbon is built from the plan and not from the ring's reach, so a
+    // ring that kept the street and dropped the houses on it would be showing
+    // exactly the half a village this is written to avoid.
+    expect(r.buildings.map((b) => at(b)).sort()).toEqual([at(here), at(far)].sort());
+    expect(r.ring.buildings).toBe(2);
+    const raised = r.buildings.find((b) => at(b) === at(here))!;
     expect(raised.floors).toBe(here.floors);
     expect(raised.yaw).toBe(here.yaw);
     expect(raised.y).toBe(r.heightfield.heightAt(here.x, here.z));
     // the flight is told about a house the way it is told about a tree: by its top
     const shape = metrics.structure('cottage', here.floors)!;
     expect(r.obstacles.floorAt(here.x, here.z, 0)).toBeCloseTo(raised.y + shape.top, 6);
+  });
+  it('raises nothing at all for a site the ring has left behind', () => {
+    const plan = planOf({ x: 0, z: 0, lots: [lotAt(40, -20), lotAt(-30, 50)] });
+    const r = ring(library([everywhere('woods', 0)]), { sites: oneSite(plan), radius: 300 });
+    r.ring.update(0, 0, false);
+    expect(r.ring.buildings).toBe(2);
+    // out of the site's own reach: whole or not at all, and here it is not at all
+    r.ring.update(4000, 4000, false);
+    expect(r.ring.buildings).toBe(0);
+    expect(r.buildings).toEqual([]);
   });
   it('offers a plan whole, once a rebuild, before any of its lots', () => {
     // The roads of a site are one ribbon built out of the plan, not instances,
