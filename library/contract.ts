@@ -163,6 +163,8 @@ export interface LatticeHit {
   cz: number;
   /** Distance to the centre, m. */
   d: number;
+  /** Base height at the centre, m: what a plateau flattens its ground toward. */
+  h: number;
   u(k: number): number;
 }
 
@@ -319,12 +321,57 @@ export interface Site {
 }
 export interface SiteKit extends SceneryKit {
   road(points: Array<[number, number]>, width: number, opts?: { color?: SceneryColor }): void;
+  /**
+   * Anything else that runs in a line: a fence across a field, a wall, a hedge.
+   * It is a ribbon along a polyline, the same mechanism as a road, which is why
+   * it lives here and not in a thin scatter of props. M4a knows the shape and
+   * throws; M4b builds it.
+   */
+  line(points: Array<[number, number]>, kind: string, opts?: { height?: number }): void;
   reserve(x: number, z: number, radius: number): void;
 }
+/** One ribbon of road along a polyline, in world metres. */
+export interface RoadSpec {
+  points: Array<[number, number]>;
+  width: number;
+  color?: SceneryColor;
+}
+/** One plot: what stands there, turned how, how many floors of it. */
+export interface LotSpec {
+  x: number;
+  z: number;
+  yaw: number;
+  structure: string;
+  floors: number;
+  tint?: SceneryColor;
+}
+/** Ground spoken for: no tree, no prop, nothing scattered. */
+export interface Reservation {
+  x: number;
+  z: number;
+  radius: number;
+}
+/**
+ * What a site's build hook produces. Data, never geometry: the pools make the
+ * geometry out of this, which is what lets a plan be a pure function with a
+ * test in Node -- and what will let the editor of M6 change one.
+ */
+export interface SitePlan {
+  id: string;
+  x: number;
+  z: number;
+  radius: number;
+  roads: RoadSpec[];
+  lots: LotSpec[];
+  reservations: Reservation[];
+}
+
 export interface SitesSpec {
   cell: number;
   odds: number;
   radius: [number, number];
+  /** Relative weights by structure id; the validator checks them against the registry. */
+  structures?: Record<string, number>;
   fits(f: Fields): boolean;
   build(site: Site, kit: SiteKit): void;
 }
@@ -449,10 +496,34 @@ export interface Prop {
   bake(kit: PropKit): BufferGeometry;
   place(cell: Cell, kit: PropKit): Placement[] | void;
 }
+/** What a building recipe is baked through: the prop kit, plus what a wall needs. */
+export interface StructureKit extends PropKit {
+  box(w: number, h: number, d: number, color: SceneryColor): BufferGeometry;
+  roof(kind: Structure['roof'], w: number, d: number, rise: number, color: SceneryColor): BufferGeometry;
+  /**
+   * A band of windows around one floor: vertex colour on the wall, and a `glow`
+   * attribute of 1 on exactly those vertices. The colour is what the day sees;
+   * the glow is what the night reads, multiplied by the instance's own `lit`
+   * and by the sky's `uNight`.
+   */
+  windows(geometry: BufferGeometry, y: number, height: number, color: SceneryColor): void;
+}
 export interface Structure {
   kind?: 'structure';
   id: string;
-  [key: string]: unknown;
+  name: string;
+  /** Plan at ground level, m. */
+  footprint: [number, number];
+  floors: [number, number];
+  floorHeight?: number;
+  roof: 'gable' | 'hip' | 'flat';
+  roofPitch?: number;
+  chimney?: boolean;
+  palette: { wall: SceneryColor; roof: SceneryColor; trim?: SceneryColor; window?: SceneryColor };
+  budget?: { triangles?: number };
+  /** How much sky it takes; the bake measures it, so this only overrides. */
+  obstacle?: { radius: number; height: number };
+  bake?(kit: StructureKit): BufferGeometry;
 }
 
 export interface Library {
@@ -481,6 +552,9 @@ const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'mul', 'max']);
 const HEIGHT_TYPES = new Set(['offset', 'terraces']);
 const GROUND_TYPES = new Set(['layers']);
 const POPULATE_TYPES = new Set(['scatter']);
+const ROOFS = new Set(['gable', 'hip', 'flat']);
+/** The widest a site may be, m (spec 5.5): past this the ring cannot hold one. */
+const SITE_RADIUS = 900;
 
 /** Everything wrong with a library, by entry name; empty when it may load. */
 export function validateLibrary({ biomes, species = [], props = [], structures = [] }: Library): string[] {
@@ -499,7 +573,7 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
   idsOf(biomes, 'biome');
   const speciesIds = idsOf(species, 'species');
   const propIds = idsOf(props, 'prop');
-  idsOf(structures, 'structure');
+  const structureIds = idsOf(structures, 'structure');
 
   const colorAt = (where: string, value: unknown) => {
     const problem = colorProblem(value);
@@ -541,6 +615,23 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
           errors.push(`${where}.populate.density: ${sown.density} is not a density`);
         if (sown.grass) colorAt(`${where}.populate.grass.tint`, sown.grass.tint);
       }
+    }
+    if (biome?.sites) {
+      const site = biome.sites;
+      if (typeof site.fits !== 'function') errors.push(`${where}.sites: needs a fits hook`);
+      if (typeof site.build !== 'function') errors.push(`${where}.sites: needs a build hook`);
+      if (!(site.cell > 0)) errors.push(`${where}.sites.cell: ${site.cell} is not a lattice`);
+      if (!(site.odds >= 0 && site.odds <= 1))
+        errors.push(`${where}.sites.odds: ${site.odds} is not a chance`);
+      const radius = site.radius;
+      if (!Array.isArray(radius) || radius.length !== 2 || !(radius[0] > 0 && radius[1] >= radius[0]))
+        errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);
+      else if (radius[1] > SITE_RADIUS)
+        errors.push(`${where}.sites.radius: ${radius[1]} m, the budget is ${SITE_RADIUS}`);
+      // The ids a settlement asks for are checked here for the same reason a
+      // biome's species are: the site builds years after someone types them.
+      for (const id of Object.keys(site.structures ?? {}))
+        if (!structureIds.has(id)) errors.push(`${where}.sites: unknown structure "${id}"`);
     }
     // A colour in params is written as a swatch name or a hex string: a bare
     // number is a number (a density, a metre count), and every number is also
@@ -585,6 +676,30 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       errors.push(`${where}.budget.triangles: ${triangles}, the budget is ${BUDGET.propTriangles}`);
     if (typeof instances === 'number' && instances > BUDGET.propInstances)
       errors.push(`${where}.budget.instances: ${instances}, the budget is ${BUDGET.propInstances}`);
+    const obstacle = entry?.obstacle;
+    if (obstacle && !(obstacle.radius > 0 && obstacle.height > 0))
+      errors.push(`${where}.obstacle: radius and height must both be positive`);
+  }
+
+  for (const entry of structures) {
+    const where = `structure ${entry?.id}`;
+    const footprint = entry?.footprint;
+    if (!Array.isArray(footprint) || footprint.length !== 2 || !footprint.every((v) => v > 0))
+      errors.push(`${where}.footprint: needs two positive meters`);
+    const floors = entry?.floors;
+    if (!Array.isArray(floors) || floors.length !== 2 || !floors.every((v) => Number.isInteger(v) && v > 0))
+      errors.push(`${where}.floors: needs a [min, max] of whole floors`);
+    else if (floors[1] < floors[0])
+      errors.push(`${where}.floors: [${floors[0]}, ${floors[1]}] does not rise`);
+    if (!ROOFS.has(entry?.roof)) errors.push(`${where}.roof: unknown roof "${String(entry?.roof)}"`);
+    for (const role of ['wall', 'roof', 'trim', 'window'] as const) {
+      const value = entry?.palette?.[role];
+      if (value !== undefined) colorAt(`${where}.palette.${role}`, value);
+      else if (role === 'wall' || role === 'roof') errors.push(`${where}.palette.${role}: missing`);
+    }
+    const triangles = entry?.budget?.triangles;
+    if (typeof triangles === 'number' && triangles > BUDGET.propTriangles)
+      errors.push(`${where}.budget.triangles: ${triangles}, the budget is ${BUDGET.propTriangles}`);
     const obstacle = entry?.obstacle;
     if (obstacle && !(obstacle.radius > 0 && obstacle.height > 0))
       errors.push(`${where}.obstacle: radius and height must both be positive`);

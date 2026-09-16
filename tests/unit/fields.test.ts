@@ -116,6 +116,21 @@ describe('createFields', () => {
     const deep = walkTo((h) => h < -40);
     expect(f.at(deep, 0).shore).toBe(0);
   });
+  it('carries the height of the lattice centre, sampled once per cell', () => {
+    const sampler = createWorldSampler(42);
+    const f = createFields(sampler);
+    const hit = f.at(3000, 3000).lattice(6000, 3);
+    // the centre's own height, not this point's: that is what a plateau flattens toward
+    const there = new Float64Array(5);
+    sampler.baseFields(hit.cx, hit.cz, there);
+    expect(hit.h).toBeCloseTo(there[0]!, 9);
+    expect(hit.h).not.toBeCloseTo(f.at(3000, 3000).baseHeight, 3);
+    // a neighbour in the same lattice cell gets the same centre and the same height
+    const same = f.at(3400, 2600).lattice(6000, 3);
+    expect(same.cx).toBe(hit.cx);
+    expect(same.h).toBe(hit.h);
+  });
+
   it('gives one lattice centre per cell, with its own random stream', () => {
     const f = fields();
     const hit = f.at(3000, 3000).lattice(6000, 3);

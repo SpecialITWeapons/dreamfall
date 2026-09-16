@@ -32,10 +32,19 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   const salted = (salt: number) => (salt ^ Math.imul(sampler.seed, 0x9e3779b1)) >>> 0;
   let ix = 0,
     iz = 0;
+  // The centre's own height, sampled once per lattice cell rather than once per
+  // texel. A lattice cell is kilometres wide and the window is filled row by
+  // row, so one remembered answer covers almost every query; without it a
+  // presence hook that asks for a lattice would double the cost of a fill.
+  const centre = new Float64Array(5);
+  let atX = NaN,
+    atZ = NaN,
+    centreHeight = 0;
   const hit: LatticeHit & { cell: number; salt: number } = {
     cx: 0,
     cz: 0,
     d: 0,
+    h: 0,
     cell: 0,
     salt: 0,
     u(k: number) {
@@ -69,6 +78,13 @@ export function createFields(sampler: WorldSampler): FieldsReader {
       hit.cx = (cx + 0.5 + jx) * cell;
       hit.cz = (cz + 0.5 + jz) * cell;
       hit.d = Math.hypot(hit.cx - fields.x, hit.cz - fields.z);
+      if (hit.cx !== atX || hit.cz !== atZ) {
+        sampler.baseFields(hit.cx, hit.cz, centre);
+        centreHeight = centre[0]!;
+        atX = hit.cx;
+        atZ = hit.cz;
+      }
+      hit.h = centreHeight;
       hit.cell = cell;
       // The stream the hit hands out is salted too: the sites of M4 stand on
       // this lattice, and two worlds whose villages sit on the same grid are

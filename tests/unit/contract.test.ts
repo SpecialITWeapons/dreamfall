@@ -12,7 +12,10 @@ import {
   type GroundHook,
   type Prop,
   type ScatterSpec,
+  type SitesSpec,
+  type Structure,
   type Species,
+  defineStructure,
 } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 
@@ -191,6 +194,77 @@ describe('validateLibrary: species and props', () => {
     expect(all).toContain(`prop heavy.budget.triangles: 9000, the budget is ${BUDGET.propTriangles}`);
     expect(all).toContain(`prop heavy.budget.instances: 5000, the budget is ${BUDGET.propInstances}`);
     expect(all).toContain('prop floating.obstacle: radius and height must both be positive');
+  });
+});
+
+const structure = (over: Partial<Structure> = {}): Structure =>
+  defineStructure({
+    id: 'cottage',
+    name: 'cottage',
+    footprint: [7, 9],
+    floors: [1, 2],
+    roof: 'gable',
+    palette: { wall: 'sandPale', roof: 'terracotta', trim: 'barkDark', window: 'gold' },
+    ...over,
+  });
+const sites = (over: Partial<SitesSpec> = {}): SitesSpec =>
+  ({
+    cell: 6000,
+    odds: 0.5,
+    radius: [120, 250],
+    structures: { cottage: 1 },
+    fits: () => true,
+    build: () => {},
+    ...over,
+  }) as SitesSpec;
+
+describe('validateLibrary: structures and the sites that place them', () => {
+  it('accepts a library whose settlement names a structure it baked', () => {
+    expect(
+      validateLibrary({
+        biomes: [biome({ sites: sites() })],
+        structures: [structure()],
+      }),
+    ).toEqual([]);
+  });
+  it('refuses a structure that is not a building, by name of what is wrong', () => {
+    const errors = validateLibrary({
+      biomes: [biome()],
+      structures: [
+        structure({ id: 'flat', footprint: [0, 9] }),
+        structure({ id: 'sinking', floors: [3, 1] }),
+        structure({ id: 'odd', roof: 'dome' as Structure['roof'] }),
+        structure({ id: 'neon', palette: { wall: '#00ff00', roof: 'terracotta' } }),
+        structure({ id: 'huge', budget: { triangles: 9000 } }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('structure flat.footprint: needs two positive meters');
+    expect(all).toContain('structure sinking.floors: [3, 1] does not rise');
+    expect(all).toContain('structure odd.roof: unknown roof "dome"');
+    expect(all).toContain('structure neon.palette.wall: #00ff00 is outside the palette envelope');
+    expect(all).toContain(`structure huge.budget.triangles: 9000, the budget is ${BUDGET.propTriangles}`);
+  });
+  it('names a structure the settlement asks for and nobody baked', () => {
+    const errors = validateLibrary({
+      biomes: [biome({ id: 'village', sites: sites({ structures: { manor: 1 } }) })],
+      structures: [structure()],
+    });
+    expect(errors.join('\n')).toContain('biome village.sites: unknown structure "manor"');
+  });
+  it('holds the site budgets: a radius the ring cannot hold is refused', () => {
+    const errors = validateLibrary({
+      biomes: [
+        biome({ id: 'sprawl', sites: sites({ radius: [400, 1200] }) }),
+        biome({ id: 'certain', sites: sites({ odds: 1.5 }) }),
+        biome({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
+      ],
+      structures: [structure()],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome sprawl.sites.radius: 1200 m, the budget is 900');
+    expect(all).toContain('biome certain.sites.odds: 1.5 is not a chance');
+    expect(all).toContain('biome hookless.sites: needs a build hook');
   });
 });
 
