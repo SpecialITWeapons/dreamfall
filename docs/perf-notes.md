@@ -266,3 +266,34 @@ with the plan queue's 4 ms budget landing in the same frame.
 It scales to a third and fourth lattice and then falls off the same cliff;
 the slot count is the knob, and it is only worth turning when a fifth
 settlement kind exists to turn it for.
+
+## The slope rule that had never fired
+
+A settlement is seated at its lattice centre, and the `lattice` hook measured
+its slope as a rise from that centre outward -- which at the centre is zero, so
+the term was always exactly one. `maxSlope` faded the edges of a settlement and
+had never once refused to seat one, while the design had asked for a slope limit
+at the centre since it was written.
+
+Measured over 473 seated villages of seed 42, by the slope of the ground they
+stand on (central differences over 125 m, the span a settlement is wide rather
+than the span of one terrain cell):
+
+| threshold                      | villages kept | refused |
+| ------------------------------ | ------------- | ------- |
+| 0.25, as the spec asked        | 63 %          | 174     |
+| **0.45, chosen from pictures** | **92 %**      | **37**  |
+| 0.6                            | 96 %          | 18      |
+| 0.9                            | 100 %         | 1       |
+
+The threshold was picked by looking rather than by arithmetic: five real
+villages were photographed at slopes of 0.10, 0.25, 0.45, 0.71 and 1.08, and
+the owner chose from the pictures. At 1.08 the village could not be
+photographed from below at all -- the hill it stands on is in the way, which is
+its own argument.
+
+The hit carries the centre's slope from four more `baseFields`, taken once per
+lattice cell beside its height and temperature and remembered in the same
+seats. A full window fill is 789 ms against 783 before, and 824 with the second
+lattice against 828: inside the noise, because a lattice cell covers thousands
+of texels and the samples are paid once for all of them.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFields } from '../../src/engine/terrain/Fields';
-import { CELL, createWorldSampler } from '../../src/engine/terrain/WorldSampler';
+import { CELL, createWorldSampler, type WorldSampler } from '../../src/engine/terrain/WorldSampler';
 
 const fields = () => createFields(createWorldSampler(42));
 /** Walks east from the origin until the ground meets a condition, so a test asserts about real terrain. */
@@ -152,6 +152,40 @@ describe('createFields', () => {
     const same = f.at(3400, 2600).lattice(6000, 3);
     expect(same.cx).toBe(hit.cx);
     expect(same.h).toBe(hit.h);
+  });
+
+  it('carries the slope at the centre, measured across the span a settlement is wide', () => {
+    // A plane: the slope is the plane's own, whatever the probe, and the hook
+    // that refuses a cell on it is refusing the hillside rather than one
+    // sixteen-metre span of a rough one.
+    const tilt = 0.3;
+    const ground = (height: (x: number) => number): WorldSampler => ({
+      seed: 0,
+      seeds: { S1: 0, S2: 0, S3: 0 },
+      sample(x, z, out) {
+        this.baseFields(x, z, out);
+      },
+      baseFields(x, _z, out) {
+        out[0] = height(x);
+        out[1] = out[2] = out[3] = out[4] = 0.5;
+      },
+      sampleWindow(x, z, out, slots) {
+        this.baseFields(x, z, out);
+        out[1] = 1;
+        out[2] = out[3] = 0;
+        slots[0] = slots[1] = slots[2] = 0;
+      },
+    });
+    const plane = ground((x) => tilt * x);
+    const hit = createFields(plane).at(3000, 3000).lattice(6000, 3);
+    expect(hit.s).toBeCloseTo(tilt, 9);
+    // and it is the centre's, like h and t: flat ground reads zero however
+    // rough the texel the hook happens to stand on
+    expect(
+      createFields(ground(() => 70))
+        .at(3000, 3000)
+        .lattice(6000, 3).s,
+    ).toBe(0);
   });
 
   it('remembers a centre per lattice, so two of them do not take turns evicting each other', () => {

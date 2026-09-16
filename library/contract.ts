@@ -192,8 +192,24 @@ export interface LatticeHit {
    * without its edge disagreeing with its middle.
    */
   t: number;
+  /**
+   * How steep the ground is at the centre: rise over run, measured across
+   * `LATTICE_SLOPE_PROBE` metres, which is the scale a settlement is built at
+   * rather than the scale one terrain cell is. A hook's own `maxSlope` compares
+   * against this to refuse a cell outright -- the rise it measures from the
+   * centre outward is zero at the centre and so can only ever fade an edge.
+   */
+  s: number;
   u(k: number): number;
 }
+/**
+ * Metres the lattice measures a centre's slope across. A settlement is hundreds
+ * of metres wide, so what matters is whether the hillside it sits on is steep,
+ * not whether one sixteen-metre span of it is; the owner picked the threshold
+ * from pictures framed at this distance, so the number and the pictures mean
+ * the same thing only while this does not move.
+ */
+export const LATTICE_SLOPE_PROBE = 125;
 
 /** What a biome's CPU hooks see, per texel of the height window. */
 export interface Fields {

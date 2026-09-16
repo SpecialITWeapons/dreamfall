@@ -19,7 +19,7 @@ export const VILLAGE = {
    * by the presence hook, which paints and flattens, and by the site finder,
    * which seats the village -- and they must be the same numbers both times.
    */
-  ground: { land: 10, minTemp: 0.2, maxSlope: 0.25 },
+  ground: { land: 10, minTemp: 0.2, maxSlope: 0.45 },
   roads: {
     /** Metres between side paths along the main street. */
     spacing: 70,

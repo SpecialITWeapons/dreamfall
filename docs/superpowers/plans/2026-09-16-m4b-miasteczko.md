@@ -290,16 +290,43 @@ Przy wsi z plateau 0,3 to jest łagodne. **Przy miasteczku z plateau 1,0
 i promieniem do 900 m to jest 900-metrowy płaski dysk wcięty w zbocze** — i to
 jest powód, dla którego to zadanie stoi przed Taskiem 5, a nie po nim.
 
-- [ ] **Step 1: Test, który nie przechodzi** — stanowisko na stromym zboczu
+- [x] **Step 1: Test, który nie przechodzi** — stanowisko na stromym zboczu
       ziarna 42 (znaleźć pomiarem, nie zgadnąć) jest dziś posadzone, a nie
       powinno być.
-- [ ] **Step 2:** Rozstrzygnąć, skąd bierze się nachylenie w środku. `Fields`
+- [x] **Step 2:** Rozstrzygnąć, skąd bierze się nachylenie w środku. `Fields`
       nie ma pola nachylenia, a siedzisko czyta sampler, nie okno wysokości.
       Najprościej: `LatticeHit` niesie nachylenie środka, próbkowane z samplera
       razem z `h` i `t` — pamięć ma teraz cztery miejsca, więc to kilka próbek
       na komórkę kraty, nie na texel. **Zmierzyć koszt wypełnienia okna przed
       i po**, bo to jest dokładnie to miejsce, które przed chwilą podwoiło fill.
-- [ ] **Step 3: Testy i commit.**
+- [x] **Step 3: Testy i commit.**
+
+---
+
+### Task 8a: Pustka wokół domów
+
+**Files:** `library/settlements/`, `tests/unit/`
+
+Zgłoszone przez właściciela po obejrzeniu zdjęć: **„obszar gdzie są domy jest
+pusty dookoła i to wygląda dość dziwnie, chyba że później dodamy drzewa i jakieś
+krzaki"**.
+
+Przyczyna sprawdzona w kodzie: biom wsi **nie ma haka `populate` w ogóle**. Jego
+obecność maluje wydeptaną glinę i spłaszcza grunt na `radius + feather`, czyli
+250 + 170 = **420 m**, a parcele zajmują środkowe ~200 m. Reszta to malowana
+ziemia, na której z definicji nic nie rośnie — bo wieś nic nie sadzi, a biomy
+klimatyczne mają tam bliską zeru wagę.
+
+To jest w zakresie M4b: specyfikacja §8 wymienia wśród dodatków „propsy wzdłuż
+dróg (latarnie, drzewa), płoty i sady dla wsi".
+
+- [ ] **Step 1: Test, który nie przechodzi** — w pierścieniu nad wsią rośnie coś
+      między krawędzią zabudowy a krawędzią obecności, i **nic** nie rośnie na
+      rezerwacjach ani na drogach.
+- [ ] **Step 2:** Dać wsi `populate`: rzadkie drzewa i krzewy, gęstsze ku
+      krawędzi (odwrotnie niż parcele), plus sady przy `kit.line` z Taska 2.
+      Rezerwacje już trzymają je z dala od rynku i ulic — to jest gotowe od M4a.
+- [ ] **Step 3: Zdjęcie przed i po**, tą samą drogą co przy nachyleniu, i commit.
 
 ---
 

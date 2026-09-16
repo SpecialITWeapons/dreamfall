@@ -97,7 +97,12 @@ const CARRY = 1;
  * on this lattice -- the plan of the settlement, its buildings -- takes the
  * streams after it.
  *
- * `minTemp` is the last of the cell-level refusals and reads the centre's own
+ * `maxSlope` refuses the whole cell when the centre's own ground is steeper
+ * than it, and separately fades the settlement where the ground departs from
+ * that centre. The first is what the design asks for and what a seat is judged
+ * by; the second is what keeps a rough edge from reading as a village.
+ *
+ * `minTemp` is another of the cell-level refusals and reads the centre's own
  * temperature for the same reason `land` reads its height: a settlement that
  * refuses a glacier must refuse the whole cell, or the ground is painted and
  * flattened for a village the site finder will not seat.
@@ -122,6 +127,11 @@ export function lattice({
     // so the distance is asked first and the rest of the cell costs nothing.
     const near = 1 - sstep(radius, radius + feather, hit.d);
     if (near === 0 || hit.h < land || hit.t < minTemp) return 0;
+    // The centre's own ground, refused for the whole cell. The rise measured
+    // below runs from the centre outward and is zero at the centre, so it can
+    // fade an edge and never refuse a seat -- and the seat is the only place a
+    // settlement is ever judged.
+    if (hit.s > maxSlope) return 0;
     const shore = 1 - sstep(0, SHORE_REACH, Math.abs(hit.h));
     if (hit.u(CARRY) >= odds * (1 + shoreBonus * shore)) return 0;
     if (maxSlope === Infinity) return near; // unset, it is no ceiling at all

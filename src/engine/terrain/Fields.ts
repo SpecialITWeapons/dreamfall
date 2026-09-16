@@ -3,7 +3,7 @@
 // it: there is exactly one, rewritten in place, because a full window is
 // 313 600 texels and an object per texel would be 313 600 objects. Pure CPU:
 // base fields, noise and hashes, no three, no DOM.
-import type { Fields, LatticeHit } from '../../../library/contract';
+import { LATTICE_SLOPE_PROBE, type Fields, type LatticeHit } from '../../../library/contract';
 import { fbm, hash2, sstep } from './noise';
 import { CELL, type WorldSampler } from './WorldSampler';
 
@@ -44,12 +44,14 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   // Measured on a full 560x560 window of seed 42: 783 ms with one lattice and
   // 1810 ms with two, which is the whole saving handed back. The slots are
   // scanned rather than hashed because there are four of them.
-  const centre = new Float64Array(5);
+  const centre = new Float64Array(5),
+    around = new Float64Array(5);
   const SEATS = 4;
   const seatX = new Float64Array(SEATS).fill(NaN),
     seatZ = new Float64Array(SEATS).fill(NaN),
     seatH = new Float64Array(SEATS),
-    seatT = new Float64Array(SEATS);
+    seatT = new Float64Array(SEATS),
+    seatS = new Float64Array(SEATS);
   let nextSeat = 0;
   const hit: LatticeHit & { cell: number; salt: number; ix: number; iz: number } = {
     cx: 0,
@@ -57,6 +59,7 @@ export function createFields(sampler: WorldSampler): FieldsReader {
     d: 0,
     h: 0,
     t: 0,
+    s: 0,
     cell: 0,
     salt: 0,
     ix: 0,
@@ -107,6 +110,20 @@ export function createFields(sampler: WorldSampler): FieldsReader {
         }
       if (seat < 0) {
         sampler.baseFields(hit.cx, hit.cz, centre);
+        // Four more samples, once per lattice cell rather than per texel, for
+        // the one question a hook cannot ask from the centre outward: how steep
+        // is the ground the settlement would stand on. Central differences, the
+        // same arithmetic the height window's own slopeAt uses, over the span a
+        // settlement is wide.
+        const p = LATTICE_SLOPE_PROBE;
+        sampler.baseFields(hit.cx + p, hit.cz, around);
+        const east = around[0]!;
+        sampler.baseFields(hit.cx - p, hit.cz, around);
+        const west = around[0]!;
+        sampler.baseFields(hit.cx, hit.cz + p, around);
+        const south = around[0]!;
+        sampler.baseFields(hit.cx, hit.cz - p, around);
+        const north = around[0]!;
         // Round robin, because the lattices take turns by texel: whatever is
         // evicted is the one asked longest ago, which with one slot per lattice
         // is never the one about to be asked.
@@ -116,9 +133,11 @@ export function createFields(sampler: WorldSampler): FieldsReader {
         seatZ[seat] = hit.cz;
         seatH[seat] = centre[0]!;
         seatT[seat] = centre[1]!;
+        seatS[seat] = Math.hypot((east - west) / (2 * p), (south - north) / (2 * p));
       }
       hit.h = seatH[seat]!;
       hit.t = seatT[seat]!;
+      hit.s = seatS[seat]!;
       hit.cell = cell;
       // The stream the hit hands out is salted too: the sites of M4 stand on
       // this lattice, and two worlds whose villages sit on the same grid are

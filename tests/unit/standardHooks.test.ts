@@ -13,6 +13,7 @@ const hit = (over: Partial<LatticeHit> = {}): LatticeHit => ({
   d: 0,
   h: 0,
   t: 0.5,
+  s: 0,
   u: () => 0.5,
   ...over,
 });
@@ -197,6 +198,29 @@ describe('lattice', () => {
     expect(rise(60)).toBe(1); // 40 m over the centre, inside the 50 m the radius allows
     expect(rise(95)).toBeCloseTo(0.5, 9); // 75 m, half way out of the settlement
     expect(rise(160)).toBe(0); // 140 m: not this settlement's ground
+  });
+  it('refuses a cell whose own centre is too steep to build on', () => {
+    const plain = { cell: SITE.cell, radius: SITE.radius, feather: SITE.feather };
+    // The rise above is measured from the centre outward, so at the centre it
+    // is zero and the term is one: for as long as this hook has existed,
+    // `maxSlope` has faded the edges of a settlement and never once refused to
+    // seat one. A site is seated at the centre, which is the one place that
+    // test cannot fire, and the design has asked for a slope limit there since
+    // it was written.
+    // The texel stands at the centre's own height, so the rise term below is
+    // exactly one and what is left under test is the new refusal alone.
+    const on = (slope: number) =>
+      lattice({ ...plain, maxSlope: 0.45 })(
+        at({ baseHeight: 40, lattice: () => hit({ s: slope, h: 40, u: () => 0.1 }) }),
+      );
+    expect(on(0.2)).toBe(1);
+    expect(on(0.44)).toBe(1);
+    expect(on(0.46)).toBe(0);
+    expect(on(1.1)).toBe(0);
+    // unset, it is no ceiling at all -- a lattice with no slope rule takes any ground
+    expect(
+      lattice({ ...plain })(at({ baseHeight: 40, lattice: () => hit({ s: 9, h: 40, u: () => 0.1 }) })),
+    ).toBe(1);
   });
 });
 
