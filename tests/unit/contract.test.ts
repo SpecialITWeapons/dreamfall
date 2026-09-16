@@ -4,10 +4,15 @@ import {
   ENVELOPE,
   colorProblem,
   defineBiome,
+  defineProp,
+  defineSpecies,
   swatchColor,
   validateLibrary,
   type Biome,
   type GroundHook,
+  type Prop,
+  type ScatterSpec,
+  type Species,
 } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 
@@ -108,6 +113,134 @@ describe('validateLibrary', () => {
   });
 });
 
+const species = (over: Partial<Species> = {}): Species =>
+  defineSpecies({
+    id: 'oak',
+    name: 'oak',
+    trunk: { height: 6.4, radius: 0.9, lean: 0.65, tint: 'white' },
+    limbs: { count: 5, spread: 6, rise: 8.8, from: 0.55 },
+    crown: { shape: 'dome', cards: 35, size: 3.8, radius: 5, height: 2.8 },
+    leaf: 'broad',
+    tint: { cold: 'canopyCold', warm: 'white', dry: 'canopyDry' },
+    scale: [1.15, 2.4],
+    ...over,
+  });
+const prop = (over: Partial<Prop> = {}): Prop =>
+  defineProp({
+    id: 'boulders',
+    name: 'boulders',
+    budget: { instances: 1500, triangles: 400 },
+    bake: () => ({}) as never,
+    place: () => [],
+    ...over,
+  });
+const scatter = (over: Record<string, unknown> = {}): Biome['populate'] =>
+  ({ type: 'scatter', species: { oak: 1 }, density: 0.75, ...over }) as Biome['populate'];
+
+describe('validateLibrary: species and props', () => {
+  it('accepts a library whose scenery is well formed, and one with none at all', () => {
+    expect(validateLibrary({ biomes: [biome()], species: [species()], props: [prop()] })).toEqual([]);
+    expect(validateLibrary({ biomes: [biome()] })).toEqual([]);
+  });
+  it('refuses a species that outgrows the budgets, by name of what is over', () => {
+    const errors = validateLibrary({
+      biomes: [biome()],
+      species: [
+        species({ id: 'tall', scale: [1, 4] }),
+        species({ id: 'shrinking', scale: [2, 1] }),
+        species({ id: 'bushy', crown: { shape: 'dome', cards: 260 } }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain(`species tall.scale: 4, the budget is ${BUDGET.speciesScale}`);
+    expect(all).toContain('species shrinking.scale: [2, 1] does not grow');
+    expect(all).toContain(`species bushy.crown.cards: 260, the budget is ${BUDGET.crownCards}`);
+  });
+  it('refuses a species with no way to grow, an unknown leaf, and a tint outside the envelope', () => {
+    const errors = validateLibrary({
+      biomes: [biome()],
+      species: [
+        species({ id: 'formless', trunk: undefined, bake: undefined }),
+        species({ id: 'strange', leaf: 'nosuch' as Species['leaf'] }),
+        species({ id: 'neon', tint: { cold: '#00ff00', warm: 'white', dry: 'canopyDry' } }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('species formless: needs a trunk or a bake hook');
+    expect(all).toContain('species strange.leaf: unknown leaf "nosuch"');
+    expect(all).toContain('species neon.tint.cold: #00ff00 is outside the palette envelope');
+  });
+  it('takes a species that grows its own way, with no trunk of data', () => {
+    expect(
+      validateLibrary({ biomes: [biome()], species: [species({ trunk: undefined, bake: () => {} })] }),
+    ).toEqual([]);
+  });
+  it('refuses a prop without the two hooks it is made of, and one over its budgets', () => {
+    const errors = validateLibrary({
+      biomes: [biome()],
+      props: [
+        prop({ id: 'nobake', bake: undefined as unknown as Prop['bake'] }),
+        prop({ id: 'noplace', place: undefined as unknown as Prop['place'] }),
+        prop({ id: 'heavy', budget: { triangles: 9000, instances: 5000 } }),
+        prop({ id: 'floating', obstacle: { radius: 0, height: 2 } }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('prop nobake: needs a bake hook');
+    expect(all).toContain('prop noplace: needs a place hook');
+    expect(all).toContain(`prop heavy.budget.triangles: 9000, the budget is ${BUDGET.propTriangles}`);
+    expect(all).toContain(`prop heavy.budget.instances: 5000, the budget is ${BUDGET.propInstances}`);
+    expect(all).toContain('prop floating.obstacle: radius and height must both be positive');
+  });
+});
+
+describe('validateLibrary: what a biome asks to grow in it', () => {
+  it('accepts a scatter of known species and props, and a populate hook written in code', () => {
+    expect(
+      validateLibrary({
+        biomes: [
+          biome({
+            populate: scatter({ props: { boulders: 0.3 }, grass: { tint: 'grassCool', density: 0.5 } }),
+          }),
+        ],
+        species: [species()],
+        props: [prop()],
+      }),
+    ).toEqual([]);
+    expect(validateLibrary({ biomes: [biome({ populate: () => {} })], species: [species()] })).toEqual([]);
+  });
+  it('names the typo instead of letting the ring meet an id nobody baked', () => {
+    const errors = validateLibrary({
+      biomes: [biome({ id: 'wild', populate: scatter({ species: { oka: 1 }, props: { rubble: 1 } }) })],
+      species: [species()],
+      props: [prop()],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome wild.populate: unknown species "oka"');
+    expect(all).toContain('biome wild.populate: unknown prop "rubble"');
+  });
+  it('refuses a scatter with nothing to sow, a negative density and grass outside the envelope', () => {
+    const errors = validateLibrary({
+      biomes: [
+        biome({ id: 'bare', populate: scatter({ species: {} }) }),
+        biome({ id: 'dark', populate: scatter({ density: -1 }) }),
+        biome({ id: 'lurid', populate: scatter({ grass: { tint: '#00ff00', density: 1 } }) }),
+      ],
+      species: [species()],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome bare.populate: names no species');
+    expect(all).toContain('biome dark.populate.density: -1 is not a density');
+    expect(all).toContain('biome lurid.populate.grass.tint: #00ff00 is outside the palette envelope');
+  });
+  it('names an unknown populate type, like every other hook', () => {
+    const errors = validateLibrary({
+      biomes: [biome({ id: 'odd', populate: { type: 'sprinkle' } as unknown as Biome['populate'] })],
+    });
+    expect(errors[0]).toBe('biome odd.populate: unknown hook type "sprinkle"');
+  });
+});
+
 describe('the library itself', () => {
   it('ships ten biomes that pass their own validator', () => {
     const library = createLibrary();
@@ -120,6 +253,23 @@ describe('the library itself', () => {
       expect(biome.name.length).toBeGreaterThan(2);
       expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock']);
     }
+  });
+  it('ships nine species and two props, and names only ids it baked', () => {
+    const library = createLibrary();
+    expect(library.species).toHaveLength(9);
+    expect(library.props).toHaveLength(2);
+    expect(validateLibrary(library)).toEqual([]);
+    const baked = new Set(library.species!.map((s) => s.id));
+    for (const biome of library.biomes) {
+      const sown = biome.populate as ScatterSpec;
+      expect(sown.type).toBe('scatter');
+      expect(Object.keys(sown.species).length).toBeGreaterThan(0);
+      for (const id of Object.keys(sown.species)) expect(baked.has(id)).toBe(true);
+    }
+    // one species grows its own way, so the bake hook has a live example
+    expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
+    // and every crown fits the budget the baker will enforce again at bake time
+    for (const s of library.species!) expect(s.crown?.cards ?? 0).toBeLessThanOrEqual(BUDGET.crownCards);
   });
   it('spreads them across climate space, so no two claim the same ground', () => {
     const points = createLibrary().biomes.map(

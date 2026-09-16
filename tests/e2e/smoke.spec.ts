@@ -48,10 +48,11 @@ test('the veil says what the start is doing, and the timings are readable after 
   await expect(page.locator('#loading')).toHaveClass(/gone/);
   const timings = await page.evaluate(() => window.__world!.timings);
   // every step of the start is measured, in order, and the last one is the frame
-  expect(Object.keys(timings)).toEqual(['graphics', 'ground', 'sky']);
+  expect(Object.keys(timings)).toEqual(['graphics', 'ground', 'scenery', 'sky']);
   expect(timings.graphics).toBeGreaterThan(0);
   expect(timings.ground).toBeGreaterThanOrEqual(timings.graphics!);
-  expect(timings.sky).toBeGreaterThanOrEqual(timings.ground!);
+  expect(timings.scenery).toBeGreaterThanOrEqual(timings.ground!);
+  expect(timings.sky).toBeGreaterThanOrEqual(timings.scenery!);
   expect(errors).toEqual([]);
 });
 
@@ -467,24 +468,35 @@ test('the registry reaches the page and two climates paint different ground', as
     page.evaluate(
       async ({ x, z, h }) => {
         const w = window.__world!;
-        w.state.x = x;
-        w.state.z = z;
-        w.step(0.05); // the window refills on the jump
-        // Everything the picture depends on is set by hand, so two visits to one
-        // place are the same picture: the flight would otherwise have wandered
-        // a little further along a different heading by the time of the second.
-        w.state.y = h + 110;
-        w.state.heading = 0;
-        w.state.bank = 0;
-        w.state.pitch = 0;
-        w.state.vy = 0;
-        w.state.t = 100;
+        // Everything the picture depends on is set by hand, and set again before
+        // every step, so two visits to one place are the same picture. The pose
+        // is pinned before the jump as well as after it: a step taken from a
+        // heading left over from the last visit lands a few metres off, which
+        // used to be invisible in the colour of the ground and stopped being so
+        // the day trees stood on it.
+        const pin = () => {
+          w.state.x = x;
+          w.state.z = z;
+          w.state.y = h + 110;
+          w.state.heading = 0;
+          w.state.bank = 0;
+          w.state.pitch = 0;
+          w.state.vy = 0;
+          w.state.t = 100;
+          w.state.speed = 40;
+        };
+        pin();
+        w.step(0.05); // the window refills and the ring rebuilds on the jump
+        pin();
         w.dayPhase = 0.3;
-        // One short step places the figure, the camera and the sky from the pose
-        // just written. Any more than that and the flight starts flying again --
-        // its own climb, its cloud schedule, its low pass -- and the second visit
-        // to a place is no longer the same picture as the first.
-        w.step(0.02);
+        // Short steps, the pose pinned before each of them, so the flight cannot
+        // fly away while the things that ease -- the exposure above all -- settle
+        // on the same value they settled on the last time this place was visited.
+        for (let k = 0; k < 12; k++) {
+          pin();
+          w.step(0.02);
+        }
+        pin();
         const shot = await w.capture(96, 54);
         if (!shot) return null;
         // The mean colour of the bottom left corner: ground from this height,
@@ -502,7 +514,17 @@ test('the registry reaches the page and two climates paint different ground', as
             b += shot.data[i + 2]!;
             n++;
           }
-        return [r / n, g / n, b / n];
+        return [
+          r / n,
+          g / n,
+          b / n,
+          w.state.x - x,
+          w.state.z - z,
+          w.state.y,
+          w.scenery!.trees,
+          w.scenery!.grass,
+          w.scenery!.rebuilds,
+        ];
       },
       { x, z, h },
     );
@@ -516,5 +538,119 @@ test('the registry reaches the page and two climates paint different ground', as
   expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
   // no console errors anywhere above is the proof that ten branches of TSL compiled
+  expect(errors).toEqual([]);
+});
+
+test('the forest stands where the climate wants it, and the flight is told about it', async ({ page }) => {
+  // Two teleports, each of them a window refill and a ring rebuild over 1681
+  // cells, on a software rasteriser.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page); // no render loop competing with the teleports below
+  // Hard-coded for the same reason as the two climates above: a search costs a
+  // window refill per probe. Seed 42's base fields are frozen, so these two
+  // places stay what they are, and the biome ids below fail loudly if the
+  // weighting ever moves.
+  const WOODS = { x: -48_000, z: -42_000 },
+    DUNES = { x: -12_000, z: -48_000 };
+  const visit = async (at: { x: number; z: number }) =>
+    page.evaluate(({ x, z }) => {
+      const w = window.__world!;
+      w.state.x = x;
+      w.state.z = z;
+      w.state.y = w.heightAt(x, z) + 120;
+      w.step(0.05); // the window refills and the ring rebuilds on the jump
+      return { id: w.weightsAt(x, z)[0]!.id, scenery: w.scenery!, obstacles: w.obstacles };
+    }, at);
+
+  const woods = await visit(WOODS);
+  expect(woods.id).toBe('wildsong');
+  expect(woods.scenery.trees).toBeGreaterThan(800);
+  expect(woods.scenery.cells).toBeGreaterThan(400);
+  // everything that stands is something the flight has to fly around
+  expect(woods.obstacles).toBeGreaterThanOrEqual(woods.scenery.trees);
+  expect(woods.scenery.bakeMs).toBeGreaterThan(0);
+
+  // The desert is the same machinery over a climate that wants almost nothing:
+  // this is the assertion that the biome weights really reach the scenery, and
+  // not only the colour of the ground.
+  const dunes = await visit(DUNES);
+  expect(dunes.id).toBe('dunes');
+  expect(dunes.scenery.trees).toBeLessThan(woods.scenery.trees / 5);
+  expect(dunes.scenery.rebuilds).toBeGreaterThan(woods.scenery.rebuilds);
+  expect(errors).toEqual([]);
+});
+
+test('the flight keeps its clearance over the trees, not only over the ground', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const clearances = await page.evaluate(() => {
+    const w = window.__world!;
+    w.state.x = -48_000;
+    w.state.z = -42_000;
+    w.state.y = w.heightAt(-48_000, -42_000) + 60;
+    w.step(0.05);
+    const worst: number[] = [];
+    // a minute of flight over the wood, sampled every second
+    for (let second = 0; second < 60; second++) {
+      for (let k = 0; k < 50; k++) w.step(0.02);
+      worst.push(w.state.y - w.floorAt(w.state.x, w.state.z));
+    }
+    return { worst, trees: w.scenery!.trees };
+  });
+  expect(clearances.trees).toBeGreaterThan(100);
+  // MIN_CLEARANCE is 25 m; the envelope holds it over the canopy as it does
+  // over the ground, and a metre of slack covers one step of the integrator
+  expect(Math.min(...clearances.worst)).toBeGreaterThan(24);
+  expect(errors).toEqual([]);
+});
+
+test('a jump of the floating origin takes the forest with it', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const moved = await page.evaluate(() => {
+    const w = window.__world!;
+    // two origin thresholds in one step: the scene's frame moves under the ring
+    w.state.x = 9000;
+    w.state.z = 0;
+    w.step(0.05);
+    const sample = w.scenerySample(0)!;
+    return {
+      origin: { ...w.origin },
+      sample,
+      trees: w.scenery!.trees,
+      rebuilds: w.scenery!.rebuilds,
+    };
+  });
+  expect(moved.trees).toBeGreaterThan(0);
+  expect(moved.rebuilds).toBeGreaterThan(1);
+  // the instance was written in the scene's frame, and the frame is the origin's
+  expect(moved.sample.local[0]).toBeCloseTo(moved.sample.world[0] - moved.origin.x, 3);
+  expect(moved.sample.local[1]).toBeCloseTo(moved.sample.world[1] - moved.origin.z, 3);
+  expect(Math.abs(moved.sample.local[0])).toBeLessThan(4000);
+  expect(errors).toEqual([]);
+});
+
+test('grass grows close to the ground and costs nothing from altitude', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const counts = await page.evaluate(() => {
+    const w = window.__world!;
+    w.state.x = -48_000;
+    w.state.z = -42_000;
+    const ground = w.heightAt(-48_000, -42_000);
+    w.state.y = ground + 40;
+    w.step(0.05);
+    const low = w.scenery!.grass;
+    w.state.y = ground + 1000;
+    w.state.x += 200; // a new cell, so the window has a reason to rebuild
+    w.step(0.05);
+    return { low, high: w.scenery!.grass };
+  });
+  expect(counts.low).toBeGreaterThan(100);
+  expect(counts.high).toBe(0);
   expect(errors).toEqual([]);
 });

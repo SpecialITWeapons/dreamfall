@@ -1,6 +1,7 @@
 import type { MemorySnapshot } from '../engine/Engine';
 import type { KeyAction, Orbit, View } from '../engine/flight/Steering';
 import type { Capture } from '../engine/render/Post';
+import type { SceneryStats } from '../engine/scenery/Scenery';
 import type { FlightState, ResumeState } from '../engine/sim/Simulation';
 import type { Wind } from '../engine/sky/Wind';
 
@@ -48,6 +49,14 @@ export interface WorldDebug {
   readonly biomes: string[];
   /** The three biome slots of the cell a world point falls in, by name. */
   weightsAt(x: number, z: number): Array<{ id: string; weight: number }>;
+  /** What the ring and the grass window hold, and what they cost. */
+  readonly scenery: SceneryStats | null;
+  /** The i-th tree of the last rebuild, in the world and in the scene. */
+  scenerySample(i: number): { world: [number, number]; local: [number, number] } | null;
+  /** How many things the flight has to fly around. */
+  readonly obstacles: number;
+  /** The ground or the top of whatever stands on it, m: what the flight keeps its clearance over. */
+  floorAt(x: number, z: number): number;
   key(code: string): KeyAction;
   keyUp(code: string): boolean;
   /** The flight flies itself; an arrow key takes it off and this hands it back. */

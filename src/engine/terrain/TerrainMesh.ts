@@ -43,6 +43,7 @@ import { swatchColor, type Biome, type GroundCtx, type SceneryColor } from '../.
 import { resolveGround } from '../../../library/standard/index.js';
 import type { Look } from '../render/ColorGrade';
 import type { LitMaterial } from '../render/SoftLighting';
+import type { GroundShade } from '../scenery/GroundShade';
 import { createCloudShadow } from '../sky/CloudShadow';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
@@ -118,6 +119,8 @@ export function createTerrain(deps: {
   palette: TerrainPalette;
   /** The registry, in order: a biome's index here is the index in the window's slots. */
   biomes?: Biome[];
+  /** The scenery's shade sheet; without it the ground lights exactly as it did before there was one. */
+  shade?: GroundShade;
 }) {
   const { heightfield: hf, uniforms: u, litMaterial, palette } = deps;
   const biomes = deps.biomes ?? [];
@@ -225,6 +228,9 @@ export function createTerrain(deps: {
       .mul(brush)
       .mul(cloudShadow(worldXZ)),
   );
+  // The shade under the trees reads the same worldXZ as the ground hooks, so
+  // its sheet stays where the trees are when the origin jumps under the scene.
+  if (deps.shade) material.aoNode = deps.shade.aoNode(worldXZ);
   material.positionNode = vec3(positionLocal.x, hv, positionLocal.z);
   material.normalNode = transformNormalToView(normalV);
   const mesh = new Mesh(buildGrid(TERRAIN_CELLS, CELL), material);

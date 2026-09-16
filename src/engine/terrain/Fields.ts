@@ -25,6 +25,11 @@ export interface FieldsReader {
 export function createFields(sampler: WorldSampler): FieldsReader {
   const base = new Float64Array(5);
   const u32 = 4294967296;
+  // A hook's own noise and hashes carry the world seed too. The base fields get
+  // theirs through fieldSeeds, but a hook that asks for noise(370, 1) would
+  // otherwise read the same pattern in every world, and every seed would grow
+  // its groves in the same places.
+  const salted = (salt: number) => (salt ^ Math.imul(sampler.seed, 0x9e3779b1)) >>> 0;
   let ix = 0,
     iz = 0;
   const hit: LatticeHit & { cell: number; salt: number } = {
@@ -49,8 +54,8 @@ export function createFields(sampler: WorldSampler): FieldsReader {
     region: 0,
     baseHeight: 0,
     shore: 0,
-    hash: (salt) => hash2(ix, iz, salt) / u32,
-    noise: (scale, salt, octaves = 3) => fbm(fields.x / scale, fields.z / scale, salt, octaves),
+    hash: (salt) => hash2(ix, iz, salted(salt)) / u32,
+    noise: (scale, salt, octaves = 3) => fbm(fields.x / scale, fields.z / scale, salted(salt), octaves),
     lattice(cell, salt) {
       // One hash per query: the nearest centre of a lattice whose cells each
       // hold one centre, jittered inside the cell so the grid never shows. The

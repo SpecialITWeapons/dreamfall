@@ -54,8 +54,14 @@ const world = createWorld({
   volume: settings.volume,
   muted: settings.muted,
   reducedMotion: motionPreference.matches,
+  deferScenery: true,
 });
 mark('ground');
+// The species, the props and their painted textures: most of a second of
+// baking, and the first thing anyone would blame the ground for.
+await veil.stage('scenery');
+world.plant();
+mark('scenery');
 // Said before the loop starts, because the frame it explains is the one that
 // compiles every shader in the scene, and nothing paints while it does.
 await veil.stage('sky');
@@ -356,6 +362,14 @@ installDebug(window, {
   get biomes() {
     return world.library.biomes.map((b) => b.id);
   },
+  get scenery() {
+    return world.scenery?.stats ?? null;
+  },
+  scenerySample: (i: number) => world.scenery?.sample(i) ?? null,
+  get obstacles() {
+    return world.obstacles.size;
+  },
+  floorAt: (x: number, z: number) => world.sim.flight.floorAt(x, z),
   weightsAt(x: number, z: number) {
     const ids = new Uint8Array(3),
       weights = new Float32Array(3);

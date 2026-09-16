@@ -18,7 +18,9 @@ import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
 import { createPost, type Post } from './render/Post';
 import { createLitMaterial, createSoftShadow } from './render/SoftLighting';
+import { createGroundShade } from './scenery/GroundShade';
 import { createObstacles, type Obstacles } from './scenery/Obstacles';
+import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
@@ -43,6 +45,12 @@ export interface WorldOptions {
   library?: Library;
   /** A remembered flight of this seed to continue. */
   resume?: ResumeState | null;
+  /**
+   * Leave the scenery unbaked until plant() is called. The page does this so
+   * that baking -- most of a second of species, props and painted textures --
+   * gets its own line on the veil instead of hiding inside the ground's.
+   */
+  deferScenery?: boolean;
   view?: View;
   orbit?: Partial<Orbit>;
   outfit?: string;
@@ -64,6 +72,7 @@ export interface World {
   readonly avatar: ProceduralHuman;
   readonly audio: Ambience;
   readonly obstacles: Obstacles;
+  readonly scenery: Scenery | null;
   readonly origin: Origin;
   readonly heightfield: Heightfield;
   readonly atmosphere: Atmosphere;
@@ -71,6 +80,8 @@ export interface World {
   readonly wind: Wind;
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
   reducedMotion: boolean;
+  /** Bakes and plants the scenery; idempotent, and already done unless deferScenery was set. */
+  plant(): void;
   update(dt: number): void;
   resize(aspect: number): void;
   heightAt(x: number, z: number): number;
@@ -124,7 +135,17 @@ export function createWorld(opts: WorldOptions): World {
   const litMaterial = createLitMaterial(createSoftShadow(lights.shadowMatrix));
   const atmosphere = createAtmosphere({ clock, uniforms, lights });
   const palette = createTerrainPalette(look);
-  const terrain = createTerrain({ heightfield, uniforms, litMaterial, palette, biomes: library.biomes });
+  // The shade under the trees is built before the terrain, because the ground
+  // material takes its node at composition and cannot be handed one later.
+  const shade = createGroundShade();
+  const terrain = createTerrain({
+    heightfield,
+    uniforms,
+    litMaterial,
+    palette,
+    biomes: library.biomes,
+    shade,
+  });
   scene.add(terrain.mesh);
   const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
   scene.add(water.mesh);
@@ -144,6 +165,22 @@ export function createWorld(opts: WorldOptions): World {
   const audio = createAmbience({ volume: opts.volume ?? 0.5, muted: opts.muted ?? false });
   const post = createPost(opts.renderer, scene, camera);
   let reducedMotion = opts.reducedMotion ?? false;
+  let scenery: Scenery | null = null;
+  const plant = () => {
+    if (scenery) return;
+    scenery = createScenery({
+      seed: opts.seed,
+      library,
+      sampler,
+      heightfield,
+      obstacles,
+      origin,
+      scene,
+      shade,
+      litMaterial,
+      uniforms,
+    });
+  };
 
   const follow = new Vector3();
   const pose: FlightPose = {
@@ -162,7 +199,10 @@ export function createWorld(opts: WorldOptions): World {
   const sample = { altitude: 0, vy: 0, gust: 0, rush: 1, t: 0, x: 0, z: 0 };
   const toLocal = (v: Vector3) => v.set(origin.localX(v.x), v.y, origin.localZ(v.z));
   const place = (dt: number) => {
-    origin.shiftFor(state.x, state.z);
+    // An origin jump moves the whole scene under the scenery, whose instances
+    // were written against the origin that has just gone; both the ring and the
+    // grass rebuild on it.
+    const moved = origin.shiftFor(state.x, state.z);
     heightfield.update(state.x, state.z);
     terrain.upload();
     const ax = Math.round(state.x / CELL) * CELL,
@@ -199,6 +239,7 @@ export function createWorld(opts: WorldOptions): World {
       reducedMotion,
     });
     applyCameraPose(camera, chase.pose, origin.localX, origin.localZ);
+    scenery?.update(state.x, state.z, camera.position.y, moved);
     uniforms.time.value = state.t;
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
     clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z, wind);
@@ -218,6 +259,7 @@ export function createWorld(opts: WorldOptions): World {
     sample.z = state.z;
     audio.update(dt, sample, heightAt);
   };
+  if (!opts.deferScenery) plant();
   place(0);
   return {
     seed: opts.seed,
@@ -231,6 +273,9 @@ export function createWorld(opts: WorldOptions): World {
     avatar,
     audio,
     obstacles,
+    get scenery() {
+      return scenery;
+    },
     origin,
     heightfield,
     atmosphere,
@@ -241,6 +286,10 @@ export function createWorld(opts: WorldOptions): World {
     },
     set reducedMotion(value: boolean) {
       reducedMotion = value;
+    },
+    plant() {
+      plant();
+      place(0);
     },
     update(dt) {
       steering.update(dt);
@@ -256,6 +305,8 @@ export function createWorld(opts: WorldOptions): World {
     snapshot: () => sim.snapshot(),
     dispose() {
       post.dispose();
+      scenery?.dispose();
+      shade.dispose();
       terrain.dispose();
       water.dispose();
       skyDome.dispose();

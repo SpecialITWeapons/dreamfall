@@ -11,6 +11,7 @@
 // the CPU: the Node type comes in as a type only, so nothing here pulls the
 // renderer into a Node test.
 import { Color, LinearSRGBColorSpace, SRGBColorSpace } from 'three';
+import type { BufferGeometry, CatmullRomCurve3, Euler, Matrix4, Vector3 } from 'three';
 import type { Node } from 'three/webgpu';
 
 // ---------------------------------------------------------------------------
@@ -246,7 +247,22 @@ export interface Cell {
   size: number;
   corner: { x: number; z: number };
   center: { x: number; z: number };
+  /**
+   * How much of this cell belongs to the biome whose hook is running, 0..1.
+   * A hook asks about itself with this and about its neighbours with weight().
+   */
+  readonly share: number;
   weight(biomeId: string): number;
+  /**
+   * The base fields in the cell's centre. The tree line reads baseTemp, a
+   * species' tint reads temp and moist, a grove reads noise. One object,
+   * rewritten per cell -- read it, do not keep it.
+   */
+  readonly fields: Fields;
+  /** How much this cell wants that prop: the biome weights folded over their scatter weights. */
+  mix(id: string): number;
+  /** A colour from the biomes' params, blended by weight, e.g. blend('rock'). One Color, rewritten per call. */
+  blend(param: string): Color;
   height(x: number, z: number): number;
   slope(x: number, z: number): number;
   land(x: number, z: number): boolean;
@@ -274,7 +290,23 @@ export interface SceneryKit {
   ): void;
   color(value: SceneryColor): Color;
 }
-export type PopulateHook = (cell: Cell, kit: SceneryKit) => void;
+/**
+ * What a biome sows. It places trees only: the prop weights are read by that
+ * prop's own place(), and the grass is data the grass window folds by weight.
+ * A biome whose populate is a function has neither -- both are descriptor data.
+ */
+export interface ScatterSpec {
+  type: 'scatter';
+  /** Relative weights by species id. */
+  species: Record<string, number>;
+  /** Trees per cell before the grove noise and the biome's own weight. */
+  density: number;
+  /** Relative weights by prop id, read through Cell.mix. */
+  props?: Record<string, number>;
+  grass?: { tint: SceneryColor; density: number };
+}
+export type PopulateDescriptor = ScatterSpec;
+export type PopulateHook = ((cell: Cell, kit: SceneryKit) => void) | PopulateDescriptor;
 
 export interface Site {
   id: string;
@@ -321,16 +353,101 @@ export interface Biome {
   shore?: boolean;
 }
 
+export interface TrunkSpec {
+  height: number;
+  radius: number;
+  /** How far the top leans off the root, m. */
+  lean: number;
+  tint: SceneryColor;
+}
+export interface LimbsSpec {
+  count: number;
+  spread?: number;
+  rise?: number;
+  /** Where on the trunk the first limb leaves it, 0..1. */
+  from?: number;
+}
+export interface CrownSpec {
+  shape: 'dome' | 'cone' | 'fan' | 'bare';
+  cards?: number;
+  size?: number;
+  radius?: number;
+  height?: number;
+  from?: number;
+}
+/** The two verbs a tree grows through: lay wood, hang a painted card. */
+export interface TreeKit {
+  THREE: typeof import('three');
+  random(): number;
+  branch(a: Vector3, b: Vector3, r1: number, r2: number): CatmullRomCurve3;
+  card(p: Vector3, normal: Vector3, rotation: Euler | Matrix4, size: number): void;
+  matrix(
+    x: number,
+    y: number,
+    z: number,
+    sx?: number,
+    sy?: number,
+    sz?: number,
+    rx?: number,
+    ry?: number,
+    rz?: number,
+  ): Matrix4;
+  spec: Species;
+}
 export interface Species {
   kind?: 'species';
   id: string;
   name: string;
-  [key: string]: unknown;
+  trunk?: TrunkSpec;
+  limbs?: LimbsSpec;
+  crown?: CrownSpec;
+  leaf?: keyof typeof LEAVES;
+  /** Climate tints; the engine lerps by temperature and moisture per instance. */
+  tint: { cold: SceneryColor; warm: SceneryColor; dry: SceneryColor };
+  /** [min, max] scale; the max is capped by BUDGET.speciesScale. */
+  scale: [number, number];
+  /** A species that grows its own way, through the same kit the built-in generator uses. */
+  bake?(kit: TreeKit): void;
+}
+
+/** One instance a hook asks for: where it stands, how it is turned, how big, how deep. */
+export interface Placement {
+  x: number;
+  z: number;
+  yaw?: number;
+  scale?: number | [number, number, number];
+  /** Metres to sink into the ground, so a boulder sits rather than balances. */
+  sink?: number;
+  tint?: SceneryColor | Color;
+}
+/** What a prop bakes and places with; merge returns one geometry with vertex colors. */
+export interface PropKit {
+  THREE: typeof import('three');
+  random(name: string): () => number;
+  merge(parts: Array<{ geometry: BufferGeometry; matrix?: Matrix4; color?: Color | number }>): BufferGeometry;
+  matrix(
+    x: number,
+    y: number,
+    z: number,
+    sx?: number,
+    sy?: number,
+    sz?: number,
+    rx?: number,
+    ry?: number,
+    rz?: number,
+  ): Matrix4;
+  sstep(a: number, b: number, x: number): number;
+  color(value: SceneryColor): Color;
 }
 export interface Prop {
   kind?: 'prop';
   id: string;
-  [key: string]: unknown;
+  name: string;
+  budget?: { instances?: number; triangles?: number };
+  /** Set when the flight and the camera must clear it. */
+  obstacle?: { radius: number; height: number };
+  bake(kit: PropKit): BufferGeometry;
+  place(cell: Cell, kit: PropKit): Placement[] | void;
 }
 export interface Structure {
   kind?: 'structure';
@@ -363,6 +480,7 @@ export const defineStructure = (structure: Structure): Structure => ({ kind: 'st
 const PRESENCE_TYPES = new Set(['climatePoint', 'heightBand', 'mul', 'max']);
 const HEIGHT_TYPES = new Set(['offset', 'terraces']);
 const GROUND_TYPES = new Set(['layers']);
+const POPULATE_TYPES = new Set(['scatter']);
 
 /** Everything wrong with a library, by entry name; empty when it may load. */
 export function validateLibrary({ biomes, species = [], props = [], structures = [] }: Library): string[] {
@@ -379,9 +497,14 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
     return seen;
   };
   idsOf(biomes, 'biome');
-  idsOf(species, 'species');
-  idsOf(props, 'prop');
+  const speciesIds = idsOf(species, 'species');
+  const propIds = idsOf(props, 'prop');
   idsOf(structures, 'structure');
+
+  const colorAt = (where: string, value: unknown) => {
+    const problem = colorProblem(value);
+    if (problem) errors.push(`${where}: ${problem}`);
+  };
 
   const hookType = (where: string, hook: unknown, known: Set<string>) => {
     if (typeof hook === 'function') return;
@@ -402,6 +525,23 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       if (offset?.type === 'offset' && Math.abs(offset.meters ?? 0) > BUDGET.heightDelta)
         errors.push(`${where}.height: ${offset.meters} m, the budget is ${BUDGET.heightDelta}`);
     }
+    if (biome?.populate) {
+      hookType(`${where}.populate`, biome.populate, POPULATE_TYPES);
+      const sown = biome.populate as Partial<ScatterSpec>;
+      if (sown?.type === 'scatter') {
+        // The ring meets these ids years after they are typed; a typo here is a
+        // silent empty forest, so it is refused at the door by name.
+        const names = Object.keys(sown.species ?? {});
+        if (names.length === 0) errors.push(`${where}.populate: names no species`);
+        for (const id of names)
+          if (!speciesIds.has(id)) errors.push(`${where}.populate: unknown species "${id}"`);
+        for (const id of Object.keys(sown.props ?? {}))
+          if (!propIds.has(id)) errors.push(`${where}.populate: unknown prop "${id}"`);
+        if (!Number.isFinite(sown.density) || (sown.density as number) < 0)
+          errors.push(`${where}.populate.density: ${sown.density} is not a density`);
+        if (sown.grass) colorAt(`${where}.populate.grass.tint`, sown.grass.tint);
+      }
+    }
     // A colour in params is written as a swatch name or a hex string: a bare
     // number is a number (a density, a metre count), and every number is also
     // a perfectly good colour, so there is no telling them apart by value.
@@ -411,26 +551,79 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
       if (problem) errors.push(`${where}.params.${key}: ${problem}`);
     }
   }
+
+  for (const entry of species) {
+    const where = `species ${entry?.id}`;
+    // Data for the built-in kit, or a generator of its own -- but one of the two.
+    if (!entry?.trunk && typeof entry?.bake !== 'function')
+      errors.push(`${where}: needs a trunk or a bake hook`);
+    const scale = entry?.scale;
+    if (!Array.isArray(scale) || scale.length !== 2 || !scale.every((v) => Number.isFinite(v) && v > 0))
+      errors.push(`${where}.scale: needs a [min, max] of positive meters`);
+    else {
+      if (scale[1] <= scale[0]) errors.push(`${where}.scale: [${scale[0]}, ${scale[1]}] does not grow`);
+      if (scale[1] > BUDGET.speciesScale)
+        errors.push(`${where}.scale: ${scale[1]}, the budget is ${BUDGET.speciesScale}`);
+    }
+    const cards = entry?.crown?.cards;
+    if (typeof cards === 'number' && cards > BUDGET.crownCards)
+      errors.push(`${where}.crown.cards: ${cards}, the budget is ${BUDGET.crownCards}`);
+    if (entry?.leaf !== undefined && !(entry.leaf in LEAVES))
+      errors.push(`${where}.leaf: unknown leaf "${String(entry.leaf)}"`);
+    for (const role of ['cold', 'warm', 'dry'] as const)
+      colorAt(`${where}.tint.${role}`, entry?.tint?.[role]);
+    if (entry?.trunk) colorAt(`${where}.trunk.tint`, entry.trunk.tint);
+  }
+
+  for (const entry of props) {
+    const where = `prop ${entry?.id}`;
+    if (typeof entry?.bake !== 'function') errors.push(`${where}: needs a bake hook`);
+    if (typeof entry?.place !== 'function') errors.push(`${where}: needs a place hook`);
+    const triangles = entry?.budget?.triangles,
+      instances = entry?.budget?.instances;
+    if (typeof triangles === 'number' && triangles > BUDGET.propTriangles)
+      errors.push(`${where}.budget.triangles: ${triangles}, the budget is ${BUDGET.propTriangles}`);
+    if (typeof instances === 'number' && instances > BUDGET.propInstances)
+      errors.push(`${where}.budget.instances: ${instances}, the budget is ${BUDGET.propInstances}`);
+    const obstacle = entry?.obstacle;
+    if (obstacle && !(obstacle.radius > 0 && obstacle.height > 0))
+      errors.push(`${where}.obstacle: radius and height must both be positive`);
+  }
   return errors;
+}
+
+/** What validateBaked reads of an attribute; a BufferAttribute is one of these. */
+interface BakedAttribute {
+  count: number;
+  getX(i: number): number;
+  getY(i: number): number;
+  getZ(i: number): number;
+}
+/**
+ * A baked geometry, as little of one as this needs. It is spelled through
+ * getAttribute rather than attributes.position because BufferGeometry types its
+ * attributes as an index signature, and an index signature never satisfies a
+ * required named property -- so the obvious shape would refuse the one kind of
+ * argument this function exists to take.
+ */
+interface BakedGeometry {
+  index?: { count: number } | null;
+  getAttribute(name: string): BakedAttribute | undefined;
 }
 
 /** Problems with a baked geometry against its entry's budget and the color envelope; empty when clean. */
 export function validateBaked(
   entry: { kind?: string; id: string; budget?: { triangles?: number } },
-  geometry: {
-    index?: { count: number } | null;
-    attributes: {
-      position: { count: number };
-      color?: { count: number; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
-    };
-  },
+  geometry: BakedGeometry,
 ): string[] {
   const errors: string[] = [];
   const where = `${entry.kind ?? 'entry'} ${entry.id}`;
-  const triangles = (geometry.index ? geometry.index.count : geometry.attributes.position.count) / 3;
+  const position = geometry.getAttribute('position');
+  if (!position) return [`${where}: baked nothing`];
+  const triangles = (geometry.index ? geometry.index.count : position.count) / 3;
   const cap = entry.budget?.triangles ?? BUDGET.propTriangles;
   if (triangles > cap) errors.push(`${where}: ${triangles} triangles, the budget is ${cap}`);
-  const colors = geometry.attributes.color;
+  const colors = geometry.getAttribute('color');
   if (colors) {
     const stride = Math.max(1, Math.floor(colors.count / 200)),
       c = new Color();
