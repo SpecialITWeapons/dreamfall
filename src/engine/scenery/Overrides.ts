@@ -15,11 +15,14 @@
 
 import type { Placement } from '../../../library/contract';
 
+/** A placement that names what it is, because an override answers for the hooks. */
+export type OverridePlacement = Placement & { species?: string; prop?: string };
+
 /** What one key may say: nothing stands here, or exactly this does. */
 export interface Override {
   key: string;
   skip?: boolean;
-  placements?: Placement[];
+  placements?: OverridePlacement[];
 }
 
 /** The key of a ring cell, by its cell coordinates. */
