@@ -89,9 +89,9 @@ sięga dziś 2600 m**, więc strażnik liczy o 1,87 raza za małą powierzchnię
 przechodzą z zapasem), więc to nie jest błąd, który dziś coś psuje — jest to
 strażnik, który kłamie, a M4b właśnie dokłada do rejestru drugą kratę.
 
-- [ ] **Step 1: Test, który nie przechodzi** — krata, która mieści się w 1900,
+- [x] **Step 1: Test, który nie przechodzi** — krata, która mieści się w 1900,
       a nie mieści w 2600, musi zostać odrzucona.
-- [ ] **Step 2:** Zsynchronizować liczbę z `TREE_RADIUS` tak, żeby nie mogła
+- [x] **Step 2:** Zsynchronizować liczbę z `TREE_RADIUS` tak, żeby nie mogła
       się znów rozjechać. `contract.ts` nie może importować z `src/`, więc albo
       liczba zostaje w kontrakcie z testem, który porównuje ją z `TREE_RADIUS`
       i pada przy rozjeździe, albo `Ring` przejmuje walidację zasięgu. **Wybrać

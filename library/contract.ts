@@ -124,9 +124,17 @@ export const BUDGET = {
    * the reach it holds them over. A lattice fine enough to put more than this
    * in front of the flight is refused: the ring would be raising villages
    * shoulder to shoulder, which is a town, and a town is its own entry.
+   *
+   * `siteReach` is the ring's `TREE_RADIUS`, written here a second time because
+   * the contract may not import the engine -- the library is the contributed
+   * side and the dependency does not run that way. A test holds the two
+   * together and goes red the moment they disagree, which is the only thing
+   * that makes a copied constant safe: this one was 1900 for as long as it took
+   * to move the ring to 2600, and for all that time it measured a world that
+   * was no longer there.
    */
   siteInstances: 4,
-  siteReach: 1900,
+  siteReach: 2600,
   /**
    * Distinct floor counts one structure may be baked at. A building is
    * instanced whole, so every count in `floors` gets its own bake and its own
