@@ -378,9 +378,15 @@ test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
     .then(() => true)
     .catch(() => false);
   if (running)
+    // The master gain is a four-second ramp on the audio clock, and a runner
+    // with no sound device advances that clock far slower than the wall clock:
+    // CI has seen 0.48 s of it pass in eight of ours, which is a gain of 0.06
+    // where this used to demand 0.1. What the test is for is that Begin starts
+    // the sound and the HUD stops it, so it asks whether the ramp is under way
+    // rather than how far along it got.
     await expect
       .poll(() => page.evaluate(() => window.__world!.audio.gain), { timeout: 8_000 })
-      .toBeGreaterThan(0.1);
+      .toBeGreaterThan(0);
   await page.click('#muteBtn');
   await expect(page.locator('#muteBtn')).toHaveText('sound off');
   expect((await page.evaluate(() => window.__world!.audio)).muted).toBe(true);
