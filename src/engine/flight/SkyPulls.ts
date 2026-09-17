@@ -31,11 +31,17 @@ const SPANS = {
 /** Solar phase over which a pull comes and goes. */
 export const SKY_FADE = 0.015;
 /**
- * The bearing of the Milky Way's core. Provisional: computed from the galactic
- * axes of fly-with-me's bake (core at longitude 2.98); M5 replaces it with the
- * bearing found in its own bake.
+ * The bearing of the Milky Way's core, in the world. Not written down beside
+ * the galaxy but **read out of it**: `brightestMatter` finds the peak of the
+ * stellar light in the same field the sky is drawn from, and this is that
+ * bearing through the galactic axes. A unit test asks the bake for it again, so
+ * a galaxy that moves fails rather than leaving the flight turning toward where
+ * its core used to be.
+ *
+ * It was 0.95 while it was a guess from the original's written core longitude,
+ * which was three degrees out.
  */
-export const GALAXY_HEADING = 0.95;
+export const GALAXY_HEADING = 1.0002;
 export const NIGHTWARD = {
   /** Radians of heading that count as facing the core. */
   aligned: 0.03,

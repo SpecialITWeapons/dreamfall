@@ -600,3 +600,40 @@ nowhere in particular. It surfaced because a rewrite placed zero tufts on a
 path a probe said had thick grass: the code was right and the harness was
 lying. A harness is not a measurement until something it says can be checked
 against something else.
+
+## M5: the Milky Way is baked in a worker, because it is 3.5 seconds
+
+The galaxy is grown rather than downloaded: a branching dust field and the
+stellar light behind it, evaluated per texel into an atlas the sky dome samples.
+What that costs, on this machine:
+
+| step                                   | cost    | size   |
+| -------------------------------------- | ------- | ------ |
+| the dust field (`makeDust`)            | 49 ms   | 8.4 MB |
+| the core's bearing (`brightestMatter`) | 44 ms   | --     |
+| the light atlas, 4096 x 512            | 3446 ms | 8.4 MB |
+
+**Three and a half seconds for something nobody can see until nightfall.** The
+atlas is two million texels and each one is three fbm fields, a dust lookup and
+a dozen exponentials -- 1.7 us a texel, and no way to make it cheap that does
+not also make it look like something else.
+
+So the split is by what has to be ready and when. The dust and the bearing are
+the main thread's 93 ms, because the flight asks for the core's bearing on its
+first step and cannot wait. The atlas is baked in a worker, and the texture is
+allocated at full size and zero so the material is built once and the bake is a
+fill rather than a new texture: **an empty atlas is simply no galaxy**. Measured
+in the browser, it arrives 2.1 s after the page is already flying, and the start
+timings are untouched.
+
+The worker regrows the dust rather than being handed it -- 49 ms against a
+transfer of 8.4 MB, and it leaves the main thread holding nothing it has no use
+for. The field is deterministic (a fixed seed inside it), so the two agree.
+
+### One bearing, not two
+
+`SkyPulls.GALAXY_HEADING` was 0.95, guessed from the core longitude written in
+the original. The bake's own answer is **1.0002** -- three degrees out, which
+is the flight turning toward where the core nearly is, once a night, forever.
+It is the measured number now and a unit test asks the bake for it again, so a
+galaxy that moves fails a test rather than leaving a stale heading behind.

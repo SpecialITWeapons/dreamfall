@@ -28,6 +28,7 @@ import { createCloudSea } from './sky/CloudSea';
 import { createClouds } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
+import { createMilkyWay } from './sky/MilkyWay';
 import { createSkyDome } from './sky/SkyDome';
 import { createSkyUniforms } from './sky/SkyUniforms';
 import { windFromSeed, type Wind } from './sky/Wind';
@@ -78,6 +79,8 @@ export interface World {
   readonly atmosphere: Atmosphere;
   readonly post: Post;
   readonly wind: Wind;
+  /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
+  readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
   reducedMotion: boolean;
   /** Bakes and plants the scenery; idempotent, and already done unless deferScenery was set. */
@@ -113,6 +116,11 @@ export function createWorld(opts: WorldOptions): World {
   const resume = opts.resume ?? null;
   // The window fills around the start before the flight reads the ground (about 300 ms, behind the veil).
   heightfield.fillAll(Math.round((resume?.x ?? 0) / CELL), Math.round((resume?.z ?? 0) / CELL));
+  // Before the simulation, because the flight asks for the core's bearing on its
+  // first step. The dust and that bearing are 93 ms here; the light atlas is
+  // forty times dearer and is baked off the main thread, so the start pays
+  // nothing for a sky nobody can see until nightfall.
+  const galaxy = createMilkyWay();
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
@@ -149,7 +157,7 @@ export function createWorld(opts: WorldOptions): World {
   scene.add(terrain.mesh);
   const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
   scene.add(water.mesh);
-  const skyDome = createSkyDome(uniforms, horizon);
+  const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
   scene.add(skyDome.mesh);
   const clouds = createClouds(opts.seed, uniforms);
   scene.add(clouds.mesh);
@@ -281,6 +289,9 @@ export function createWorld(opts: WorldOptions): World {
     atmosphere,
     post,
     wind,
+    get galaxy() {
+      return { baked: galaxy.baked, bakeMs: galaxy.bakeMs };
+    },
     get reducedMotion() {
       return reducedMotion;
     },
@@ -310,6 +321,7 @@ export function createWorld(opts: WorldOptions): World {
       terrain.dispose();
       water.dispose();
       skyDome.dispose();
+      galaxy.dispose();
       clouds.dispose();
       cloudSea.dispose();
       avatar.dispose();

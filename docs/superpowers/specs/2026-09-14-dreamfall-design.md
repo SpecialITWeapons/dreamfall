@@ -809,7 +809,10 @@ wersją.
 5. **M4 Osady.** Stanowiska z planem oddzielonym od geometrii, `RoadKit`,
    `StructureKit`, generator z parametrami wioski i miasteczka, przeszkody.
    Wynik: pierwsza osada znaleziona w locie.
-6. **M5 Dopieszczenie.** Porty Drogi Mlecznej i śniegu, otwarcie z kartą
+6. **M5 Dopieszczenie.** Porty Drogi Mlecznej (**zrobione 2026-09-17**: pole
+   pyłu i światło gwiazd rosną proceduralnie w `sky/GalaxyMatter.ts`, atlas
+   piecze się w wątku roboczym, bo to 3,5 s, a `GALAXY_HEADING` jest odczytem z
+   pieczenia, nie zgadywanką — było o trzy stopnie obok) i śniegu, otwarcie z kartą
    tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
    przegląd wydajności.
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,

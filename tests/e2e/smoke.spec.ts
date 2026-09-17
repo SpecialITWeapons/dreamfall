@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { MIN_CLEARANCE } from '../../src/engine/flight/FlightController';
+import { GALAXY_HEADING } from '../../src/engine/flight/SkyPulls';
 import { ORBIT } from '../../src/engine/flight/Steering';
 import type { WorldDebug } from '../../src/page/Debug';
 
@@ -179,6 +180,52 @@ test('the day turns: the sky is bright at noon and dark at midnight, and the sun
   expect(midnight!.mean).toBeLessThan(noon!.mean * 0.2);
   // the day clock ran: after the pause the phase is what we set
   expect(await page.evaluate(() => window.__world!.dayPhase)).toBeCloseTo(0.0, 3);
+  expect(errors).toEqual([]);
+});
+
+test('the Milky Way bakes off the main thread and lights the sky toward its core', async ({ page }) => {
+  test.slow();
+  const errors = await openWorld(page, 'seed=42&webgl=1');
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  // The atlas is two million texels of procedural matter and takes seconds. It
+  // is baked in a worker precisely so the start does not wait for it, so what
+  // this asserts is that the start did not: the page was ready and flying
+  // before any of this, and the galaxy arrives afterwards.
+  await expect.poll(() => page.evaluate(() => window.__world!.galaxy.baked), { timeout: 180_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.galaxy.bakeMs)).toBeGreaterThan(0);
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
+
+  /** Mean luminance of the sky above the horizon, at midnight, on a heading. */
+  const sky = (heading: number) =>
+    page.evaluate(async (h) => {
+      const w = window.__world!;
+      w.setAutopilot(false);
+      w.state.heading = h;
+      w.dayPhase = 0.0;
+      const shot = await w.capture(96, 54);
+      if (!shot) return null;
+      let sum = 0,
+        n = 0;
+      for (let y = 0; y < 18; y++)
+        for (let x = 0; x < 96; x++) {
+          const i = (y * 96 + x) * 4;
+          sum += shot.data[i]! * 0.2126 + shot.data[i + 1]! * 0.7152 + shot.data[i + 2]! * 0.0722;
+          n++;
+        }
+      return sum / n;
+    }, heading);
+
+  // The core is the brightest thing in a moonless sky, the far side of the
+  // galaxy is a fainter band, and square to both there is only the disc's glow.
+  // Measured at 0.049, 0.028 and 0.022; the margins are wide because this is a
+  // software rasteriser and a tone curve, not a photometer.
+  const core = await sky(GALAXY_HEADING);
+  const away = await sky(GALAXY_HEADING + Math.PI);
+  const across = await sky(GALAXY_HEADING + Math.PI / 2);
+  expect(core).toBeGreaterThan(away! * 1.4);
+  expect(away).toBeGreaterThan(across! * 1.1);
   expect(errors).toEqual([]);
 });
 

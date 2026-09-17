@@ -34,7 +34,8 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`) import neither `three/webgpu`, `three/tsl` nor
+  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`) import neither
+  `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
   checked by Playwright on WebGL2.
@@ -90,6 +91,16 @@ subdirectory.
   directional light changes direction only at zero intensity.
 - The sky dome draws last among the opaque objects (`renderOrder 1`), writes
   no depth, and rides on the camera.
+- The Milky Way is grown, not downloaded: `sky/GalaxyMatter.ts` is the whole of
+  its shape -- a branching dust field and the stellar light behind it, in
+  galactic coordinates, pure CPU and tested in Node. `sky/MilkyWay.ts` bakes
+  that into an atlas and hands the dome a `galaxy` hook. **The bake is two
+  million texels and 3.5 s, so it runs in a worker** and the atlas is allocated
+  empty and filled when it arrives: an empty atlas is simply no galaxy, and the
+  start pays nothing for a sky nobody sees until nightfall. The core's bearing
+  is the other half -- 93 ms on the main thread, because the flight asks for it
+  on its first step -- and `GALAXY_HEADING` is that bearing with a unit test
+  asking the bake for it again, so there is one of it and not two.
 - Only the scene pass is multisampled; everything past tone mapping is
   eight-bit; `capture` renders before the display chain. It renders straight to
   its own target, so the scene compiles a second time for that configuration:
