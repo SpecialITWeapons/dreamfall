@@ -105,8 +105,12 @@ const POSES = {
   box: {
     upper: (side) => dir(side * 0.78, -0.08, 0.62),
     fore: (side) => dir(side * -0.46, 0.16, 0.87),
-    thigh: (side) => dir(side * 0.3, -0.06, -0.95),
-    shin: (side) => dir(side * 0.12, 0.8, -0.58),
+    // The thighs used to splay 0.30, which is 17 degrees off the body's own
+    // line: on a torso 41 cm wide that is two legs inside one silhouette, and
+    // from underneath the figure had a tail rather than knees. A box position
+    // holds the knees a good deal wider than the hips.
+    thigh: (side) => dir(side * 0.46, -0.06, -0.89),
+    shin: (side) => dir(side * 0.16, 0.84, -0.52),
     foot: (side) => dir(side * 0.05, 0.42, -0.9),
   },
   /** Halfway: arms swept back but still out, elbows still bent, knees half open. */
@@ -448,33 +452,46 @@ export function createProceduralHuman(
   const parts: Chain[] = [
     // The spine, from the tail to the neck. Wider than it is thick, because a
     // chest is, and a tube that is not says "pipe" from the first glance.
-    chain(['body', 'body', 'body', 'body', 'neck'], {
+    chain(['body', 'body', 'body', 'body', 'neck', 'neck'], {
       // The spine's bones sit on top of each other -- nothing along it turns
       // yet -- so its stops are written here rather than read off the skeleton.
       // The day a back arches, these become bones and this line goes.
+      //
+      // The last segment is a neck, and it climbs. A jumper on his belly holds
+      // his chin up; without that segment the head left the shoulders along the
+      // spine's own line, and a photograph from underneath showed what that is:
+      // a ball resting on the chest, with no neck anywhere in the silhouette.
       joints: [
         new Vector3(0, -0.02, -0.5),
         new Vector3(0, -0.02, -0.32),
         new Vector3(0, 0, -0.02),
         new Vector3(0, 0.02, 0.2),
-        new Vector3(0, 0.02, 0.34),
+        new Vector3(0, 0.02, 0.32),
+        new Vector3(0, 0.05, 0.375),
       ],
-      // Widest across the chest and narrower at the belly, which is the way
-      // round a person is. The first draft peaked at 0.5 -- the middle of the
-      // back -- and the photograph showed it: a paunch with shoulders sloping
-      // away from it.
+      // Widest across the shoulders, a waist under it, and the hips wider than
+      // the waist -- which is the way round a person is. Two photographs paid
+      // for these numbers. The first draft peaked at 0.5, the middle of the
+      // back, and read as a paunch with the shoulders sloping away from it. The
+      // second peaked in the right place and was simply too big everywhere:
+      // 51 cm across the ribs and 41 at the waist, so the arms entered a slab
+      // and the thighs never came out of one. A man is about 33 cm across the
+      // chest and 27 at the waist, and `flatten` has to hold the depth up with
+      // it -- at 1.45 a chest that measured right across was 15 cm thick, which
+      // is a plank. These stops are in metres of half-width before `flatten`.
       profile: ramp([
-        [0, 0.085],
-        [0.16, 0.145],
-        [0.45, 0.138],
-        [0.74, 0.178],
-        [0.88, 0.163],
-        [1, 0.085],
+        [0, 0.072],
+        [0.2, 0.128],
+        [0.54, 0.11],
+        [0.8, 0.142],
+        [0.845, 0.148],
+        [0.93, 0.082],
+        [1, 0.055],
       ]),
       swatch: () => 'suit',
       sides: 12,
       rings: 3,
-      flatten: 1.45,
+      flatten: 1.2,
       capStart: true,
       capEnd: false,
     }),
@@ -494,9 +511,13 @@ export function createProceduralHuman(
             [0.93, 0.056],
             [1, 0.024],
           ]),
+          // The trim used to start halfway down the arm, and the outfit's trim
+          // is a tan: from underneath that reads as a bare forearm ending in a
+          // black mitten. It is a cuff now -- two rings of it, which is what
+          // the arm's ring spacing offers between 0.8 and 0.9.
           swatch: bands([
-            [0.45, 'suit'],
-            [0.85, 'trim'],
+            [0.8, 'suit'],
+            [0.9, 'trim'],
             [1, 'gloves'],
           ]),
           sides: 8,
@@ -536,13 +557,19 @@ export function createProceduralHuman(
    */
   const skull: Chain = {
     bones: ['neck', 'neck', 'neck'],
-    joints: [new Vector3(0, 0.02, 0.3), new Vector3(0, 0.03, 0.42), new Vector3(0, 0.01, 0.58)],
+    // On the neck's line, continuing up: the back of the skull overlaps the
+    // neck's open end, so the two surfaces meet inside the body rather than at
+    // a seam. It used to run flat along the spine from 0.30 to 0.58 and measured
+    // 25 x 24 x 42 cm -- a head as long as a forearm, which made the figure five
+    // heads tall where a person is seven and a half. A helmet is about
+    // 17 x 24 x 26.
+    joints: [new Vector3(0, 0.055, 0.325), new Vector3(0, 0.1, 0.4), new Vector3(0, 0.125, 0.475)],
     profile: ramp([
-      [0, 0.075],
-      [0.3, 0.122],
-      [0.55, 0.128],
-      [0.8, 0.115],
-      [1, 0.062],
+      [0, 0.052],
+      [0.3, 0.082],
+      [0.55, 0.085],
+      [0.8, 0.076],
+      [1, 0.042],
     ]),
     // A band is only a band if a ring lands in it. At three rings a segment the
     // head's fall at 0, 0.107, 0.321, 0.428, 0.571, 0.857 and 1 -- and the
@@ -615,7 +642,7 @@ export function createProceduralHuman(
   const want: Record<Slot, number> = { box: 1, delta: 0, track: 0, climb: 0, turnIn: 0, turnOut: 0 };
   let time = 0;
   let view: FlightPose['view'] | null = null;
-  const eye = new Vector3(0, -0.03, 0.56);
+  const eye = new Vector3(0, 0.075, 0.5);
   return {
     object,
     eye,
