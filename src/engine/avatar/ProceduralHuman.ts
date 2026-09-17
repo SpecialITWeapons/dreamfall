@@ -1,31 +1,40 @@
-// The first figure: a skydiver's arch from ellipsoids and capsules with
-// vertex colors on the world's lit material, hinged at the shoulders,
-// elbows, hips, knees and ankles. The rest pose is the box position a belly-
-// to-earth jumper holds: upper arms out and forward, elbows squared, thighs
-// spread back, knees folded so the feet ride above the hips, toes pointed.
-// The hinges flutter with the wind and a slow noise, a gust is a burst of
-// stronger flutter, the inner arm drops in a turn, and the climb angle sweeps
-// the arms: back into a track in a dive, forward and wide in a climb.
-// Nothing here is a skeleton: the Avatar interface lets a skinned model
-// replace it without touching the engine. Budget: 4 000 triangles.
+// The figure: a skydiver's arch as one continuous skin over a skeleton of
+// sixteen bones, with vertex colors on the world's lit material. The rest pose
+// is the box position a belly-to-earth jumper holds: upper arms out and
+// forward, elbows squared, thighs spread back, knees folded so the feet ride
+// above the hips, toes pointed. The joints flutter with the wind and a slow
+// noise, a gust is a burst of stronger flutter, the inner arm drops in a turn,
+// and the climb angle sweeps the arms: back into a track in a dive, forward and
+// wide in a climb.
+//
+// What this file owns is the skeleton, the pose and the numbers a body is made
+// of -- the profiles below are the whole of what the figure looks like.
+// Sweeping a surface along them is `Skin.ts`, which knows nothing about people.
+// This used to be twenty solids parented to one another, and every shoulder
+// sweep opened a seam between two of them that no pose could close; the
+// Avatar interface was written so that this swap would not touch the engine,
+// and it did not. Budget: 4 000 triangles.
 import {
-  CapsuleGeometry,
+  Bone,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   Float32BufferAttribute,
   Group,
-  Mesh,
+  Skeleton,
+  SkinnedMesh,
+  Uint16BufferAttribute,
   Quaternion,
-  SphereGeometry,
   Vector3,
-  type BufferGeometry,
+  type Mesh,
   type Object3D,
 } from 'three';
 import { vertexColor } from 'three/tsl';
-import { FPP } from '../flight/ChaseCamera';
 import { SPEED } from '../flight/FlightController';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
+import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
 import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern } from './Outfits';
 
 export const HUMAN_TRIANGLE_BUDGET = 4000;
@@ -164,45 +173,29 @@ const settle = (s: Spring, target: number, omega: number, zeta: number, dt: numb
 const IDENTITY = new Quaternion();
 
 /**
- * Half the first person's field, as an angle from the eye's own axis. It is the
- * camera's vertical half-field and it is used for both axes, which is
- * deliberately conservative: a wide window sees further sideways than this and
- * will hide a hand it could have shown, and that is the safe direction to be
- * wrong in. Being wrong the other way is what the owner saw -- two black shapes
- * in the top corners, which were the forearms, measured at 71.6 degrees off the
- * axis of a frame whose half is 37.5.
+ * A profile: half-width along a chain, given as stops and read between them.
+ * This is the shape of the body and it is deliberately data -- a waist, a
+ * shoulder, a calf and an ankle are four numbers here, and were four solids
+ * before.
  */
-const FPP_HALF = (FPP.fov / 2) * (Math.PI / 180);
-
-/** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
-function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
-  const color = new Color(hex);
-  const count = geometry.getAttribute('position').count;
-  const existing = geometry.getAttribute('color');
-  const colors = existing ? (existing.array as Float32Array) : new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
-  }
-  if (existing) existing.needsUpdate = true;
-  else geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-  return geometry;
-}
-function ellipsoid(rx: number, ry: number, rz: number, segments = 16, rings = 10): BufferGeometry {
-  const g = new SphereGeometry(1, segments, rings);
-  g.scale(rx, ry, rz);
-  return g;
-}
-/** A limb from its joint at the origin along +y; the far joint sits at y = length. */
-function limb(radius: number, length: number): BufferGeometry {
-  const g = new CapsuleGeometry(radius, length, 4, 8);
-  g.translate(0, length / 2, 0);
-  return g;
-}
+const ramp =
+  (stops: Array<[number, number]>) =>
+  (t: number): number => {
+    for (let i = 1; i < stops.length; i++) {
+      const [ta, ra] = stops[i - 1]!,
+        [tb, rb] = stops[i]!;
+      if (t <= tb) return ra + ((rb - ra) * Math.min(Math.max(t - ta, 0), tb - ta)) / (tb - ta || 1);
+    }
+    return stops[stops.length - 1]![1];
+  };
+/** A swatch by distance along a chain: the first stop whose end is past t. */
+const bands =
+  (stops: Array<[number, string]>) =>
+  (t: number): string =>
+    stops.find(([end]) => t <= end)?.[1] ?? stops[stops.length - 1]![1];
 
 interface Hinge {
-  pivot: Group;
+  pivot: Bone;
   rest: Quaternion;
   /** Where a full dive takes this joint, when it has somewhere else to be. */
   track?: Quaternion;
@@ -220,62 +213,33 @@ interface Hinge {
 
 export function createProceduralHuman(
   litMaterial: LitMaterial,
-  opts: { fppHands?: boolean; outfit?: Outfit; pattern?: Pattern } = {},
+  opts: { outfit?: Outfit; pattern?: Pattern } = {},
 ): ProceduralHuman {
-  const fppHands = opts.fppHands ?? true;
   let outfit = opts.outfit ?? DEFAULT_OUTFIT;
   let pattern = opts.pattern ?? DEFAULT_PATTERN;
   const material = litMaterial(vertexColor().rgb);
-  const meshes: Mesh[] = [];
-  const bySwatch: Record<Swatch, Mesh[]> = {
-    suit: [],
-    trim: [],
-    helmet: [],
-    goggles: [],
-    boots: [],
-    gloves: [],
-    skin: [],
-  };
-  /** What the eye is inside of: never shown in the first person, whatever the frame says. */
-  const inside = new Set<Mesh>();
-  let triangles = 0;
-  const part = (
-    name: string,
-    geometry: BufferGeometry,
-    swatch: Swatch,
-    parent: Object3D,
-    x = 0,
-    y = 0,
-    z = 0,
-  ) => {
-    const mesh = new Mesh(paint(geometry, outfit[swatch]), material);
-    mesh.name = name;
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    parent.add(mesh);
-    meshes.push(mesh);
-    bySwatch[swatch].push(mesh);
-    triangles += (geometry.index ? geometry.index.count : geometry.getAttribute('position').count) / 3;
-    return mesh;
+  /** Every bone, in the order the skeleton keeps them; the skin indexes into this. */
+  const bones: Bone[] = [];
+  const boneIndex = (name: string) => {
+    const at = bones.findIndex((b) => b.name === name);
+    if (at < 0) throw new Error(`the skin asks for a bone called ${name}, and there is none`);
+    return at;
   };
   const object = new Group();
   object.name = 'human';
   object.rotation.order = 'YXZ';
-  const body = new Group();
+  const body = new Bone();
+  body.name = 'body';
+  bones.push(body);
   object.add(body);
-  part('torso', ellipsoid(TORSO.rx, TORSO.ry, TORSO.rz), 'suit', body, TORSO.at.x, TORSO.at.y, TORSO.at.z);
-  part('pelvis', ellipsoid(0.18, 0.12, 0.16), 'suit', body, 0, -0.01, -0.3);
-  const head = new Group();
-  head.position.set(0, 0.02, 0.42);
-  body.add(head);
-  // The helmet is a shell over the skull and the back of the head, sized so the
-  // face stays outside it; the goggles are a band wider than the shell and the
-  // peak sits proud above them, so from behind and from the side the head reads
-  // as a helmet rather than as one more ball.
-  inside.add(part('head', ellipsoid(0.105, 0.105, 0.105, 12, 8), 'skin', head, 0, -0.01, 0.055));
-  inside.add(part('helmet', ellipsoid(0.125, 0.115, 0.125), 'helmet', head, 0, 0.02, 0));
-  inside.add(part('visor', ellipsoid(0.113, 0.026, 0.05, 12, 8), 'helmet', head, 0, 0.062, 0.105));
-  inside.add(part('goggles', ellipsoid(0.115, 0.042, 0.075, 12, 8), 'goggles', head, 0, 0.005, 0.085));
+  // The neck carries the head and does not turn -- yet. It is a bone rather than
+  // a group so the head's skin has something to hang on, and so the day the
+  // head looks where the flight is going is a day this file changes one number.
+  const neck = new Bone();
+  neck.name = 'neck';
+  neck.position.set(0, 0.02, 0.34);
+  bones.push(neck);
+  body.add(neck);
   const hinges: Hinge[] = [];
   const hinge = (
     kind: Hinge['kind'],
@@ -295,11 +259,12 @@ export function createProceduralHuman(
           return above ? above.world.clone().invert().multiply(w) : w;
         })()
       : undefined;
-    const pivot = new Group();
+    const pivot = new Bone();
     pivot.name = name;
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
+    bones.push(pivot);
     const spring = (): Spring => ({ x: 0, v: 0 });
     const h: Hinge = {
       pivot,
@@ -328,13 +293,6 @@ export function createProceduralHuman(
       side,
       trackDir(side),
     );
-    // The cap rides on the joint, so it turns with the arm as a deltoid does
-    // and closes the seam at every sweep rather than only at rest.
-    // The whole arm is what the first person keeps: a forearm on its own hangs
-    // in the air with nothing joining it to the viewer, and the cap is what
-    // makes the shoulder end of it something rather than a cut.
-    part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot);
-    part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot);
     const elbow = hinge(
       'elbow',
       `elbow${s}`,
@@ -344,12 +302,16 @@ export function createProceduralHuman(
       shoulder,
       side,
     );
-    part('forearm', limb(FORE.r, FORE.len), 'trim', elbow.pivot);
-    part('hand', ellipsoid(0.045, 0.09, 0.03, 12, 8), 'gloves', elbow.pivot, 0, FORE.len + 0.05, 0);
+    // The wrist and the toe never turn; they are here because a chain of skin
+    // needs a bone at the end of it to hang the last ring on, and because a
+    // hand that follows the forearm is a hand rather than a paddle.
+    const wrist = new Bone();
+    wrist.name = `wrist${s}`;
+    wrist.position.set(0, FORE.len, 0);
+    bones.push(wrist);
+    elbow.pivot.add(wrist);
     const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), thighDir(side), null, side);
-    part('thigh', limb(THIGH.r, THIGH.len), 'suit', hip.pivot);
     const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
-    part('shin', limb(SHIN.r, SHIN.len), 'suit', knee.pivot);
     // The foot breaks 29 degrees away from the shin at the ankle: without a
     // hinge of its own a boot on the shin's axis is only a thicker shin, which
     // is what the figure had.
@@ -362,40 +324,212 @@ export function createProceduralHuman(
       knee,
       side,
     );
-    part('boot', ellipsoid(FOOT.rx, FOOT.ry, FOOT.rz, 12, 8), 'boots', ankle.pivot, 0, FOOT.ry * 0.8, 0);
+    const toe = new Bone();
+    toe.name = `toe${s}`;
+    toe.position.set(0, FOOT.ry * 1.6, 0);
+    bones.push(toe);
+    ankle.pivot.add(toe);
   }
+
+  // The rest pose is what the skin is cut for, so the chains are read off the
+  // skeleton rather than written down a second time: a joint that moved in the
+  // pose above moves the skin with it, with nothing to keep in step by hand.
+  object.updateMatrixWorld(true);
+  const at = (name: string) => object.getObjectByName(name)!.getWorldPosition(new Vector3());
+  /** Where the hand ends: a little past the wrist, along the forearm it hangs on. */
+  const handAt = (side: 1 | -1) => {
+    const s = side > 0 ? 'L' : 'R';
+    const wrist = at(`wrist${s}`);
+    return wrist.clone().addScaledVector(
+      wrist
+        .clone()
+        .sub(at(`elbow${s}`))
+        .normalize(),
+      0.11,
+    );
+  };
+  const chain = (names: string[], rest: Omit<Chain, 'bones' | 'joints'> & { joints?: Vector3[] }): Chain => ({
+    ...rest,
+    bones: names,
+    joints: rest.joints ?? names.map(at),
+  });
+  /**
+   * The body, as four shapes and a head. Every number in the profiles is a
+   * half-width in metres at that share of the chain's length, and this is the
+   * whole of what the figure looks like -- the waist, the shoulder, the calf and
+   * the ankle used to be four solids and are now four stops on a curve.
+   */
+  const parts: Chain[] = [
+    // The spine, from the tail to the neck. Wider than it is thick, because a
+    // chest is, and a tube that is not says "pipe" from the first glance.
+    chain(['body', 'body', 'body', 'body', 'neck'], {
+      // The spine's bones sit on top of each other -- nothing along it turns
+      // yet -- so its stops are written here rather than read off the skeleton.
+      // The day a back arches, these become bones and this line goes.
+      joints: [
+        new Vector3(0, -0.02, -0.5),
+        new Vector3(0, -0.02, -0.32),
+        new Vector3(0, 0, -0.02),
+        new Vector3(0, 0.02, 0.2),
+        new Vector3(0, 0.02, 0.34),
+      ],
+      // Widest across the chest and narrower at the belly, which is the way
+      // round a person is. The first draft peaked at 0.5 -- the middle of the
+      // back -- and the photograph showed it: a paunch with shoulders sloping
+      // away from it.
+      profile: ramp([
+        [0, 0.085],
+        [0.16, 0.145],
+        [0.45, 0.138],
+        [0.74, 0.178],
+        [0.88, 0.163],
+        [1, 0.085],
+      ]),
+      swatch: () => 'suit',
+      sides: 12,
+      rings: 3,
+      flatten: 1.45,
+      capStart: true,
+      capEnd: false,
+    }),
+    ...([1, -1] as const).flatMap((side) => {
+      const s = side > 0 ? 'L' : 'R';
+      return [
+        // The arm: a deltoid at the shoulder, a taper to the wrist, a glove.
+        chain([`shoulder${s}`, `elbow${s}`, `wrist${s}`, `wrist${s}`], {
+          // The last stop reaches past the wrist: that is the hand.
+          joints: [at(`shoulder${s}`), at(`elbow${s}`), at(`wrist${s}`), handAt(side)],
+          profile: ramp([
+            [0, 0.092],
+            [0.16, 0.064],
+            [0.45, 0.055],
+            [0.7, 0.048],
+            [0.85, 0.046],
+            [0.93, 0.056],
+            [1, 0.024],
+          ]),
+          swatch: bands([
+            [0.45, 'suit'],
+            [0.85, 'trim'],
+            [1, 'gloves'],
+          ]),
+          sides: 8,
+          rings: 3,
+          capStart: true,
+          capEnd: true,
+        }),
+        // The leg: a thigh, a knee, a calf and a boot.
+        chain([`hip${s}`, `knee${s}`, `ankle${s}`, `toe${s}`], {
+          profile: ramp([
+            [0, 0.09],
+            [0.2, 0.077],
+            [0.42, 0.061],
+            [0.62, 0.052],
+            [0.82, 0.045],
+            [0.92, 0.058],
+            [1, 0.03],
+          ]),
+          swatch: bands([
+            [0.82, 'suit'],
+            [1, 'boots'],
+          ]),
+          sides: 8,
+          rings: 3,
+          flatten: 0.85,
+          capStart: true,
+          capEnd: true,
+        }),
+      ];
+    }),
+  ];
+  /**
+   * The head is its own surface on the same skeleton, and that is what lets the
+   * first person hide it: with one skin there is no "hide the head", only "hide
+   * the figure". Its bands are the helmet, the goggles and the face, in the
+   * order an eye meets them going forward.
+   */
+  const skull: Chain = {
+    bones: ['neck', 'neck', 'neck'],
+    joints: [new Vector3(0, 0.02, 0.3), new Vector3(0, 0.03, 0.42), new Vector3(0, 0.01, 0.58)],
+    profile: ramp([
+      [0, 0.075],
+      [0.3, 0.122],
+      [0.55, 0.128],
+      [0.8, 0.115],
+      [1, 0.062],
+    ]),
+    // A band is only a band if a ring lands in it. At three rings a segment the
+    // head's fall at 0, 0.107, 0.321, 0.428, 0.571, 0.857 and 1 -- and the
+    // goggles, written as 0.58 to 0.8, caught none of them: the figure flew
+    // about in a plain cream egg and nobody could see why. Four rings put two
+    // in the visor, and the stops are written against the rings rather than
+    // against a picture of a head.
+    swatch: bands([
+      [0.46, 'helmet'],
+      [0.8, 'goggles'],
+      [1, 'skin'],
+    ]),
+    sides: 10,
+    rings: 4,
+    capStart: true,
+    capEnd: true,
+  };
+
+  const skeleton = new Skeleton(bones);
+  const skinned = (skin: Skin, name: string): Mesh => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(skin.position, 3));
+    geometry.setAttribute('normal', new Float32BufferAttribute(skin.normal, 3));
+    geometry.setAttribute('color', new Float32BufferAttribute(skin.color, 3));
+    geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skin.skinIndex, 4));
+    geometry.setAttribute('skinWeight', new Float32BufferAttribute(skin.skinWeight, 4));
+    geometry.setIndex(new BufferAttribute(skin.index, 1));
+    geometry.computeBoundingSphere();
+    const mesh = new SkinnedMesh(geometry, material);
+    mesh.name = name;
+    mesh.castShadow = true;
+    // A skinned mesh's bounding sphere is the rest pose's, and this figure's
+    // rest pose is an arch: culled against it, an arm in a track leaves the
+    // sphere and the whole body blinks out. One object, so this costs nothing.
+    mesh.frustumCulled = false;
+    object.add(mesh);
+    mesh.bind(skeleton);
+    return mesh;
+  };
+  const bodySkin = mergeSkins(parts.map((c) => buildChain(c, boneIndex)));
+  const headSkin = buildChain(skull, boneIndex);
+  const skins = [bodySkin, headSkin];
+  const meshes = [skinned(bodySkin, 'skin'), skinned(headSkin, 'skull')];
+  const triangles = skins.reduce((n, skin) => n + skin.index.length / 3, 0);
+  /**
+   * Repaint: one walk of the vertices, writing the swatch each one belongs to
+   * and the shade the generator baked into it. A swatch used to be a mesh, so a
+   * repaint was seven buffers; it is a range of vertices now, and it is still
+   * one upload per surface rather than a new buffer.
+   */
+  const repaint = () => {
+    const tint = new Color();
+    for (const [i, skin] of skins.entries()) {
+      const attribute = meshes[i]!.geometry.getAttribute('color');
+      const colors = attribute.array as Float32Array;
+      for (let v = 0; v < skin.swatch.length; v++) {
+        tint.set(outfit[skin.swatch[v]! as Swatch]);
+        const shade = skin.shade[v]!;
+        colors[v * 3] = tint.r * shade;
+        colors[v * 3 + 1] = tint.g * shade;
+        colors[v * 3 + 2] = tint.b * shade;
+      }
+      attribute.needsUpdate = true;
+    }
+  };
+  repaint();
+
   const qx = new Quaternion(),
     qy = new Quaternion(),
     qz = new Quaternion();
   let time = 0;
   let view: FlightPose['view'] | null = null;
   const eye = new Vector3(0, -0.03, 0.56);
-  const centre = new Vector3();
-  /**
-   * Is any of this part somewhere the eye could look? A sphere against a cone
-   * from the eye, plus the near plane. The sphere is the geometry's own, in the
-   * part's frame, carried into the figure's -- the figure is never scaled, so
-   * the radius carries unchanged.
-   *
-   * It is asked of the bounding sphere rather than of the vertices because the
-   * answer only has to be conservative: a part half in the frame is drawn
-   * whole, and a part whose sphere misses the cone has no vertex that could hit
-   * it.
-   */
-  const inFrame = (mesh: Mesh): boolean => {
-    const sphere = mesh.geometry.boundingSphere;
-    if (!sphere) return true;
-    mesh.updateWorldMatrix(true, false);
-    centre.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
-    object.worldToLocal(centre).sub(eye);
-    const r = sphere.radius;
-    if (centre.z + r <= FPP.near) return false; // all of it behind the eye
-    const distance = centre.length();
-    if (distance <= r) return true; // the eye is inside it
-    const off = Math.atan2(Math.hypot(centre.x, centre.y), centre.z);
-    return off - Math.asin(Math.min(1, r / distance)) < FPP_HALF;
-  };
-  for (const m of meshes) m.geometry.computeBoundingSphere();
   return {
     object,
     eye,
@@ -483,13 +617,19 @@ export function createProceduralHuman(
           .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back.x))
           .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing.x));
       }
-      // What the first person shows is not a list of names, it is whatever an
-      // eye could actually look at: past the near plane and inside the frame.
-      // A list is what was here, and it was wrong in a way a list cannot catch
-      // -- the parts on it were the parts in the corners. This is asked every
-      // frame because the answer moves with the arms.
-      view = pose.view;
-      for (const m of meshes) m.visible = view === 'tpp' || (fppHands && !inside.has(m) && inFrame(m));
+      // The first person draws none of the figure, and that is what being one
+      // surface costs. What was here before was a list of parts to keep, and
+      // the list was wrong: the parts on it -- the forearms -- were the two
+      // black shapes the owner saw in the top corners, out at 71.6 degrees off
+      // the axis of a frame whose half is 37.5. A skin cannot be culled part by
+      // part, so the choice is the whole body or none of it, and measured,
+      // none of this pose is inside the frame anyway. The day a pose brings the
+      // hands forward, the forearms become a chain of their own with a surface
+      // of their own, and then there is something to decide again.
+      if (pose.view !== view) {
+        view = pose.view;
+        for (const m of meshes) m.visible = view === 'tpp';
+      }
     },
     get outfit() {
       return outfit;
@@ -500,11 +640,11 @@ export function createProceduralHuman(
     setOutfit(next, nextPattern) {
       outfit = next;
       pattern = nextPattern;
-      for (const swatch of Object.keys(bySwatch) as Swatch[])
-        for (const m of bySwatch[swatch]) paint(m.geometry, outfit[swatch]);
+      repaint();
     },
     dispose() {
       for (const m of meshes) m.geometry.dispose();
+      skeleton.dispose();
       material.dispose();
     },
   };

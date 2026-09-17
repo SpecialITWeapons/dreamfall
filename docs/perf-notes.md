@@ -376,3 +376,48 @@ carries `buildingsRefused` from the last rebuild, counting both ways a lot can
 fail to stand: a pool at its ceiling and a shape nobody baked. Nine pools of
 2000 cost about 1.4 MB of instance data whether or not anything stands in them,
 which is the price of not having to find out the hard way.
+
+## The figure: one skin on sixteen bones
+
+The figure was twenty solids -- ellipsoids and capsules parented to one another,
+each with its own geometry and its own draw -- and is now two skinned surfaces on
+one skeleton. Measured in Node with the old module beside the new one, 20 000
+frames each after a warm-up:
+
+|                     | solids  | skin    |
+| ------------------- | ------- | ------- |
+| meshes (draws)      | 20      | 2       |
+| vertices            | 2334    | 577     |
+| triangles           | 3528    | 1120    |
+| bones               | 0       | 16      |
+| the pose arithmetic | 8.6 us  | 7.8 us  |
+| the whole frame     | 11.3 us | 11.4 us |
+
+"The whole frame" is what the renderer actually pays: the pose, then
+`updateMatrixWorld`, then -- for the skin only -- `Skeleton.update()`, which the
+solids did not have at all. It comes out level, and that is the result worth
+writing down: sixteen bone matrices and a bone-texture upload cost about what
+walking twenty meshes and their groups cost, so the skin is **a third of the
+geometry for the same microseconds**. On the page `__world.memory().geometries`
+falls from 67 to 49.
+
+A first pass at this measurement said the pose arithmetic had gone from 3.5 to
+21.8 us -- a six-fold regression, which would have been worth a paragraph of
+apology. Both halves of that were wrong. The 21.8 was two thousand unwarmed
+iterations measuring the JIT; warmed and repeated five times it is 7.8. And the
+3.5 was the figure's cost in the note of 2026-09-16, which is _before_ the joints
+became springs -- the same twenty solids, measured today, cost 8.6. Comparing a
+number to one taken from a different commit is how a rewrite gets blamed for the
+commit before it. A number taken once is not a measurement, and a number from
+somewhere else is not a baseline.
+
+The budget was 4 000 triangles and the note that planned the change guessed
+"well under half". It is under a third -- and none of the saving was the point.
+The point was the seam at the shoulder, which is gone. What the pictures cost
+was three tuning passes on the profiles, and one of those found a real fault: the
+goggles, written as the band from 0.58 to 0.80 of the head's length, caught no
+ring at all. A head of three rings a segment samples at 0, 0.107, 0.321, 0.428,
+0.571, 0.857 and 1, and nothing lands between 0.58 and 0.80 -- so the figure flew
+about in a plain cream egg and no test could see it, because every test asked
+about weights and manifolds and none asked what colour anything was. A band is
+only a band if a ring lands in it.

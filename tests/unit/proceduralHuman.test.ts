@@ -1,4 +1,4 @@
-import { Mesh, Vector3, type Object3D } from 'three';
+import { Color, Mesh, Vector3, type Object3D } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
@@ -88,12 +88,12 @@ describe('createProceduralHuman', () => {
   it('folds into a track in a dive: the arms come back along the body and straighten', () => {
     const human = createProceduralHuman(lit);
     human.update(pose(), 0);
-    const boxHand = inBody(human, 'hand');
+    const boxHand = inBody(human, 'wristL');
     const shoulder = inBody(human, 'shoulderL');
     const bend = (h: ReturnType<typeof createProceduralHuman>) => {
       const s = inBody(h, 'shoulderL'),
         e = inBody(h, 'elbowL'),
-        hand = inBody(h, 'hand');
+        hand = inBody(h, 'wristL');
       return e.clone().sub(s).angleTo(hand.clone().sub(e));
     };
     // in the box the hands are out in front, and the elbow is well bent
@@ -101,7 +101,7 @@ describe('createProceduralHuman', () => {
     expect(bend(human)).toBeGreaterThan(1.2);
 
     human.update(pose({ pitch: -0.5 }), 0); // full dive
-    const trackHand = inBody(human, 'hand');
+    const trackHand = inBody(human, 'wristL');
     // the hands come back past the shoulder, in toward the hips, and the arm
     // straightens, which together is what a track looks like
     expect(trackHand.z).toBeLessThan(shoulder.z);
@@ -109,7 +109,7 @@ describe('createProceduralHuman', () => {
     expect(bend(human)).toBeLessThan(0.7);
 
     human.update(pose({ pitch: 0.6 }), 0); // a climb spreads them again
-    expect(inBody(human, 'hand').z).toBeGreaterThan(boxHand.z);
+    expect(inBody(human, 'wristL').z).toBeGreaterThan(boxHand.z);
   });
 
   it('hangs the arms on the torso rather than beside it', () => {
@@ -130,14 +130,22 @@ describe('createProceduralHuman', () => {
   it('stays inside the triangle budget, casts shadows, and has an eye ahead of the chest', () => {
     const human = createProceduralHuman(lit);
     expect(human.triangles).toBeLessThanOrEqual(HUMAN_TRIANGLE_BUDGET);
-    expect(human.triangles).toBeGreaterThan(1500);
+    // Fewer than half the budget, and fewer than the twenty solids this
+    // replaced spent -- 3528 of them, on closing off shapes that then had to
+    // overlap each other to hide the seams. The floor is here so a profile
+    // sanded down to a stick fails rather than passes quietly.
+    expect(human.triangles).toBeGreaterThan(700);
+    expect(human.triangles).toBeLessThan(2000);
     expect(HUMAN_TRIANGLE_BUDGET).toBe(4000);
     expect(human.eye.z).toBeGreaterThan(0.4);
     expect(human.bounds).toEqual(HUMAN_BOUNDS);
     expect(HUMAN_BOUNDS.below).toBeGreaterThan(0);
     expect(HUMAN_BOUNDS.radius).toBeGreaterThan(0.8);
+    // One surface for the body and one for the head: the head is separate only
+    // so the first person can hide it, which "hide the mesh" cannot do to a
+    // figure that is one mesh.
     const all = meshes(human.object);
-    expect(all.length).toBe(20);
+    expect(all.length).toBe(2);
     expect(all.every((m) => m.castShadow)).toBe(true);
   });
   it('holds the box position: elbows and knees bent, hands ahead of the eye, feet above the back', () => {
@@ -152,7 +160,7 @@ describe('createProceduralHuman', () => {
     expect(elbow.x).toBeGreaterThan(shoulder.x + 0.15);
     expect(elbow.z).toBeGreaterThan(shoulder.z + 0.1);
     const upper = elbow.clone().sub(shoulder).normalize();
-    const hands = parts(human.object, 'hand');
+    const hands = [world(human.object, 'wristL'), world(human.object, 'wristR')];
     expect(hands.length).toBe(2);
     // both hands sit ahead of the eye, so the first-person view has something to show
     for (const hand of hands) {
@@ -173,9 +181,9 @@ describe('createProceduralHuman', () => {
     expect(kneeBend).toBeGreaterThan((55 * Math.PI) / 180);
     expect(kneeBend).toBeLessThan((100 * Math.PI) / 180);
     // the boots break away from the shin instead of continuing it
-    const boots = parts(human.object, 'boot');
-    expect(boots.length).toBe(2);
-    const foot = boots[0]!.clone().sub(ankle).normalize();
+    const toes = [world(human.object, 'toeL'), world(human.object, 'toeR')];
+    expect(toes.length).toBe(2);
+    const foot = toes[0]!.clone().sub(ankle).normalize();
     expect(Math.acos(Math.max(-1, Math.min(1, shin.dot(foot))))).toBeGreaterThan((20 * Math.PI) / 180);
   });
   it('sweeps the arms back in a dive and forward in a climb', () => {
@@ -274,17 +282,16 @@ describe('createProceduralHuman', () => {
     // Whatever is drawn is inside the frame, with the slack of a part that is
     // kept whole when its bounding sphere clips the cone.
     if (ahead > 0) expect(worst).toBeLessThan(HALF * 1.6);
-    // And in the box position there is nothing to draw, which is a measurement
-    // and not a choice: a belly-to-earth jumper's arms are out at shoulder
-    // height and 71.6 degrees off the axis of a frame whose half is 37.5, and
-    // everything else is behind the eye. What the owner was shown instead were
-    // those forearms, smeared across the top corners.
+    // Nothing is drawn, and that is two answers at once. The measurement: a
+    // belly-to-earth jumper's arms sit 71.6 degrees off the axis of a frame
+    // whose half is 37.5, and everything else is behind the eye, so there was
+    // never anything here to show. The consequence: the body is one surface
+    // now, and a surface cannot be culled part by part, so the choice is all of
+    // it or none. What the owner was shown before was those forearms, smeared
+    // across the top corners.
     expect(visible.length).toBe(0);
     human.update(pose({ view: 'tpp' }), 0.05);
     expect(meshes(human.object).every((m) => m.visible)).toBe(true);
-    const bare = createProceduralHuman(lit, { fppHands: false });
-    bare.update(pose({ view: 'fpp' }), 0.05);
-    expect(meshes(bare.object).some((m) => m.visible)).toBe(false);
   });
   it('feels the air it is flying through, which it used not to at all', () => {
     // `pose.speed` and `pose.vy` arrived every frame and were read nowhere.
@@ -341,14 +348,57 @@ describe('createProceduralHuman', () => {
   });
   it('recolors with an outfit and falls back to the default for an unknown id', () => {
     const human = createProceduralHuman(lit);
-    const torso = human.object.getObjectByName('torso') as Mesh;
-    const before = (torso.geometry.getAttribute('color').array as Float32Array)[0]!;
+    // One surface carries every swatch now, so a repaint is a walk of the
+    // vertices rather than seven buffers; the first vertex of the body is on
+    // the spine, which is suit.
+    const skin = human.object.getObjectByName('skin') as Mesh;
+    const before = (skin.geometry.getAttribute('color').array as Float32Array)[0]!;
     human.setOutfit({ ...DEFAULT_OUTFIT, id: 'test', suit: 0xff0000 }, DEFAULT_PATTERN);
-    const after = torso.geometry.getAttribute('color').array as Float32Array;
+    const after = skin.geometry.getAttribute('color').array as Float32Array;
     expect(after[0]).toBeCloseTo(1, 6);
     expect(after[1]).toBeCloseTo(0, 6);
     expect(after[0]).not.toBe(before);
     expect(outfitById('nope')).toBe(DEFAULT_OUTFIT);
+    human.dispose();
+  });
+  it('wears every colour the outfit names, because a band nothing lands in is not a band', () => {
+    // The goggles were written as the band from 0.58 to 0.80 of the head, and a
+    // head of three rings a segment samples at 0, 0.107, 0.321, 0.428, 0.571,
+    // 0.857 and 1: nothing landed in it, and the figure flew about in a plain
+    // cream egg. Every other test here asked about weights, manifolds and
+    // bounds, and not one of them asked what colour anything was.
+    const hues: Record<string, number> = {
+      suit: 0xff0000,
+      trim: 0x00ff00,
+      helmet: 0x0000ff,
+      goggles: 0xffff00,
+      boots: 0xff00ff,
+      gloves: 0x00ffff,
+      skin: 0x804020,
+    };
+    const human = createProceduralHuman(lit);
+    human.setOutfit({ ...DEFAULT_OUTFIT, id: 'hues', ...hues }, DEFAULT_PATTERN);
+    // A crease darkens a vertex, so what survives a repaint is the ratio, not
+    // the value: compare the direction of the colour and nothing else.
+    const direction = (r: number, g: number, b: number) => {
+      const length = Math.hypot(r, g, b) || 1;
+      return [r / length, g / length, b / length] as const;
+    };
+    const worn = new Set<string>();
+    human.object.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      const color = mesh.geometry.getAttribute('color');
+      for (let v = 0; v < color.count; v++) {
+        const [r, g, b] = direction(color.getX(v), color.getY(v), color.getZ(v));
+        for (const [key, hex] of Object.entries(hues)) {
+          const want = new Color(hex);
+          const [wr, wg, wb] = direction(want.r, want.g, want.b);
+          if (Math.hypot(r - wr, g - wg, b - wb) < 1e-3) worn.add(key);
+        }
+      }
+    });
+    expect([...worn].sort()).toEqual(Object.keys(hues).sort());
     human.dispose();
   });
 });

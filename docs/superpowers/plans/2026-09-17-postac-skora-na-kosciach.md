@@ -35,13 +35,13 @@ osobie w górnych rogach kadru wiszą dwa czarne kształty. To są ramiona, któ
 **środki leżą poza kadrem** (61°–145° przy kadrze 54°), a tułów — bezpiecznie za
 `near` — jest schowany.
 
-- [ ] **Step 1: Test, który nie przechodzi** — asercja przestaje być inwentarzem
+- [x] **Step 1: Test, który nie przechodzi** — asercja przestaje być inwentarzem
       nazw („osiem siatek o tych nazwach") i staje się **własnością**: żadna
       widoczna w FPP siatka nie ma środka bliżej oka niż `near`, i żadna nie
       leży poza kadrem. To przeżyje wariant B, lista nazw nie.
-- [ ] **Step 2:** Chować wyłącznie głowę (cztery siatki: `head`, `helmet`,
+- [x] **Step 2:** Chować wyłącznie głowę (cztery siatki: `head`, `helmet`,
       `visor`, `goggles`). Reszta ciała zostaje.
-- [ ] **Step 3: Zdjęcie z FPP**, commit.
+- [x] **Step 3: Zdjęcie z FPP**, commit.
 
 ---
 
@@ -57,16 +57,16 @@ Dwa fakty z kodu, które to ustawiają: **`pose.vy` i `pose.speed` nie są w
 przy nurkowaniu szum się wzmaga, a kombinezon łopocze tak samo. Oko i ucho mówią
 co innego.
 
-- [ ] **Step 1: Test, który nie przechodzi** — przy tej samej fazie wiatru i
+- [x] **Step 1: Test, który nie przechodzi** — przy tej samej fazie wiatru i
       tym samym podmuchu postać lecąca szybciej ma inne kąty stawów niż wolna;
       kończyny są spychane do tyłu tym mocniej, im szybciej leci.
-- [ ] **Step 2:** `speed` i `vy` wchodzą do łopotu (przez ciśnienie dynamiczne,
+- [x] **Step 2:** `speed` i `vy` wchodzą do łopotu (przez ciśnienie dynamiczne,
       tę samą liczbę, którą dźwięk nazywa `rush`) i do spychania kończyn.
-- [ ] **Step 3:** Filtr pierwszego rzędu → **sprężyna z tłumieniem**: dwa stany
+- [x] **Step 3:** Filtr pierwszego rzędu → **sprężyna z tłumieniem**: dwa stany
       zamiast jednego, więc kończyna wybiega za cel i wraca. Przy tłumieniu
       krytycznym zachowuje się jak dziś, więc to nadzbiór. `dt <= 0` skacze do
       celu **i zeruje prędkość** — o tym najłatwiej zapomnieć.
-- [ ] **Step 4: Testy i commit.**
+- [x] **Step 4: Testy i commit.**
 
 ---
 
@@ -99,15 +99,15 @@ Rzeczy do rozstrzygnięcia w trakcie i zapisania:
 - **Zacienienie stawów** z ciemniejszych kolorów wierzchołków przy pachach i
   pachwinach — przy jednej siatce trywialne, bo generator wie, gdzie jest staw.
 
-- [ ] **Step 1: Test, który nie przechodzi** — powłoka jest jedną powierzchnią
+- [x] **Step 1: Test, który nie przechodzi** — powłoka jest jedną powierzchnią
       bez dziur (każda krawędź należy do dwóch trójkątów albo do zaślepki),
       wagi każdego wierzchołka sumują się do jedynki, kości mają te same nazwy
       i te same kąty co dzisiejsze stawy.
-- [ ] **Step 2: Implementacja.**
-- [ ] **Step 3: POMIAR** — trójkąty, wierzchołki, rysunki i geometrie na
+- [x] **Step 2: Implementacja.**
+- [x] **Step 3: POMIAR** — trójkąty, wierzchołki, rysunki i geometrie na
       rendererze, przeciw dzisiejszym 3528 / 2334 / 20 / 51. Zapisać
       w `perf-notes.md` niezależnie od wyniku.
-- [ ] **Step 4: Zdjęcia** z TPP i FPP, i commit.
+- [x] **Step 4: Zdjęcia** z TPP i FPP, i commit.
 
 ---
 
@@ -127,11 +127,11 @@ osi (prędkość powietrzna, kąt lotu, tempo skrętu) zamiast z jednej.
 
 ### Task 5: Dokumentacja
 
-- [ ] `AGENTS.md`: wpis o postaci przestaje mówić „bryły", zaczyna mówić „skóra
+- [x] `AGENTS.md`: wpis o postaci przestaje mówić „bryły", zaczyna mówić „skóra
       na kościach"; co znaczy `dt <= 0` zostaje.
-- [ ] Specyfikacja: datowana poprawka, §2 i §17 wprost to przewidywały.
-- [ ] `perf-notes.md`: pomiar z Tasku 3.
-- [ ] Notatka `2026-09-16-postac-warianty.md` dostaje nagłówek „zrobione, co
+- [x] Specyfikacja: datowana poprawka, §2 i §17 wprost to przewidywały.
+- [x] `perf-notes.md`: pomiar z Tasku 3.
+- [x] Notatka `2026-09-16-postac-warianty.md` dostaje nagłówek „zrobione, co
       wyszło" — tak jak notatka o drzewach i trawie.
 
 ## Czego ten plan świadomie nie bierze
@@ -155,3 +155,35 @@ Czego się boję, w kolejności:
    czasowej 0,10 s to jest dokładnie ten zakres, w którym jawny Euler potrafi
    wybuchnąć. Całkowanie półjawne (najpierw prędkość, potem położenie) to
    zamyka, ale trzeba to napisać świadomie i przypiąć testem przy `dt = 0,2`.
+
+## Jak wyszło (2026-09-17)
+
+Trzy strachy z samoprzeglądu, po kolei, i co z nich zostało.
+
+1. **Kiełbasa — trafiony, i dlatego zdjęcie było krokiem.** Pierwsza wersja
+   profili miała tors najszerszy w połowie (0,185 m na `t = 0,5`, czyli na
+   środku pleców) i węższy w barkach. Na zdjęciu to jest brzuch, od którego
+   barki opadają. Drugie podejście: klatka 0,178 na `t = 0,74`, talia 0,138,
+   barki 0,163 — i sylwetka nagle jest sylwetką. Ręce w pierwszej wersji były
+   patykami (0,05 m półszerokości przy torsie 0,36 m szerokim); po zgrubieniu
+   o jakieś 10% czytają się jak ręce. Żadnej z tych dwóch rzeczy nie dało się
+   zobaczyć w Node.
+2. **`skinning` w materiale węzłowym — bez niespodzianki.** Działa dokładnie
+   tak, jak mówi źródło 0.185.1: `setupPosition` dokłada `skinning(object)`,
+   gdy `object.isSkinnedMesh`, i materiał świata nie wymagał ani jednej linii.
+3. **Sprężyna przy dużym `dt` — zamknięta podkrokiem**, tak jak planowano, i
+   przypięta testem.
+
+**Czwarta rzecz, której się nie bałem, a powinienem.** Pasmo gogli było
+zapisane jako 0,58–0,80 długości głowy. Głowa o trzech pierścieniach na
+segment próbkuje w 0; 0,107; 0,321; 0,428; 0,571; 0,857 i 1 — **w to pasmo nie
+trafia nic**. Postać latała w gładkim kremowym jajku i żaden z jedenastu testów
+tego nie widział, bo wszystkie pytały o wagi, rozmaitość i granice, a żaden nie
+zapytał, jakiego koloru cokolwiek jest. Naprawa to cztery pierścienie i stopy
+przepisane pod pierścienie, a nie pod wyobrażenie głowy; przy okazji doszedł
+dwunasty test, który pyta wyłącznie o kolory i który tę usterkę łapie.
+
+To jest ta sama lekcja, którą ten katalog zapisuje po raz piąty: **liczba,
+która wygląda na narzędzie do problemu, zwykle nim nie jest, dopóki się nie
+zmierzy.** Tu doszła jej bliźniaczka — *asercja, która wygląda na komplet,
+zwykle nim nie jest, dopóki się nie spojrzy.*

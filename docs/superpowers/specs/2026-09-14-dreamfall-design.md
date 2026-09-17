@@ -626,8 +626,19 @@ export interface Avatar {
 `ProceduralHuman`: tułów, miednica, głowa z kaskiem i goglami, ramiona i
 przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty
 80°), uda odchylone do tyłu, kolana zgięte 57°, stopy na własnym zawiasie
-kostki (bez niego but jest tylko grubszą łydką); elipsoidy i walce
-w kolorach wierzchołków, budżet 4 000 trójkątów mierzony walidatorem.
+kostki (bez niego but jest tylko grubszą łydką); w kolorach wierzchołków,
+budżet 4 000 trójkątów mierzony walidatorem.
+
+> **Poprawka 2026-09-17: skóra na kościach zamiast brył.** Spec mówił
+> „elipsoidy i walce”, i przez cztery commity naprawcze to było dwadzieścia
+> osobnych brył, które przenikają się na twardych granicach koloru. Szew w
+> barku był nie do usunięcia pozą, bo nie był kwestią pozy. Postać jest dziś
+> **jedną skórą na szkielecie szesnastu kości** (`Skin.ts` + `SkinnedMesh`),
+> nadal proceduralną i z tych samych liczb: 2 rysunki zamiast 20, 1 120
+> trójkątów zamiast 3 528, ten sam koszt CPU na klatkę (`docs/perf-notes.md`).
+> §2 i §17 przewidywały to wprost — interfejs `Avatar` był po to, żeby
+> podmiana nie dotknęła silnika, i nie dotknęła: materiał świata sam dokłada
+> `skinning(object)` dla siatki skinowanej.
 Zawiasy w barkach, łokciach, biodrach, kolanach i kostkach falują od `windPhase` i
 wolnego szumu; `bank` obraca ciało, `pitch` je unosi lub opuszcza; w skręcie
 ręka po wewnętrznej stronie schodzi niżej; kąt wznoszenia odchyla ręce (w

@@ -34,8 +34,8 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `sky/Wind.ts`) import neither `three/webgpu`, `three/tsl` nor the DOM; from
-  `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
+  `avatar/Skin.ts`, `sky/Wind.ts`) import neither `three/webgpu`, `three/tsl` nor
+  the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
   checked by Playwright on WebGL2.
 - The CPU height field is the sole source of truth for terrain; the GPU only
@@ -138,12 +138,22 @@ subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
-- The figure: the shoulder sits on the chest and the cap rides on the joint, so
-  the seam closes at every sweep; a dive is a second pose (`trackDir`) the
-  joints walk to, not a rotation of the first; every joint follows through a
-  first-order lag, longer the further it is from the chest, and `dt <= 0` means
-  "be there now", which is how the world places the figure before the first
-  frame.
+- The figure is **one skin on sixteen bones**, not a pile of solids: `Skin.ts`
+  is pure geometry (rings swept along a chain of joints, crowded where a joint
+  bends, weighted symmetrically across it) and is tested in Node;
+  `ProceduralHuman.ts` builds the `Bone` tree and two `SkinnedMesh`es -- the
+  body and the head, separate only so the first person can hide the figure
+  without hiding it part by part. The world's material needs no change:
+  `setupPosition` adds `skinning(object)` for a skinned mesh by itself.
+  Everything a chain looks like is its `profile` -- a half-width in metres at a
+  share of its length -- and its `swatch`, and **a swatch band is only a band if
+  a ring lands in it**: write the stops against the rings the chain samples at,
+  not against a picture of a body.
+- The figure's motion: a dive is a second pose (`trackDir`) the joints walk to,
+  not a rotation of the first; every joint is a spring-damper the air pushes,
+  substepped so `omega * h` stays under a half, slower the further it is from
+  the chest, and `dt <= 0` means "be there now" -- position and velocity both --
+  which is how the world places the figure before the first frame.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own
