@@ -12,10 +12,16 @@ import { defineStructure } from '../contract';
 // mill and the tower, and a town centre made of windmills is not a town centre.
 // It costs one more bake and one more pool -- a building is instanced whole, so
 // every count in `floors` is its own bake.
+//
+// Grown by about a third in 2026-09-17, from a photograph: against a wood whose
+// oaks stand forty to sixty metres, a five metre cottage read as a shed. One
+// storey is 6.4 m now and three are 13.2, which is a house under a tree rather
+// than a mushroom beside one. Lot depth and setback grew with it.
 export default defineStructure({
   id: 'cottage',
   name: 'cottage',
-  footprint: [7, 5.5],
+  footprint: [9.5, 7.5],
+  floorHeight: 3.4,
   floors: [1, 3],
   roof: 'gable',
   roofPitch: 0.8,

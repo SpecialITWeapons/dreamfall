@@ -133,9 +133,13 @@ describe('planTown', () => {
     // it offers every lot the grid has room for and then accepts a share of
     // them chosen so the count comes out here. Nothing is capped, so nothing is
     // truncated -- a cap would build a town with one side missing.
-    const narrow = plan({ radius: 400 }).lots.length,
+    // The narrowest a town may be is `TOWN.radius[0]`, and it is 450 rather than
+    // the specification's 400 because the buildings grew by a third: at 400 the
+    // grid offers 498 lots, two short of the floor, and a town is widened
+    // rather than crammed.
+    const narrow = plan({ radius: TOWN.radius[0] }).lots.length,
       middling = plan({ radius: 650 }).lots.length,
-      wide = plan({ radius: 900 }).lots.length;
+      wide = plan({ radius: TOWN.radius[1] }).lots.length;
     for (const count of [narrow, middling, wide]) {
       expect(count).toBeGreaterThanOrEqual(500);
       expect(count).toBeLessThanOrEqual(2000);

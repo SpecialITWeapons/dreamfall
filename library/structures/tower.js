@@ -66,7 +66,7 @@ export default defineStructure({
   // under 57 m of height is the proportion that says tower rather than silo. It
   // also keeps the disc the flight must miss narrow, since that disc is
   // measured to the corner of the widest thing baked -- here the plinth.
-  footprint: [6.6, 6.6],
+  footprint: [7.8, 7.8],
   floors: [3, 4],
   floorHeight: STAGE,
   roof: 'hip',

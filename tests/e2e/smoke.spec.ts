@@ -1226,8 +1226,8 @@ test('the flight does not fly through the town, landmark included', async ({ pag
     };
     return { tallest, worst, closest, lifted, buildings: w.scenery!.buildings };
   }, site);
-  // It really is a landmark and not a roof: the mill is 3 x 2.6 m of wall under
-  // a roof, and this is over thirty.
+  // It really is a landmark and not a roof: the tallest thing a town has after
+  // it is a four-storey mill at about sixteen metres, and this is over thirty.
   expect(flown.tallest.top).toBeGreaterThan(30);
   expect(flown.buildings).toBeGreaterThan(500);
   // The same envelope that holds over the canopy and over the village's roofs,

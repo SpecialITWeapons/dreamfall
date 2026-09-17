@@ -34,9 +34,9 @@ export const VILLAGE = {
   },
   lots: {
     /** Front to back, m: also the space one house takes along the street. */
-    depth: 18,
+    depth: 20,
     /** From the axis of the street to the front of the house, m. */
-    setback: 9,
+    setback: 11,
     /** Houses thin out toward the edge; this is the share kept at the centre. */
     density: 0.9,
   },

@@ -29,8 +29,17 @@ export const TOWN = {
    */
   lattice: { cell: 20000, salt: 0x7011 },
   odds: 0.6,
-  /** @type {[number, number]} */
-  radius: [400, 900],
+  /**
+   * The specification's 400 became 450 when the buildings grew by a third: a
+   * 400 m town could then offer only 498 lots, two short of the five hundred
+   * the specification's own floor asks for, because bigger buildings need
+   * deeper lots and a deeper setback. The disc grew instead of the count
+   * shrinking -- five hundred houses crammed into 400 m would be denser than
+   * anywhere this world has.
+   *
+   * @type {[number, number]}
+   */
+  radius: [450, 900],
   /**
    * Half, where the specification asked for all of it, and the photograph is
    * the argument. A town seated on a coastal hill has its centre ninety metres
@@ -114,9 +123,9 @@ export const TOWN = {
   landmark: 'tower',
   lots: {
     /** Front to back, m: also the space one building takes along the street. */
-    depth: 18,
+    depth: 20,
     /** From the axis of the street to the front of the building, m. */
-    setback: 10,
+    setback: 12,
     /**
      * How many buildings a town has, from its narrowest to its widest. The
      * specification's 500..2000, and the plan hits it by construction: it walks
