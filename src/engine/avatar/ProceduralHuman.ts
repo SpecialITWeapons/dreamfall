@@ -21,6 +21,7 @@ import {
   type Object3D,
 } from 'three';
 import { vertexColor } from 'three/tsl';
+import { FPP } from '../flight/ChaseCamera';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
@@ -106,6 +107,17 @@ const LAG: Record<Hinge['kind'], number> = {
 };
 const IDENTITY = new Quaternion();
 
+/**
+ * Half the first person's field, as an angle from the eye's own axis. It is the
+ * camera's vertical half-field and it is used for both axes, which is
+ * deliberately conservative: a wide window sees further sideways than this and
+ * will hide a hand it could have shown, and that is the safe direction to be
+ * wrong in. Being wrong the other way is what the owner saw -- two black shapes
+ * in the top corners, which were the forearms, measured at 71.6 degrees off the
+ * axis of a frame whose half is 37.5.
+ */
+const FPP_HALF = (FPP.fov / 2) * (Math.PI / 180);
+
 /** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
 function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
   const color = new Color(hex);
@@ -168,7 +180,8 @@ export function createProceduralHuman(
     gloves: [],
     skin: [],
   };
-  const hands = new Set<Mesh>();
+  /** What the eye is inside of: never shown in the first person, whatever the frame says. */
+  const inside = new Set<Mesh>();
   let triangles = 0;
   const part = (
     name: string,
@@ -203,10 +216,10 @@ export function createProceduralHuman(
   // face stays outside it; the goggles are a band wider than the shell and the
   // peak sits proud above them, so from behind and from the side the head reads
   // as a helmet rather than as one more ball.
-  part('head', ellipsoid(0.105, 0.105, 0.105, 12, 8), 'skin', head, 0, -0.01, 0.055);
-  part('helmet', ellipsoid(0.125, 0.115, 0.125), 'helmet', head, 0, 0.02, 0);
-  part('visor', ellipsoid(0.113, 0.026, 0.05, 12, 8), 'helmet', head, 0, 0.062, 0.105);
-  part('goggles', ellipsoid(0.115, 0.042, 0.075, 12, 8), 'goggles', head, 0, 0.005, 0.085);
+  inside.add(part('head', ellipsoid(0.105, 0.105, 0.105, 12, 8), 'skin', head, 0, -0.01, 0.055));
+  inside.add(part('helmet', ellipsoid(0.125, 0.115, 0.125), 'helmet', head, 0, 0.02, 0));
+  inside.add(part('visor', ellipsoid(0.113, 0.026, 0.05, 12, 8), 'helmet', head, 0, 0.062, 0.105));
+  inside.add(part('goggles', ellipsoid(0.115, 0.042, 0.075, 12, 8), 'goggles', head, 0, 0.005, 0.085));
   const hinges: Hinge[] = [];
   const hinge = (
     kind: Hinge['kind'],
@@ -252,8 +265,8 @@ export function createProceduralHuman(
     // The whole arm is what the first person keeps: a forearm on its own hangs
     // in the air with nothing joining it to the viewer, and the cap is what
     // makes the shoulder end of it something rather than a cut.
-    hands.add(part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot));
-    hands.add(part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot));
+    part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot);
+    part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot);
     const elbow = hinge(
       'elbow',
       `elbow${s}`,
@@ -263,10 +276,8 @@ export function createProceduralHuman(
       shoulder,
       side,
     );
-    hands.add(part('forearm', limb(FORE.r, FORE.len), 'trim', elbow.pivot));
-    hands.add(
-      part('hand', ellipsoid(0.045, 0.09, 0.03, 12, 8), 'gloves', elbow.pivot, 0, FORE.len + 0.05, 0),
-    );
+    part('forearm', limb(FORE.r, FORE.len), 'trim', elbow.pivot);
+    part('hand', ellipsoid(0.045, 0.09, 0.03, 12, 8), 'gloves', elbow.pivot, 0, FORE.len + 0.05, 0);
     const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), thighDir(side), null, side);
     part('thigh', limb(THIGH.r, THIGH.len), 'suit', hip.pivot);
     const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
@@ -290,9 +301,36 @@ export function createProceduralHuman(
     qz = new Quaternion();
   let time = 0;
   let view: FlightPose['view'] | null = null;
+  const eye = new Vector3(0, -0.03, 0.56);
+  const centre = new Vector3();
+  /**
+   * Is any of this part somewhere the eye could look? A sphere against a cone
+   * from the eye, plus the near plane. The sphere is the geometry's own, in the
+   * part's frame, carried into the figure's -- the figure is never scaled, so
+   * the radius carries unchanged.
+   *
+   * It is asked of the bounding sphere rather than of the vertices because the
+   * answer only has to be conservative: a part half in the frame is drawn
+   * whole, and a part whose sphere misses the cone has no vertex that could hit
+   * it.
+   */
+  const inFrame = (mesh: Mesh): boolean => {
+    const sphere = mesh.geometry.boundingSphere;
+    if (!sphere) return true;
+    mesh.updateWorldMatrix(true, false);
+    centre.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+    object.worldToLocal(centre).sub(eye);
+    const r = sphere.radius;
+    if (centre.z + r <= FPP.near) return false; // all of it behind the eye
+    const distance = centre.length();
+    if (distance <= r) return true; // the eye is inside it
+    const off = Math.atan2(Math.hypot(centre.x, centre.y), centre.z);
+    return off - Math.asin(Math.min(1, r / distance)) < FPP_HALF;
+  };
+  for (const m of meshes) m.geometry.computeBoundingSphere();
   return {
     object,
-    eye: new Vector3(0, -0.03, 0.56),
+    eye,
     bounds: HUMAN_BOUNDS,
     get triangles() {
       return triangles;
@@ -361,10 +399,13 @@ export function createProceduralHuman(
           .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back))
           .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing));
       }
-      if (pose.view !== view) {
-        view = pose.view;
-        for (const m of meshes) m.visible = view === 'tpp' || (fppHands && hands.has(m));
-      }
+      // What the first person shows is not a list of names, it is whatever an
+      // eye could actually look at: past the near plane and inside the frame.
+      // A list is what was here, and it was wrong in a way a list cannot catch
+      // -- the parts on it were the parts in the corners. This is asked every
+      // frame because the answer moves with the arms.
+      view = pose.view;
+      for (const m of meshes) m.visible = view === 'tpp' || (fppHands && !inside.has(m) && inFrame(m));
     },
     get outfit() {
       return outfit;

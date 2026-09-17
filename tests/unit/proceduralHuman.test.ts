@@ -2,6 +2,7 @@ import { Mesh, Vector3, type Object3D } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
+import { FPP } from '../../src/engine/flight/ChaseCamera';
 import { DEFAULT_OUTFIT, DEFAULT_PATTERN, outfitById } from '../../src/engine/avatar/Outfits';
 import {
   HUMAN_BOUNDS,
@@ -230,14 +231,48 @@ describe('createProceduralHuman', () => {
     expect(droppedL).toBeGreaterThan(0.1);
     expect(droppedR).toBeLessThan(droppedL / 4);
   });
-  it('hides the body in the first person and keeps the whole arm, unless told not to', () => {
+  it('shows in the first person what an eye could see, and nothing an eye could not', () => {
+    // This assertion used to be an inventory -- eight meshes with these four
+    // names -- and an inventory is exactly what it should not be: it passed
+    // while the figure showed the owner two black shapes in the top corners of
+    // the frame, because those shapes were on the list.
+    //
+    // What is asked now is a property, and it is asked of vertices rather than
+    // of mesh centres, because a centre says nothing about what crosses the
+    // near plane. Anything of the figure that gets in front of the eye at all
+    // has to be inside the frame. What stays behind the eye never rasterises
+    // and may be anywhere.
     const human = createProceduralHuman(lit);
-    human.update(pose({ view: 'fpp' }), 0.05);
+    hold(human, { view: 'fpp' });
+    human.object.updateMatrixWorld(true);
     const visible = meshes(human.object).filter((m) => m.visible);
-    // both arms, shoulder cap to glove: forearms alone hung in the air with
-    // nothing joining them to the viewer
-    expect(visible.length).toBe(8);
-    expect(new Set(visible.map((m) => m.name))).toEqual(new Set(['deltoid', 'upperArm', 'forearm', 'hand']));
+    // The first person's own camera, imported rather than written again: a 75
+    // degree field, so half of it is 37.5 from the axis, and a near plane at
+    // 0.1 m. The figure tests against the same numbers.
+    const HALF = (FPP.fov / 2) * (Math.PI / 180);
+    const at = new Vector3();
+    let ahead = 0,
+      worst = 0;
+    for (const mesh of visible) {
+      const position = mesh.geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        at.fromBufferAttribute(position, i);
+        mesh.localToWorld(at);
+        human.object.worldToLocal(at).sub(human.eye);
+        if (at.z <= FPP.near) continue; // behind the eye or inside the near plane: never drawn
+        ahead++;
+        worst = Math.max(worst, Math.atan2(Math.hypot(at.x, at.y), at.z));
+      }
+    }
+    // Whatever is drawn is inside the frame, with the slack of a part that is
+    // kept whole when its bounding sphere clips the cone.
+    if (ahead > 0) expect(worst).toBeLessThan(HALF * 1.6);
+    // And in the box position there is nothing to draw, which is a measurement
+    // and not a choice: a belly-to-earth jumper's arms are out at shoulder
+    // height and 71.6 degrees off the axis of a frame whose half is 37.5, and
+    // everything else is behind the eye. What the owner was shown instead were
+    // those forearms, smeared across the top corners.
+    expect(visible.length).toBe(0);
     human.update(pose({ view: 'tpp' }), 0.05);
     expect(meshes(human.object).every((m) => m.visible)).toBe(true);
     const bare = createProceduralHuman(lit, { fppHands: false });
