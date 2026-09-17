@@ -639,6 +639,16 @@ budżet 4 000 trójkątów mierzony walidatorem.
 > §2 i §17 przewidywały to wprost — interfejs `Avatar` był po to, żeby
 > podmiana nie dotknęła silnika, i nie dotknęła: materiał świata sam dokłada
 > `skinning(object)` dla siatki skinowanej.
+>
+> **Poprawka 2026-09-17 (druga): pięć kształtów zamiast dwóch.** Ten akapit
+> opisuje jedną pozę i kąt wznoszenia, który ją odchyla — czyli kształt jako
+> **skutek** tego, jak autopilot zdecydował lecieć. Spadochroniarz robi
+> odwrotnie: zmienia kształt, **żeby** lecieć inaczej. Postać ma dziś pudełko,
+> deltę, track, wznoszenie i zakręt, wybierane z trzech osi (kąt lotu, prędkość
+> powietrzna, przechył) zamiast z jednej. Progi wyboru muszą leżeć wewnątrz
+> obwiedni kontrolera — `pitch -0,42..+0,56`, `rush 0,75..1,48`, `bank 0,47` —
+> i pilnuje tego test, bo pierwszy próg napisany „jak u spadochroniarza"
+> wypadał piątą część za najstromszym nurkowaniem tego świata.
 Zawiasy w barkach, łokciach, biodrach, kolanach i kostkach falują od `windPhase` i
 wolnego szumu; `bank` obraca ciało, `pitch` je unosi lub opuszcza; w skręcie
 ręka po wewnętrznej stronie schodzi niżej; kąt wznoszenia odchyla ręce (w

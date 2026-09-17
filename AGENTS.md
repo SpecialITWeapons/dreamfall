@@ -149,11 +149,23 @@ subdirectory.
   share of its length -- and its `swatch`, and **a swatch band is only a band if
   a ring lands in it**: write the stops against the rings the chain samples at,
   not against a picture of a body.
-- The figure's motion: a dive is a second pose (`trackDir`) the joints walk to,
-  not a rotation of the first; every joint is a spring-damper the air pushes,
-  substepped so `omega * h` stays under a half, slower the further it is from
-  the chest, and `dt <= 0` means "be there now" -- position and velocity both --
-  which is how the world places the figure before the first frame.
+- The figure's motion is **five shapes and the air**: box, delta, track, climb,
+  and a turn laid over any of the others rather than instead of it. A shape is
+  five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
+  else; the quaternions are read off them by the same chain rule the skeleton is
+  built with, so a pose cannot drift out of step with the bones. Which one is
+  worn is read off three axes -- flight angle, airspeed, bank -- and **every
+  threshold in `POSE` has to be inside what the controller can actually fly**:
+  it reaches `pitch -0.42..+0.56`, `rush 0.75..1.48` and `bank 0.47`, a test
+  asks the controller itself, and a number written from a picture of a skydiver
+  instead was a pose that existed and could not be reached. Nose up and slow are
+  one state and not two, because a climb is paid for in airspeed; the climb
+  sweeps the arms back like the track and is told from it by the knees.
+- Every joint is a spring-damper the air pushes, substepped so `omega * h` stays
+  under a half, slower the further it is from the chest; the shape weights are
+  sprung per joint too, so a shape arrives shoulder first and ankle last.
+  `dt <= 0` means "be there now" -- position and velocity both -- which is how
+  the world places the figure before the first frame.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own

@@ -9,7 +9,9 @@
 > z tej notatki okazały się nieprawdą po zmierzeniu: „3,5 µs na `update()`” to
 > była wartość **sprzed** sprężyn (dziś te same bryły kosztują 8,6 µs), a
 > „jeden rysunek” to dwa, bo głowa musi być osobną powierzchnią, żeby FPP miał
-> co chować. Trzecia rzecz z §5 — zestaw póz — czeka.
+> co chować. Zestaw póz z §5.3 też jest: pięć kształtów wybieranych z trzech
+> osi, +5,6 µs na klatkę, i dwa progi, które trzeba było przepisać z obwiedni
+> kontrolera zamiast ze zdjęcia spadochroniarza.
 
 Notatka badawcza, nie plan. Powstała na pytanie właściciela: *„szukam
 rozwiązania, jak tę postać zrobić, aby wyglądała najwierniej jak człowiek, jak

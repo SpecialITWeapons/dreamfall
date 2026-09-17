@@ -119,9 +119,9 @@ Rzeczy do rozstrzygnięcia w trakcie i zapisania:
 pokazać. Pudełko, track, delta, zakręt, hamowanie — wybierane z dwóch–trzech
 osi (prędkość powietrzna, kąt lotu, tempo skrętu) zamiast z jednej.
 
-- [ ] **Step 1: Test** — trzy różne stany lotu dają trzy różne kształty, i
+- [x] **Step 1: Test** — trzy różne stany lotu dają trzy różne kształty, i
       każdy z nich jest powtarzalny.
-- [ ] **Step 2: Implementacja, zdjęcia, commit.**
+- [x] **Step 2: Implementacja, zdjęcia, commit.**
 
 ---
 
@@ -187,3 +187,60 @@ To jest ta sama lekcja, którą ten katalog zapisuje po raz piąty: **liczba,
 która wygląda na narzędzie do problemu, zwykle nim nie jest, dopóki się nie
 zmierzy.** Tu doszła jej bliźniaczka — *asercja, która wygląda na komplet,
 zwykle nim nie jest, dopóki się nie spojrzy.*
+
+
+## Jak wyszedł zestaw póz (2026-09-17)
+
+Pięć kształtów: pudełko, delta, track, wznoszenie i zakręt nakładany na każdy z
+nich. Poza to pięć kierunków na stronę i nic więcej, więc pisania było tyle, ile
+notatka obiecywała; cała robota poszła w wybór i w strojenie.
+
+**Dwie usterki, obie znalezione pomiarem, nie okiem.**
+
+1. **Próg `dive` ustawiony poza światem.** Napisałem 0,5 rad, bo tyle ma
+   nurkowanie spadochroniarza. Najstromsze trwałe nurkowanie tego kontrolera to
+   **0,42** — zmierzone przez przelecenie każdego rogu obwiedni przez pół minuty
+   z czterema kilometrami powietrza pod spodem. Track istniał, miał pozę, miał
+   testy i **był nieosiągalny lotem**. Jest 0,40, a nowy test pyta o to sam
+   kontroler, więc próg pisany ze zdjęcia zamiast z obwiedni teraz pada.
+2. **Delta, której nie dało się utrzymać.** Pierwsza wersja robiła track
+   iloczynem dwóch osi, a deltę ich niezgodą — na papierze bez zarzutu: nos w
+   dół **i** szybko to track, jedno bez drugiego to delta. W powietrzu
+   nurkowanie kupuje prędkość, więc obie osie zgadzają się w ciągu sekundy i
+   delta była kształtem, przez który postać przemykała. Widać to dopiero na
+   zdjęciu: „delta" wyglądała jak track. Mieszanie pudełka, delty i tracku wzdłuż
+   jednej drogi — średniej obu osi — daje przelot w pudełku, łagodne opadanie
+   (`vy -6`, to czym autopilot lata cały czas) w 85% delcie, i cały track dopiero
+   w najstromszym nurkowaniu.
+
+**Koszt:** 9,0 → 14,4 µs na klatkę za pozę, 11,4 → 17,0 µs za całość. Sześć
+gniazd na staw to sześćdziesiąt sprężyn i do sześćdziesięciu slerpów tam, gdzie
+były dwa. Próg `POSE.floor` — poniżej którego gniazdo nie jest warte slerpa —
+oszczędza 3,2 µs z tych 5,6, czyli **jedną trzecią kosztu funkcji za jedno
+porównanie**. Geometria bez zmian: 1 120 trójkątów, 2 rysunki, 16 kości.
+
+**Czy to w ogóle widać bez dotykania klawiatury.** Dziesięć minut autopilota na
+ziarnie 42: pudełko prowadzi 63% czasu, wznoszenie 19%, track 14%, zakręt 2,6%
+(ale jest *noszony* przez 24% czasu — autopilot nigdy nie przechyla się mocno,
+więc zakręt jest prawie zawsze nakładką, nie kształtem, co jest dokładnie tym, do
+czego jest `POSE.lean`). Delta prowadzi 1,4% i to jest uczciwa liczba, nie
+wada: opadania autopilota są prawie dwustanowe, więc `drive` przechodzi przez
+środek drogi zamiast na nim siedzieć, a delta jest tym, co postać nosi przez tę
+sekundę czy dwie. Pod ręką, gdzie celowanie wskaźnikiem jest ciągłe, `vy -7`
+trzyma ją na 0,85 — i to jest pozycja, nie przejście.
+
+**Trzecia usterka, zgłoszona przez właściciela ze zdjęcia.** Wznoszenie
+zrobiłem jako *flare* spadochroniarza — ręce do przodu i w górę, kolana mocno
+złożone. Tak hamuje prawdziwy skoczek i tutaj to było źle: z boku czyta się jak
+postać podnoszona za nadgarstki. Ręce idą teraz **do tyłu**, mniej więcej tak
+daleko jak w tracku, a te dwa kształty rozróżniają nogi — wznoszenie składa
+kolana najmocniej z czterech (1,41 rad przeciw 1,04 pudełka), track nie składa
+ich wcale (0,03). Nos w górę i wolno zostały jednym stanem, nie dwoma: w tym
+świecie za wznoszenie płaci się prędkością, więc `pitch +0,56` i `speed 30`
+przychodzą razem i nie ma trzeciej rzeczy, którą druga poza mogłaby znaczyć.
+
+**Czego przy okazji pozbyło się `update`:** `drop` (opadanie wewnętrznej ręki w
+zakręcie) i `back` (odchylanie ramion kątem wznoszenia) były osobnymi
+mechanizmami doklejonymi do jednej pozy. Zakręt i wznoszenie są teraz pozami, więc
+oba zniknęły — jeden mechanizm zamiast trzech, i o jeden powód mniej, żeby dwa
+z nich kiedyś policzyły to samo dwa razy.

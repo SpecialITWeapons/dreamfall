@@ -1,14 +1,13 @@
-// The figure: a skydiver's arch as one continuous skin over a skeleton of
-// sixteen bones, with vertex colors on the world's lit material. The rest pose
-// is the box position a belly-to-earth jumper holds: upper arms out and
-// forward, elbows squared, thighs spread back, knees folded so the feet ride
-// above the hips, toes pointed. The joints flutter with the wind and a slow
-// noise, a gust is a burst of stronger flutter, the inner arm drops in a turn,
-// and the climb angle sweeps the arms: back into a track in a dive, forward and
-// wide in a climb.
+// The figure: a skydiver as one continuous skin over a skeleton of sixteen
+// bones, with vertex colors on the world's lit material. It holds five shapes
+// -- the box a belly-to-earth jumper rides, a delta, a track, a flare, and a
+// turn laid over any of them -- and picks between them on how the flight is
+// actually going: the angle, the airspeed and the bank. On top of whichever it
+// is wearing, the joints flutter with the wind and a slow noise, a gust is a
+// burst of stronger flutter, and the dynamic pressure trails the limbs back.
 //
-// What this file owns is the skeleton, the pose and the numbers a body is made
-// of -- the profiles below are the whole of what the figure looks like.
+// What this file owns is the skeleton, the shapes and the numbers a body is
+// made of -- the profiles below are the whole of what the figure looks like.
 // Sweeping a surface along them is `Skin.ts`, which knows nothing about people.
 // This used to be twenty solids parented to one another, and every shoulder
 // sweep opened a seam between two of them that no pose could close; the
@@ -50,9 +49,7 @@ export interface ProceduralHuman extends Avatar {
 type Swatch = Exclude<keyof Outfit, 'id'>;
 
 const UP = new Vector3(0, 1, 0),
-  AXIS_X = new Vector3(1, 0, 0),
-  AXIS_Y = new Vector3(0, 1, 0),
-  AXIS_Z = new Vector3(0, 0, 1);
+  AXIS_X = new Vector3(1, 0, 0);
 
 // The arch, in the figure's frame (x left, y up, z ahead): joints and limb
 // directions. The elbow bends 80 degrees and the knee 57, so both read as
@@ -74,32 +71,136 @@ export const UPPER = { r: 0.055, len: 0.3 },
   SHIN = { r: 0.055, len: 0.4 };
 /** The boot: half width, half length and half thickness, m. */
 const FOOT = { rx: 0.055, ry: 0.115, rz: 0.045 };
-const upperDir = (side: number) => new Vector3(side * 0.78, -0.08, 0.62).normalize();
-const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normalize();
-const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
-const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
-const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
+
 /**
- * Where the upper arms go in a full dive. A track is not the box turned about
- * the figure's own up axis -- that swings the arms out sideways, which is the
- * one direction a track does not go. It is a second pose, arms back along the
- * body, and a dive walks from one to the other.
+ * A pose is five directions a side: where the upper arm, the forearm, the
+ * thigh, the shin and the foot point in the figure's own frame. That is all a
+ * pose is, which is what lets there be five of them for the price of thirty
+ * numbers -- the quaternions a joint actually wears are read off these once,
+ * against the same chain rule `hinge` uses, so a pose cannot disagree with the
+ * skeleton it is worn on.
+ *
+ * `inner` is for the one pose that is not symmetric: in a turn the two sides of
+ * the body do different things, and which side is the inner one depends on
+ * which way the figure is banking.
  */
-const trackDir = (side: number) => new Vector3(side * 0.15, -0.02, -0.99).normalize();
+interface Pose {
+  upper(side: number, inner: boolean): Vector3;
+  fore(side: number, inner: boolean): Vector3;
+  thigh(side: number, inner: boolean): Vector3;
+  shin(side: number, inner: boolean): Vector3;
+  foot(side: number, inner: boolean): Vector3;
+}
+const dir = (x: number, y: number, z: number) => new Vector3(x, y, z).normalize();
+
 /**
- * The track. A dive folds the box into it: the upper arms swing back through
- * this many radians about the figure's own up axis, the elbows straighten by
- * this share of their bend, and the knees give up some of theirs -- so the
- * forearms end up along the body with the hands at the hips, which is the
- * position the owner asked for and the one that actually goes fast. `at` is the
- * pitch that counts as all the way down.
+ * The five shapes, and the order the weights come in. A skydiver **changes
+ * shape in order to fly differently**; before this the figure did the opposite,
+ * the autopilot decided the angle and the shape was its consequence, read off
+ * one axis. Now the shape is read off three -- airspeed, flight angle and bank
+ * -- and one axis can no longer decide everything.
  */
+const POSES = {
+  /** Belly to earth, arms out and forward, elbows squared, knees folded. The one the skin is cut for. */
+  box: {
+    upper: (side) => dir(side * 0.78, -0.08, 0.62),
+    fore: (side) => dir(side * -0.46, 0.16, 0.87),
+    thigh: (side) => dir(side * 0.3, -0.06, -0.95),
+    shin: (side) => dir(side * 0.12, 0.8, -0.58),
+    foot: (side) => dir(side * 0.05, 0.42, -0.9),
+  },
+  /** Halfway: arms swept back but still out, elbows still bent, knees half open. */
+  delta: {
+    upper: (side) => dir(side * 0.7, -0.06, -0.28),
+    fore: (side) => dir(side * 0.28, 0.06, -0.72),
+    thigh: (side) => dir(side * 0.22, -0.04, -0.97),
+    shin: (side) => dir(side * 0.14, 0.42, -0.9),
+    foot: (side) => dir(side * 0.05, 0.28, -0.95),
+  },
+  /**
+   * Fast and straight: arms back along the body with the hands at the hips,
+   * legs straight and closed. A track is not the box turned about the figure's
+   * own up axis -- that swings the arms out sideways, which is the one
+   * direction a track does not go.
+   */
+  track: {
+    upper: (side) => dir(side * 0.15, -0.02, -0.99),
+    fore: (side) => dir(side * 0.1, -0.02, -0.99),
+    thigh: (side) => dir(side * 0.12, -0.02, -0.99),
+    shin: (side) => dir(side * 0.1, 0.02, -0.99),
+    foot: (side) => dir(side * 0.05, 0.18, -0.98),
+  },
+  /**
+   * Nose up and slow, which in this world is one state and not two: a climb is
+   * paid for in airspeed, so `speed 30` and `pitch +0.56` arrive together and
+   * the same shape answers both. The arms sweep **back** along the hips and the
+   * knees stay folded -- the chest leads and the rest of the figure trails it,
+   * the way a bird pulling up out of a dive does.
+   *
+   * The first draft of this reached the arms forward and high, which is what a
+   * jumper's flare looks like and is not what this is. In a photograph it read
+   * as a figure being lifted by the wrists. What tells the climb from the track
+   * is the legs: both sweep the arms back, and only the track straightens out.
+   */
+  climb: {
+    upper: (side) => dir(side * 0.48, -0.22, -0.85),
+    fore: (side) => dir(side * 0.16, 0.24, -0.96),
+    thigh: (side) => dir(side * 0.34, -0.1, -0.93),
+    shin: (side) => dir(side * 0.14, 0.94, -0.3),
+    foot: (side) => dir(side * 0.05, 0.6, -0.8),
+  },
+  /**
+   * A turn, which is the only shape the two sides of the body disagree about:
+   * the inner arm drops and comes back, the outer one rises and reaches
+   * forward, the inner knee folds and the outer leg goes long. This replaces
+   * the old `drop`, which lowered the inner arm and did nothing else --
+   * a bank that only one limb has heard of reads as a twitch, not a turn.
+   */
+  turn: {
+    upper: (side, inner) => (inner ? dir(side * 0.74, -0.34, 0.5) : dir(side * 0.76, 0.22, 0.6)),
+    fore: (side, inner) => (inner ? dir(side * -0.4, -0.1, 0.9) : dir(side * -0.48, 0.3, 0.82)),
+    thigh: (side, inner) => (inner ? dir(side * 0.26, -0.16, -0.95) : dir(side * 0.32, 0.02, -0.95)),
+    shin: (side, inner) => (inner ? dir(side * 0.12, 0.9, -0.42) : dir(side * 0.12, 0.6, -0.78)),
+    foot: (side, inner) => (inner ? dir(side * 0.05, 0.5, -0.86) : dir(side * 0.05, 0.3, -0.94)),
+  },
+} satisfies Record<string, Pose>;
+
 /**
- * How far a full dive folds the box into a track: all the way to trackDir at
- * the shoulder, this share of the elbow's bend and of the knee's. `at` is the
- * pitch that counts as all the way down.
+ * The slots a hinge keeps a quaternion and a weight in. The turn is two slots
+ * rather than one because the pose is mirrored, and a single slot whose target
+ * flips as the bank crosses zero would apply whatever weight the spring still
+ * held to the wrong side of the body.
  */
-const TRACK = { at: 0.5, elbow: 0.85, knee: 0.4 };
+const SLOTS = ['box', 'delta', 'track', 'climb', 'turnIn', 'turnOut'] as const;
+type Slot = (typeof SLOTS)[number];
+/** Which pose each slot wears, and whether this side is the inner one in it. */
+const SLOT_POSE: Record<Slot, { pose: Pose; inner: boolean }> = {
+  box: { pose: POSES.box, inner: false },
+  delta: { pose: POSES.delta, inner: false },
+  track: { pose: POSES.track, inner: false },
+  climb: { pose: POSES.climb, inner: false },
+  turnIn: { pose: POSES.turn, inner: true },
+  turnOut: { pose: POSES.turn, inner: false },
+};
+
+/**
+ * Where the shapes sit on the three axes, and **every one of them is inside
+ * what the flight can actually produce**, which is the first thing a threshold
+ * like this gets wrong. Measured against the controller, flying each corner of
+ * its envelope for a minute with room under it: the steepest sustained dive is
+ * `pitch -0.42` at `rush 1.48`, the steepest climb `+0.56` at `rush 0.75`, and
+ * a hard turn rolls to `0.47`. `dive` was written as 0.5 first, from a picture
+ * of a skydiver rather than from the figure's own envelope -- which put the
+ * track a fifth of the way past the fastest dive this world has, so the pose
+ * existed and could never be reached.
+ *
+ * `lean` is the most of the figure a turn is allowed to take over: a turn is a
+ * shape laid over whatever it was doing, not one instead of it, which is why a
+ * banked track still tracks. `floor` is the weight below which a slot is not
+ * worth a slerp, and is what keeps the blend at two or three shapes rather
+ * than six.
+ */
+export const POSE = { dive: 0.4, climb: 0.42, fast: 0.28, slow: 0.22, bank: 0.38, lean: 0.7, floor: 0.005 };
 /**
  * How long a joint takes to catch up with what the air is asking of it, s. The
  * limbs used to arrive in the same frame as the shoulders, which is what made
@@ -170,7 +271,8 @@ const settle = (s: Spring, target: number, omega: number, zeta: number, dt: numb
     s.x += s.v * h;
   }
 };
-const IDENTITY = new Quaternion();
+/** Clipped to 0..1, or to `min`..1 where a value is allowed to go the other way. */
+const clamp01 = (v: number, min = 0) => (v < min ? min : v > 1 ? 1 : v);
 
 /**
  * A profile: half-width along a chain, given as stops and read between them.
@@ -194,21 +296,49 @@ const bands =
   (t: number): string =>
     stops.find(([end]) => t <= end)?.[1] ?? stops[stops.length - 1]![1];
 
+type Kind = 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+
+/**
+ * What every joint wears in one pose, on one side: parent-relative, by the same
+ * chain rule the skeleton is built with -- a joint's own quaternion is its
+ * parent's orientation undone and its own put on. Doing it here rather than
+ * writing the numbers down twice is why a pose cannot drift out of step with
+ * the skeleton it is worn on.
+ */
+const poseQuats = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Quaternion> => {
+  const q = (d: Vector3) => new Quaternion().setFromUnitVectors(UP, d);
+  const upper = q(pose.upper(side, inner)),
+    fore = q(pose.fore(side, inner)),
+    thigh = q(pose.thigh(side, inner)),
+    shin = q(pose.shin(side, inner)),
+    foot = q(pose.foot(side, inner));
+  return {
+    shoulder: upper.clone(),
+    elbow: upper.clone().invert().multiply(fore),
+    hip: thigh.clone(),
+    knee: thigh.clone().invert().multiply(shin),
+    ankle: shin.clone().invert().multiply(foot),
+  };
+};
+
 interface Hinge {
   pivot: Bone;
+  /** The box, which is the pose the skin is cut for; the same as `targets.box`. */
   rest: Quaternion;
-  /** Where a full dive takes this joint, when it has somewhere else to be. */
-  track?: Quaternion;
-  /** Orientation in the figure's frame, for the child hinge's rest. */
-  world: Quaternion;
+  /** Where this joint goes in each of the shapes, parent-relative. */
+  targets: Record<Slot, Quaternion>;
+  /**
+   * How much of each shape this joint is wearing. It is a spring per slot and
+   * not one set for the whole figure, because a shape has to arrive the way a
+   * gust does -- the shoulder first and the ankle last -- and a figure whose
+   * every joint changed pose on the same frame is the puppet this file spent
+   * two commits getting rid of.
+   */
+  weight: Record<Slot, Spring>;
   side: 1 | -1;
-  kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+  kind: Kind;
   /** What this joint is actually doing, as opposed to what the air asked for. */
   swing: Spring;
-  drop: Spring;
-  back: Spring;
-  /** How far into the track this joint has folded, 0..1. */
-  fold: Spring;
 }
 
 export function createProceduralHuman(
@@ -241,67 +371,31 @@ export function createProceduralHuman(
   bones.push(neck);
   body.add(neck);
   const hinges: Hinge[] = [];
-  const hinge = (
-    kind: Hinge['kind'],
-    name: string,
-    parent: Object3D,
-    at: Vector3,
-    dir: Vector3,
-    above: Hinge | null,
-    side: 1 | -1,
-    tracked?: Vector3,
-  ): Hinge => {
-    const world = new Quaternion().setFromUnitVectors(UP, dir);
-    const rest = above ? above.world.clone().invert().multiply(world) : world.clone();
-    const track = tracked
-      ? (() => {
-          const w = new Quaternion().setFromUnitVectors(UP, tracked);
-          return above ? above.world.clone().invert().multiply(w) : w;
-        })()
-      : undefined;
+  const hinge = (kind: Hinge['kind'], name: string, parent: Object3D, at: Vector3, side: 1 | -1): Hinge => {
+    const targets = {} as Record<Slot, Quaternion>;
+    const weight = {} as Record<Slot, Spring>;
+    for (const slot of SLOTS) {
+      const { pose, inner } = SLOT_POSE[slot];
+      targets[slot] = poseQuats(pose, side, inner)[kind];
+      // The figure starts in the box and walks out of it, which is also what
+      // `dt <= 0` has to reproduce on the very first frame.
+      weight[slot] = { x: slot === 'box' ? 1 : 0, v: 0 };
+    }
+    const rest = targets.box;
     const pivot = new Bone();
     pivot.name = name;
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
     bones.push(pivot);
-    const spring = (): Spring => ({ x: 0, v: 0 });
-    const h: Hinge = {
-      pivot,
-      rest,
-      track,
-      world,
-      side,
-      kind,
-      swing: spring(),
-      drop: spring(),
-      back: spring(),
-      fold: spring(),
-    };
+    const h: Hinge = { pivot, rest, targets, weight, side, kind, swing: { x: 0, v: 0 } };
     hinges.push(h);
     return h;
   };
   for (const side of [1, -1] as const) {
     const s = side > 0 ? 'L' : 'R';
-    const shoulder = hinge(
-      'shoulder',
-      `shoulder${s}`,
-      body,
-      SHOULDER.clone().setX(side * SHOULDER.x),
-      upperDir(side),
-      null,
-      side,
-      trackDir(side),
-    );
-    const elbow = hinge(
-      'elbow',
-      `elbow${s}`,
-      shoulder.pivot,
-      new Vector3(0, UPPER.len, 0),
-      foreDir(side),
-      shoulder,
-      side,
-    );
+    const shoulder = hinge('shoulder', `shoulder${s}`, body, SHOULDER.clone().setX(side * SHOULDER.x), side);
+    const elbow = hinge('elbow', `elbow${s}`, shoulder.pivot, new Vector3(0, UPPER.len, 0), side);
     // The wrist and the toe never turn; they are here because a chain of skin
     // needs a bone at the end of it to hang the last ring on, and because a
     // hand that follows the forearm is a hand rather than a paddle.
@@ -310,20 +404,12 @@ export function createProceduralHuman(
     wrist.position.set(0, FORE.len, 0);
     bones.push(wrist);
     elbow.pivot.add(wrist);
-    const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), thighDir(side), null, side);
-    const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
+    const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), side);
+    const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), side);
     // The foot breaks 29 degrees away from the shin at the ankle: without a
     // hinge of its own a boot on the shin's axis is only a thicker shin, which
     // is what the figure had.
-    const ankle = hinge(
-      'ankle',
-      `ankle${s}`,
-      knee.pivot,
-      new Vector3(0, SHIN.len, 0),
-      footDir(side),
-      knee,
-      side,
-    );
+    const ankle = hinge('ankle', `ankle${s}`, knee.pivot, new Vector3(0, SHIN.len, 0), side);
     const toe = new Bone();
     toe.name = `toe${s}`;
     toe.position.set(0, FOOT.ry * 1.6, 0);
@@ -524,9 +610,9 @@ export function createProceduralHuman(
   };
   repaint();
 
-  const qx = new Quaternion(),
-    qy = new Quaternion(),
-    qz = new Quaternion();
+  const qx = new Quaternion();
+  /** What the shapes are being asked for this frame; one object, refilled, never allocated. */
+  const want: Record<Slot, number> = { box: 1, delta: 0, track: 0, climb: 0, turnIn: 0, turnOut: 0 };
   let time = 0;
   let view: FlightPose['view'] | null = null;
   const eye = new Vector3(0, -0.03, 0.56);
@@ -550,7 +636,7 @@ export function createProceduralHuman(
       const rush = pose.speed / SPEED;
       const press = rush * rush;
       const flutter = (0.05 + 0.09 * pose.gust) * press;
-      const slow = perlin2(time * 0.15, 0.37, 11) * 0.05;
+      const drift = perlin2(time * 0.15, 0.37, 11) * 0.05;
       const w = pose.windPhase;
       // What the pressure does besides shake: it pushes the limbs back. Above
       // the nominal they trail, below it they come forward, and the far joints
@@ -558,35 +644,71 @@ export function createProceduralHuman(
       const drag = press - 1;
       // A dive also arches the back, and the figure has no spine joint to arch
       // -- so the hips take it, which is where an arch is felt anyway.
-      const arch = Math.min(Math.max(-pose.vy / 20, -1), 1);
-      // The air the figure meets: a dive sweeps the arms back into a track and
-      // straightens the knees, a climb spreads the arms forward and wide. Both
-      // are rotations around the figure's own up axis, so the arms travel in
-      // the plane of the shoulders instead of flapping.
-      const dive = Math.min(Math.max(-pose.pitch, 0), TRACK.at) / TRACK.at;
-      // A climb still spreads the arms about the up axis; only the dive has
-      // somewhere specific to be.
-      const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
+      const arch = clamp01(-pose.vy / 20, -1);
 
+      // ---- what shape the figure is holding ----------------------------------
+      // Three axes, not one. A skydiver changes shape in order to fly
+      // differently; this file used to read the shape off `pitch` alone, which
+      // meant a dive at 30 m/s and a dive at 62 looked identical and only the
+      // sound knew the difference.
+      const dive = clamp01(-pose.pitch / POSE.dive);
+      const flare = clamp01(pose.pitch / POSE.climb);
+      const fast = clamp01((rush - 1) / POSE.fast);
+      const slow = clamp01((1 - rush) / POSE.slow);
+      // How far down the go-fast road the figure has gone, off both axes at
+      // once, and then box -> delta -> track along it with the delta owning the
+      // middle. The first draft made the track the product of the two axes and
+      // the delta their disagreement, which is defensible on paper and wrong in
+      // the air: a dive buys airspeed, so the two axes agree within a second of
+      // each other and the delta was a shape the figure only ever flashed
+      // through. Measured on the real controller, this puts a level cruise in
+      // the box, a gentle descent (vy -6) at 85% delta and the steepest dive at
+      // a whole track -- three shapes that are held rather than passed.
+      const drive = (dive + fast) / 2;
+      // The climb is the other end of the same story and does not share the
+      // road: it takes what it is owed first and the three above divide what is
+      // left. Nose up and slow are one state here rather than two, because a
+      // climb in this world is paid for in airspeed.
+      const climb = Math.max(flare, slow);
+      const road = 1 - climb;
+      const track = clamp01((drive - 0.5) * 2) * road;
+      const delta = (1 - Math.abs(drive - 0.5) * 2) * road;
+      const box = clamp01((0.5 - drive) * 2) * road;
+      // A turn is a shape laid over whatever the figure was doing rather than
+      // one instead of it, so it takes a share and the rest keep their ratios:
+      // a banked track still tracks.
+      const lean = clamp01(Math.abs(pose.bank) / POSE.bank) * POSE.lean;
+      const spare = (1 - lean) / (track + delta + climb + box || 1);
+      want.box = box * spare;
+      want.delta = delta * spare;
+      want.track = track * spare;
+      want.climb = climb * spare;
+      // A roll about +z takes the left side (+x) down when the bank is
+      // negative, which is a turn to the left, and the left side is then the
+      // inner one.
+      const innerLeft = pose.bank < 0;
       for (const h of hinges) {
+        // The only two entries of `want` that are not the same for every joint:
+        // whichever of the two mirrored turns this side is not wearing gets
+        // nothing. They are two slots and not one because a single slot whose
+        // target flipped as the bank crossed zero would hand whatever weight
+        // the spring still held to the wrong side of the body -- and the bank
+        // crosses zero in the middle of every S-turn.
+        const inner = h.side > 0 === innerLeft;
+        want.turnIn = inner ? lean : 0;
+        want.turnOut = inner ? 0 : lean;
+
         const phase = h.side > 0 ? 0 : 2.1;
-        let swing = 0,
-          drop = 0,
-          back = 0;
+        let swing = 0;
         switch (h.kind) {
           case 'shoulder':
-            swing = Math.sin(w + phase) * flutter + slow;
-            drop = Math.max(0, -pose.bank * h.side) * 0.5;
-            back = sweep;
+            swing = Math.sin(w + phase) * flutter + drift;
             break;
           case 'elbow':
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
-            // In a climb the elbows help spread the arms; in a dive they have
-            // nothing to add, because straightening is what folds them in.
-            back = sweep < 0 ? sweep * 0.5 : 0;
             break;
           case 'hip':
-            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow + arch * 0.12;
+            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + drift + arch * 0.12;
             break;
           case 'knee':
             swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
@@ -601,21 +723,32 @@ export function createProceduralHuman(
         swing -= drag * TRAIL[h.kind];
         const omega = 1 / LAG[h.kind];
         settle(h.swing, swing, omega, DAMPING.joint, dt);
-        settle(h.drop, drop, omega, DAMPING.joint, dt);
-        settle(h.back, back, omega, DAMPING.joint, dt);
-        settle(h.fold, dive, omega, DAMPING.pose, dt);
-        const fold = Math.min(Math.max(h.fold.x, 0), 1);
+
+        // The shapes, blended by what this joint has actually taken up. The
+        // weights are sprung and then renormalised, so a joint on its way from
+        // one shape to another is never wearing more or less than one pose --
+        // it is the running average that keeps a blend on the sphere.
+        let sum = 0;
+        for (const slot of SLOTS) {
+          const spring = h.weight[slot];
+          settle(spring, want[slot], omega, DAMPING.pose, dt);
+          if (spring.x < 0) spring.x = 0;
+          sum += spring.x;
+        }
+        // An incremental weighted mean on the sphere: each shape in turn,
+        // slerped by its share of everything counted so far.
+        let taken = 0;
         h.pivot.quaternion.copy(h.rest);
-        if (h.track && fold > 0) h.pivot.quaternion.slerp(h.track, fold);
-        // Straightening is a walk of the joint's own bend back toward none of
-        // it, so the forearm ends up along the upper arm whatever direction the
-        // upper arm is pointing by then.
-        if (h.kind === 'elbow' && fold > 0) h.pivot.quaternion.slerp(IDENTITY, fold * TRACK.elbow);
-        if (h.kind === 'knee' && fold > 0) h.pivot.quaternion.slerp(IDENTITY, fold * TRACK.knee);
-        h.pivot.quaternion
-          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop.x))
-          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back.x))
-          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing.x));
+        for (const slot of SLOTS) {
+          const share = sum > 0 ? h.weight[slot].x / sum : slot === 'box' ? 1 : 0;
+          if (share <= POSE.floor) continue;
+          taken += share;
+          // The first shape kept arrives at a ratio of exactly one, which is
+          // what makes the `rest` this started from a placeholder rather than a
+          // sixth vote.
+          h.pivot.quaternion.slerp(h.targets[slot], share / taken);
+        }
+        h.pivot.quaternion.premultiply(qx.setFromAxisAngle(AXIS_X, h.swing.x));
       }
       // The first person draws none of the figure, and that is what being one
       // surface costs. What was here before was a list of parts to keep, and

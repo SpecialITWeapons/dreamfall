@@ -421,3 +421,91 @@ ring at all. A head of three rings a segment samples at 0, 0.107, 0.321, 0.428,
 about in a plain cream egg and no test could see it, because every test asked
 about weights and manifolds and none asked what colour anything was. A band is
 only a band if a ring lands in it.
+
+## The figure: five shapes instead of one
+
+The figure held two poses -- the box and a track it folded into -- and chose
+between them on `pitch` alone. It now holds five (box, delta, track, climb and
+a turn laid over any of them) and chooses off three axes: flight angle,
+airspeed and bank. A pose is five directions a side and nothing else, so the
+five cost thirty numbers; what they cost per frame is the blend.
+
+Measured in Node against the commit before, 20 000 warmed frames of a flight
+that moves through all of them:
+
+|                 | one shape | five    |
+| --------------- | --------- | ------- |
+| the pose        | 9.0 us    | 14.4 us |
+| the whole frame | 11.4 us   | 17.0 us |
+
+Six slots a joint, so sixty springs and up to sixty spherical interpolations a
+frame where there used to be two. **5.6 us**, against a frame of 16 700. The
+geometry did not move: 1 120 triangles, 2 draws, 16 bones, exactly as before.
+
+`POSE.floor` -- the weight below which a slot is not worth interpolating -- is
+worth measuring rather than assuming: without it the same flight costs 17.6 us
+instead of 14.4. In ordinary flight two or three of the six slots carry
+anything, and skipping the rest is **a third of the feature's cost** for one
+comparison.
+
+### The thresholds have to be inside the envelope
+
+`POSE.dive` was 0.5 rad, taken from what a skydiver's flight angle looks like.
+The controller's steepest sustained dive is **0.42** -- measured by flying each
+corner of its envelope for half a minute with four kilometres of air underneath:
+
+| corner         | pitch     | airspeed | rush |
+| -------------- | --------- | -------- | ---- |
+| steepest dive  | -0.42     | 59.2     | 1.48 |
+| steepest climb | +0.56     | 30.0     | 0.75 |
+| hardest turn   | bank 0.47 |          |      |
+
+So the track existed, had a pose, had tests, and could not be reached by
+flying: the axis saturated a fifth past the end of the world. `POSE.dive` is
+0.40 now and a test asks the controller itself, so a threshold written from a
+photograph instead of from the envelope fails rather than passes quietly.
+
+### Is any of it visible without touching the keyboard
+
+Ten minutes of hands-off autopilot on seed 42, weights recomputed per frame:
+
+| shape | leads  | worn at all (>= 0.3) | peak |
+| ----- | ------ | -------------------- | ---- |
+| box   | 63.4 % | 67.2 %               | 1.00 |
+| climb | 18.6 % | 21.6 %               | 1.00 |
+| track | 14.1 % | 14.2 %               | 1.00 |
+| turn  | 2.6 %  | 23.6 %               | 0.55 |
+| delta | 1.4 %  | 2.0 %                | 0.92 |
+
+Four of the five are worn whole without a hand on the stick. Two entries are
+worth reading properly rather than as a ranking. The **turn** leads 2.6 % and is
+worn a quarter of the time: an autopilot never banks hard, so it is a lean over
+another shape almost always and a shape of its own almost never -- which is what
+`POSE.lean` is for and exactly the intended behaviour. The **delta** is the
+transition: the autopilot's descents are close to bang-bang, so `drive` crosses
+the middle of the road rather than sitting in it, and the delta is what the
+figure wears for the second or two it takes to cross. Under the hand, where the
+pointer's aim is continuous, `vy -7` holds it at 0.85 and it is a position
+rather than a passage.
+
+The same measurement corrected the shape of the blend. The first draft made the
+track the product of the two axes and the delta their disagreement, which is
+right on paper: nose down **and** fast is a track, either alone is a delta. In
+the air a dive buys airspeed, so the two axes agree within a second of each
+other and the delta was a shape the figure flashed through rather than held.
+Blending box, delta and track along one committed road -- the mean of the two
+axes -- puts a level cruise in the box, the gentle descent the autopilot flies
+all day at 85% delta, and only the steepest dive in a whole track.
+
+### What the photograph said about the climb
+
+The climb started life as a jumper's flare: arms reaching forward and high,
+knees folded hard. It is what a skydiver slowing down actually does and it was
+wrong here -- from the side it reads as a figure being lifted by the wrists, and
+the owner said so on sight. The arms sweep **back** now, about as far as the
+track's, and what tells the two shapes apart is underneath: the climb folds its
+knees hardest of the four (1.41 rad against the box's 1.04) and the track does
+not fold them at all (0.03). Nose up and slow stayed one state rather than two,
+because a climb in this world is paid for in airspeed -- `pitch +0.56` and
+`speed 30` arrive together and there is no third thing for a second shape to
+mean.
