@@ -189,8 +189,8 @@ export function createScenery(deps: {
         buildingsRefused: ring.buildingsRefused,
         sites: sites.built,
         sitesQueued: sites.queued,
-        // what is drawn, not what is buffered: above 250 m the window is off
-        // and the blades from the last low pass are still in its arrays
+        // what is drawn, not what is buffered: above the window's ceiling it is
+        // off and the blades from the last low pass are still in its arrays
         grass: grass.mesh.visible ? grass.count : 0,
         cells: ring.cells,
         rebuilds,

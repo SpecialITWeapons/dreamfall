@@ -37,7 +37,7 @@ const seenFrom = (form: ReturnType<typeof tuftForm>, angle: number) => {
 };
 
 describe('tuftForm', () => {
-  it('bakes three crossed cards: twelve vertices and six triangles to a tuft, so a full window is 120k triangles', () => {
+  it('bakes three crossed cards: twelve vertices and six triangles to a tuft, so a full window is 384k triangles', () => {
     for (let f = 0; f < FORMS; f++) {
       const form = tuftForm(f);
       expect(form.position).toHaveLength(VERTICES * 3);
@@ -46,7 +46,7 @@ describe('tuftForm', () => {
       expect(form.index).toHaveLength(TRIANGLES * 3);
       for (const i of form.index) expect(i).toBeLessThan(VERTICES);
     }
-    expect(TUFTS * TRIANGLES).toBe(120000);
+    expect(TUFTS * TRIANGLES).toBe(384000);
   });
 
   it('stands every card on the ground and names the root 0 and the tip 1, which is where the shade is mixed out', () => {
@@ -199,12 +199,52 @@ describe('createGrass', () => {
     grass.dispose();
   });
 
+  it('holds the same meadow whether it was flown to or jumped to', () => {
+    // The whole of what makes an incremental window correct: a tile's tufts are
+    // a function of the tile and of nothing else, so a tile that is already
+    // standing may be left where it is. If any of it depended on where the
+    // flyer happened to be -- the count of attempts, say, or the order they
+    // were written in -- then approaching a meadow would change it, which is
+    // the fault this window was widened to cure rather than one to add.
+    const tufts = (grass: ReturnType<typeof createGrass>) =>
+      grass.mesh.children.map((child) => {
+        const mesh = child as unknown as { count: number; getMatrixAt(i: number, m: Matrix4): void };
+        const matrix = new Matrix4();
+        const out: string[] = [];
+        for (let i = 0; i < mesh.count; i++) {
+          mesh.getMatrixAt(i, matrix);
+          out.push(matrix.elements.map((e) => e.toFixed(4)).join(','));
+        }
+        // The compaction moves the last live tuft into the hole a departing
+        // tile leaves, so a form's order is not the order it was written in.
+        return out.sort();
+      });
+
+    const origin = createOrigin();
+    const flown = grassOver(0.2);
+    // 64 m a step, which is `STEP`: every one of these writes the rim.
+    for (let i = 0; i <= 8; i++) flown.update(i * 64, i * 64, 120, origin, false);
+    const jumped = grassOver(0.2);
+    jumped.update(8 * 64, 8 * 64, 120, origin, true);
+
+    expect(flown.count).toBe(jumped.count);
+    expect(tufts(flown)).toEqual(tufts(jumped));
+    // and the flight paid for a rim, not for a window
+    expect(flown.written).toBeGreaterThan(0);
+    expect(flown.written).toBeLessThan(flown.count / 3);
+    expect(jumped.written).toBe(jumped.count);
+    flown.dispose();
+    jumped.dispose();
+  });
+
   it('never fills a form past its share -- the window cannot reach the ceiling in one rebuild', () => {
     const grass = grassOver(1);
     grass.update(0, 0, 120, createOrigin(), false);
-    // 52 of the 121 tiles are within REACH, and each is 256 attempts: the most
-    // a rebuild can write is 13312, well under the 20000 the meshes hold.
-    expect(grass.count).toBe(13312);
+    // 172 of the 361 tiles are within REACH from the origin, and each is 256
+    // attempts: the most a rebuild can write is 44032, under the 64000 the
+    // meshes hold. The margin is what keeps a tile from being left out of the
+    // window for want of room, which is a wood with one side missing.
+    expect(grass.count).toBe(44032);
     expect(grass.count).toBeLessThan(TUFTS);
     for (const c of standing(grass)) expect(c).toBeLessThanOrEqual(PER_FORM);
     grass.dispose();

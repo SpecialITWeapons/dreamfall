@@ -9,6 +9,14 @@
 > Jedna rzecz z punktu 2 **nie** została ruszona świadomie: zasięg trawy. Nadal
 > stoi na `GRASS_FADE = [120, 190]`, bo okno przyrostowe to wciąż przebudowa
 > portu, a właściciel powiedział, żeby zostawić.
+>
+> **Dopisek 2026-09-17: zrobione, i przebudowa wyszła taniej niż to, co
+> zastąpiła.** Właściciel wrócił z tym samym („trawa nadal pojawia się, jak lecę
+> nad ziemią"), więc okno jest dziś zbiorem kafli pisanym po obrzeżu:
+> `GRASS_FADE = [260, 360]`, `REACH = 480`. Zasięg 1,9× dalej, trawy 3,7×
+> więcej, a przebudów droższych niż 5 ms zrobiło się **zero z 459** zamiast
+> 255 z 917. Liczby i trzy zależności, które trzymają się razem, w
+> `docs/perf-notes.md`.
 
 Dwie uwagi wizualne zgłoszone po obejrzeniu M3b/M4a na Pages. Nie są zaplanowane
 w żadnym etapie; to jest ich zapis wraz z tym, co kod naprawdę dziś robi, żeby

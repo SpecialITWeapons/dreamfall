@@ -42,18 +42,35 @@ import type { SceneryMaterials } from './Painted';
  * that is a hitch twice a second on a low pass, and the window reaches 260 m
  * with the blades faded out by 190, so nobody can see it lag half a cell.
  */
-const STEP = CELL * 2;
+const STEP = CELL * 4;
 /** The side of one placement tile, m. */
 const TILE = 64;
-/** Tiles either side of the flyer's own, so eleven by eleven of them. */
-const SPAN = 5;
-/** A tile whose centre is further than this from the flyer is not written, m. */
-const REACH = 260;
-/** Attempts per tile; each survives with the tile's own thickness. */
+/** Tiles either side of the flyer's own, so nineteen by nineteen of them. */
+const SPAN = 9;
+/**
+ * A tile whose centre is further than this from the flyer is not written, m.
+ *
+ * It is not a free number: a tile is taken or left by its **centre**, so a tuft
+ * may stand up to half a tile's diagonal (45 m) beyond it, and a tile that was
+ * taken is left again once the flyer has moved `STEP`. Everything in that band
+ * appears and disappears between rebuilds, so the fade has to have finished
+ * before it: `GRASS_FADE[1] <= REACH - STEP - 45`. At 480, 64 and 45 that puts
+ * the last visible blade at 371 and the fade ends at 360.
+ */
+const REACH = 480;
+/** Attempts per tile at full thickness; each survives with the tile's own. */
 const ROLLS = 256;
-/** Baked tuft forms, and the tufts of one form its own mesh may hold. */
+/**
+ * Baked tuft forms, and the tufts of one form its own mesh may hold. Sized
+ * against what the world actually asks for rather than against the geometry:
+ * ten minutes of a low flight over seed 42 peaked at 45 308 tufts standing at
+ * this reach, and a tile whose turn comes once the ceiling has arrived is a
+ * tile left out of the window until the flyer moves -- the same silent
+ * truncation the ring's own tree ceiling is set high to avoid. Four MB of
+ * instance data, and the window is full of it about a fifth of the time.
+ */
 export const FORMS = 4;
-export const PER_FORM = 5000;
+export const PER_FORM = 16000;
 /**
  * Tufts the window may hold at once. The forms share it in equal parts, which
  * is what lets a full form hand a tuft on to one with room instead of dropping
@@ -111,8 +128,15 @@ const TUFT_SQUASH = 0.26;
 const MIN_GROUND = 2,
   MAX_GROUND = 480,
   MAX_SLOPE = 0.65;
-/** Height over the ground past which there is no grass at all, m. */
-const CEILING = 250;
+/**
+ * Height over the ground past which there is no grass at all, m. It has to
+ * clear the far end of the fade, or crossing it hides a window that still had
+ * visible blades in it -- which is the same pop this reach was widened to get
+ * rid of, moved from the horizon to the altimeter. The flight is under 380 m of
+ * clearance 68 % of the time against 59 % under 250, and `STEP` doubled, so the
+ * window is written less often than it was despite being awake more.
+ */
+const CEILING = 380;
 /** This window's own salt: it shares its stream with nothing the ring sows. */
 const GRASS_SALT = 0x6a455;
 
@@ -198,6 +222,13 @@ export interface Grass {
   update(x: number, z: number, cameraY: number, origin: Origin, forced: boolean): void;
   /** Tufts standing after the last rebuild, over all the forms. */
   readonly count: number;
+  /**
+   * Tufts the last rebuild actually wrote. The window is a set of tiles and a
+   * tile is written once: crossing a cell rewrites the rim and leaves the rest
+   * where it stands, so this is a fraction of `count` except after an origin
+   * jump, which invalidates every matrix and makes it all of it.
+   */
+  readonly written: number;
   /** Milliseconds the last rebuild took. */
   readonly ms: number;
   dispose(): void;
@@ -268,20 +299,80 @@ export function createGrass(deps: GrassDeps): Grass {
   });
 
   const standing = new Int32Array(FORMS);
+  /** Which tile each written slot belongs to, so a tile that leaves can take its own tufts with it. */
+  const owner = Array.from({ length: FORMS }, () => new Int32Array(PER_FORM));
+  /** The tiles the window holds, and the ones it wants; the two swap at the end of a rebuild. */
+  let live = new Set<number>(),
+    wanted = new Set<number>();
   let count = 0,
-    ms = 0;
+    ms = 0,
+    written = 0;
 
-  const rebuild = (x: number, z: number, origin: Origin) => {
+  /**
+   * A tile's name. The window is nineteen tiles a side and the flight covers
+   * the world, so the key has to survive tile coordinates in the millions:
+   * multiplying keeps it a small integer where a string would be a small
+   * allocation, once a tile, every rebuild.
+   */
+  const keyOf = (tx: number, tz: number) => tx * 8388608 + tz;
+
+  const rebuild = (x: number, z: number, origin: Origin, whole: boolean) => {
     const started = performance.now();
     const cx = Math.floor(x / TILE),
       cz = Math.floor(z / TILE);
-    standing.fill(0);
-    let placed = 0;
+    if (whole) {
+      standing.fill(0);
+      live.clear();
+    }
+    // What the window should hold from here.
+    wanted.clear();
     for (let tz = cz - SPAN; tz <= cz + SPAN; tz++)
       for (let tx = cx - SPAN; tx <= cx + SPAN; tx++) {
         const midX = (tx + 0.5) * TILE,
           midZ = (tz + 0.5) * TILE;
-        if (Math.hypot(midX - x, midZ - z) > REACH) continue;
+        if (Math.hypot(midX - x, midZ - z) <= REACH) wanted.add(keyOf(tx, tz));
+      }
+    // What it holds and should not: the last live tuft is moved into the hole,
+    // which is why the slot that was just filled is tested again rather than
+    // stepped over. Nothing is rewritten -- a tuft's matrix is its world place
+    // through `Origin` and has nothing to do with where the flyer is.
+    for (let f = 0; f < FORMS; f++) {
+      const mesh = meshes[f]!,
+        mine = owner[f]!;
+      const mat = mesh.instanceMatrix.array as Float32Array,
+        col = mesh.instanceColor!.array as Float32Array;
+      let n = standing[f]!;
+      for (let i = 0; i < n;) {
+        if (wanted.has(mine[i]!)) {
+          i++;
+          continue;
+        }
+        n--;
+        if (i !== n) {
+          mat.copyWithin(i * 16, n * 16, n * 16 + 16);
+          col.copyWithin(i * 3, n * 3, n * 3 + 3);
+          mine[i] = mine[n]!;
+        }
+      }
+      standing[f] = n;
+    }
+    let placed = standing.reduce((sum, n) => sum + n, 0);
+    written = 0;
+    for (let tz = cz - SPAN; tz <= cz + SPAN; tz++)
+      for (let tx = cx - SPAN; tx <= cx + SPAN; tx++) {
+        const key = keyOf(tx, tz);
+        // Already standing, or not wanted, or there is no longer room for a
+        // whole tile. The room is checked against a tile's worth rather than
+        // against one tuft, because a tile is written whole or not at all: half
+        // a tile is a tile that would change under the flyer the next time
+        // there was room, which is the one thing this window promises not to do.
+        if (!wanted.has(key) || live.has(key)) continue;
+        if (placed + ROLLS > TUFTS) {
+          wanted.delete(key);
+          continue;
+        }
+        const midX = (tx + 0.5) * TILE,
+          midZ = (tz + 0.5) * TILE;
         // Thickness and tint belong to the tile, not the tuft: one weight read
         // per 64 m rather than one per attempt, and the border between two
         // biomes is a tile wide, which at this distance nobody reads as a line.
@@ -298,13 +389,13 @@ export function createGrass(deps: GrassDeps): Grass {
           tint.b += weight * grass.color.b;
         }
         const roll = mulberry32(hash2(tx, tz, salt));
-        for (let i = 0; i < ROLLS && placed < TUFTS; i++) {
+        for (let i = 0; i < ROLLS; i++) {
           // Every attempt draws its six numbers before anything is tested, so
           // a tile looks the same however thick its neighbours turned out. The
           // sixth is two numbers in one: a whole form to take, and what is left
-          // of it to squash that form by. Fifty-two tiles are within REACH and
-          // each is 256 attempts, so at 2.5 ns a roll the sixth costs 0.03 ms
-          // of a rebuild that measures 6.9 (docs/perf-notes).
+          // of it to squash that form by. A tile draws all of them every time,
+          // because its tufts have to be the same set whenever it is written --
+          // that is what lets a tile that is already standing be left alone.
           const px = (tx + roll()) * TILE,
             pz = (tz + roll()) * TILE,
             scale = TUFT_SCALE + roll() * TUFT_SCALE_SPAN,
@@ -340,9 +431,18 @@ export function createGrass(deps: GrassDeps): Grass {
             at = standing[f]!++;
           mesh.setMatrixAt(at, matrix);
           mesh.setColorAt(at, tint);
+          owner[f]![at] = key;
           placed++;
+          written++;
         }
       }
+    // What was wanted is what is now held -- every tile in it either stood
+    // already or has just been written, and the ones there was no room for were
+    // struck out above. So the two sets change places; nothing is copied, and
+    // nothing has to be added to `live` as it goes.
+    const held = live;
+    live = wanted;
+    wanted = held;
     for (let f = 0; f < FORMS; f++) {
       const mesh = meshes[f]!;
       mesh.count = standing[f]!;
@@ -370,13 +470,19 @@ export function createGrass(deps: GrassDeps): Grass {
       const ix = Math.floor(x / STEP),
         iz = Math.floor(z / STEP);
       if (!jumped && ix === atX && iz === atZ) return;
+      // An origin jump is the one thing a kept tile cannot survive: its
+      // matrices are the scene's coordinates, and the scene has moved under it.
+      const whole = jumped;
       jumped = false;
       atX = ix;
       atZ = iz;
-      rebuild(x, z, origin);
+      rebuild(x, z, origin, whole);
     },
     get count() {
       return count;
+    },
+    get written() {
+      return written;
     },
     get ms() {
       return ms;

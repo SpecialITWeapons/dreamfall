@@ -208,6 +208,15 @@ subdirectory.
   baked forms an instance takes one of, because one card is a line seen from
   above and a meadow of them reads as streaks. Each form is a mesh of its own
   and `Grass.mesh` is the group of them.
+- The grass window is **a set of tiles written a rim at a time**, and the whole
+  of what makes that correct is that a tile's tufts are a pure function of its
+  own coordinates: nothing in the placement may read where the flyer is, or
+  approaching a meadow would change it. Crossing a cell drops the tiles that
+  left, moves the last live tuft into each hole, and writes only the arrivals;
+  only an origin jump rewrites everything, because only then are the matrices
+  wrong. Three numbers move together: a tile is taken by its centre so a tuft
+  may stand 45 m past `REACH`, which makes `GRASS_FADE[1] <= REACH - STEP - 45`,
+  and `CEILING` has to clear the fade or crossing it hides visible grass.
 
 ## Settlements
 

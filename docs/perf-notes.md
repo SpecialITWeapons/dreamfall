@@ -509,3 +509,94 @@ not fold them at all (0.03). Nose up and slow stayed one state rather than two,
 because a climb in this world is paid for in airspeed -- `pitch +0.56` and
 `speed 30` arrive together and there is no third thing for a second shape to
 mean.
+
+## The grass window is written a rim at a time, and reaches twice as far
+
+The owner said grass was still appearing in front of a low pass. It was: the
+blades faded out at 190 m and the flight does 40 to 59 m/s, so the meadow
+arrived with two to five seconds' warning, in a band across the middle of the
+screen. The note that left this alone in M3b called the fix "a rebuild of the
+port", and it was right about what was needed and wrong about what it would
+cost.
+
+**The window used to be thrown away and written again** every 32 m, over a
+260 m disc. Reaching further that way is quadratic and hopeless: measured over
+a real flight, a 480 m disc costs a median of 6.6 ms a rebuild and 19.1 at
+worst, which is a dropped frame twice a second.
+
+**It is now a set of tiles**, and a tile's tufts are a pure function of its own
+coordinates -- they always were, which is what makes this possible. Crossing a
+cell drops the tiles that left, moves the last live tuft into each hole they
+made, and writes only the tiles that arrived. A kept tuft is never rewritten:
+its matrix is a world place through `Origin` and has nothing to do with where
+the flyer is. Ten minutes of a low flight over seed 42:
+
+|                            | 260 m, wholesale | 480 m, a rim at a time |
+| -------------------------- | ---------------- | ---------------------- |
+| rebuilds in ten minutes    | 917              | 460                    |
+| a rebuild, median          | 2.9 ms           | **1.1 ms**             |
+| a rebuild, worst           | 10.9 ms          | **2.9 ms**             |
+| rebuilds costing over 5 ms | **255 of 917**   | **0 of 459**           |
+| tufts standing, median     | 5 508            | 20 660                 |
+| tufts standing, peak       | 14 336           | 45 308                 |
+| the last visible blade     | 190 m            | 360 m                  |
+
+**Twice the reach, three and a half times the grass, and a quarter of the
+frame cost.** The one thing that got dearer is the whole rebuild an origin jump
+forces -- 16.0 ms against 28.5 -- and that happens once in ten minutes where
+the old one happened 917 times.
+
+Three numbers are tied together and none of them is free to move alone. A tile
+is taken or left by its **centre**, so a tuft may stand half a tile's diagonal
+(45 m) past `REACH`, and everything in that band appears and disappears as the
+flyer moves: `GRASS_FADE[1] <= REACH - STEP - 45`. And `CEILING`, the height
+over the ground past which the window sleeps, has to clear the far end of the
+fade -- 250 was fine when the last blade was at 190 and would have hidden a
+window with visible grass in it at 360, which is the same pop moved from the
+horizon to the altimeter.
+
+### What this costs the GPU, and what of it was not measured
+
+Every millisecond above is **CPU**, on the main thread, and none of it moves to
+the GPU by having one: it is the arithmetic of deciding where tufts stand and
+writing their matrices, and it is what stalls a frame. The GPU's share is the
+drawing, and this container has no GPU -- the browser suite rasterises in
+software -- so what follows is arithmetic and a triangle count, not a timing.
+
+|                                  | before  | after   |
+| -------------------------------- | ------- | ------- |
+| tufts drawn, peak                | 14 336  | 45 308  |
+| triangles, peak                  | 86 016  | 271 848 |
+| draw calls                       | 4       | 4       |
+| instance data held               | 1.5 MB  | 4.9 MB  |
+| instance data uploaded a rebuild | 1.28 MB | 4.1 MB  |
+
+Against the terrain's 557 568 triangles in the same frame, grass at its peak
+goes from 15 % to 49 %. The count is the easy half. The half that is not
+measured here is **alpha-tested fill**: a tuft is three cards of painted blades
+with `alphaTest`, so pixels are shaded and then thrown away, and tripling the
+tufts at distance puts more of them in the same pixel. Far tufts are small, so
+the screen area does not triple -- but the overdraw in it rises, and by how much
+is a question only real hardware answers.
+
+If it turns out to cost too much there, the lever is `GRASS_FADE` and `REACH`
+together (less reach, same machinery) or a per-instance rank compared against
+distance in the vertex shader, which thins the far field without the CPU ever
+knowing -- and which, unlike thinning the placement, cannot pop, because the
+instance's rank never changes and the comparison is continuous in distance.
+Thinning the **placement** by distance was tried and reverted for exactly that
+reason: the number of attempts a tile gets would depend on where the flyer was,
+so flying toward a meadow would thicken it in the middle of the visible band.
+
+### The measurement that was wrong for an hour
+
+`Heightfield.fillAll(cx, cz)` takes **cell indices**, not metres; `update(x, z)`
+is the one that takes metres and divides. Every grass measurement above was
+first taken with metres passed to `fillAll`, which centred the terrain window
+sixteen times too far out and quietly measured a different piece of the world.
+The costs were real -- a window over real ground -- but the ground was not the
+ground the flight was over, and the peak that sizes `PER_FORM` came from
+nowhere in particular. It surfaced because a rewrite placed zero tufts on a
+path a probe said had thick grass: the code was right and the harness was
+lying. A harness is not a measurement until something it says can be checked
+against something else.
