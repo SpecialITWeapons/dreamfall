@@ -1130,13 +1130,14 @@ test('a town stands, and not one house of it is lost on the way through the pool
   expect(errors).toEqual([]);
 });
 
-test('the ground under the town is a table, which the ground under a village is not', async ({ page }) => {
+test('the town levels its ground, and stops short of levelling the county', async ({ page }) => {
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const { site } = await overTown(page);
   const relief = await page.evaluate((s) => {
     const w = window.__world!;
+    // The worst a ring of eight points rises or falls against its own centre.
     const ring = (cx: number, cz: number, r: number) =>
       Math.max(
         ...Array.from({ length: 8 }, (_, k) => {
@@ -1144,24 +1145,31 @@ test('the ground under the town is a table, which the ground under a village is 
           return Math.abs(w.heightAt(cx + Math.cos(a) * r, cz + Math.sin(a) * r) - w.heightAt(cx, cz));
         }),
       );
-    const four = (d: number) => [
-      ring(s.x + d, s.z, 80),
-      ring(s.x - d, s.z, 80),
-      ring(s.x, s.z + d, 80),
-      ring(s.x, s.z - d, 80),
-    ];
-    return { centre: ring(s.x, s.z, 80), inside: four(700), outside: [...four(1000), ...four(1200)] };
+    // How rough the ground is, on average, all the way round a circle: one
+    // radius cannot answer for a town whose ground falls to the sea on one side
+    // and to a wood on the other.
+    const belt = (r: number) => {
+      const rough = Array.from({ length: 12 }, (_, k) => {
+        const a = (k / 12) * Math.PI * 2;
+        return ring(s.x + Math.cos(a) * r, s.z + Math.sin(a) * r, 80);
+      });
+      return rough.reduce((sum, v) => sum + v, 0) / rough.length;
+    };
+    return { centre: ring(s.x, s.z, 80), inside: belt(200), country: belt(1500) };
   }, site);
-  // A village's plateau is 0.3 of the way to flat and its ground holds to
-  // within twelve metres. A town's is all the way, and it is a floor: nothing
-  // inside the plateau moves by half a metre, seven hundred metres out from the
-  // centre included.
-  expect(relief.centre).toBeLessThan(0.5);
-  for (const inside of relief.inside) expect(inside).toBeLessThan(0.5);
-  // And past the plateau's radius the country is the country again. The band
-  // sampled is 1.0 to 1.2 km, which is outside the 900 m radius and inside the
-  // 300 m feather's far edge -- where the cut is being let down.
-  for (const outside of relief.outside) expect(outside).toBeGreaterThan(10);
+  // The town's own ground holds to a few metres over eighty, and the country a
+  // kilometre and a half out is three times as rough. Measured here: 4.8 m at
+  // the centre, 5.1 as a mean inside, 14.0 in the country.
+  expect(relief.centre).toBeLessThan(9);
+  expect(relief.inside).toBeLessThan(relief.country * 0.6);
+  expect(relief.country).toBeGreaterThan(8);
+  // And it is deliberately not a table, which is what this assertion used to
+  // say. A plateau at full strength pulls the whole disc to the height of its
+  // centre; on the coastal hill this town sits on that was a pale mesa with
+  // buildings on top of it, a geological event rather than a place. At half
+  // strength the ground still moves, and what needs to be level is the streets,
+  // which have a slope rule of their own.
+  expect(relief.inside).toBeGreaterThan(0.5);
   expect(errors).toEqual([]);
 });
 

@@ -13,7 +13,7 @@ import { createSites, siteKey } from '../../src/engine/scenery/Sites';
 import { createHeightfield } from '../../src/engine/terrain/Heightfield';
 import { createWorldSampler } from '../../src/engine/terrain/WorldSampler';
 import { createFields } from '../../src/engine/terrain/Fields';
-import { resolvePresence } from '../../library/standard/index.js';
+import { resolvePresence, widthOf } from '../../library/standard/index.js';
 
 const ground = (() => ({ albedo: null })) as unknown as GroundHook;
 const cottage = defineStructure({
@@ -144,6 +144,45 @@ describe('createSites', () => {
       // and the hook agrees there is a settlement standing there at all
       expect(resolvePresence(lib.biomes[0]!.presence)(fields.at(site.x, site.z))).toBeGreaterThan(0);
     }
+  });
+  it('is as wide as its hook painted it: one radius, drawn once, read twice', () => {
+    // The same argument as the seat itself. The hook is asked at every texel of
+    // the window and the site finder once per cell, and they draw the width
+    // from the same lattice stream, so the painted and levelled circle is the
+    // circle the settlement fills. Handed `radius[1]` instead, the hook claimed
+    // the widest a settlement of its kind could be: a town drawn at 400 m stood
+    // in five hundred metres of levelled nothing.
+    const span: [number, number] = [120, 250];
+    const lib = library([
+      village({ radius: span }, 'village', {
+        type: 'lattice',
+        cell: CELL,
+        salt: SALT,
+        radius: span,
+        land: 8,
+      }),
+    ]);
+    const sampler = createWorldSampler(42, { biomes: lib.biomes });
+    const fields = createFields(sampler);
+    const found = sites(lib).near(0, 0, 4000, []);
+    expect(found.length).toBeGreaterThan(2);
+    const widths = new Set<number>();
+    for (const site of found) {
+      widths.add(Math.round(site.radius));
+      expect(site.radius).toBeGreaterThanOrEqual(span[0]);
+      expect(site.radius).toBeLessThanOrEqual(span[1]);
+      // The hook's own answer, read off the same hit the seat read.
+      const hit = fields.at(site.x, site.z).lattice(CELL, SALT);
+      expect(widthOf(span, hit)).toBeCloseTo(site.radius, 9);
+      // and the presence really does end a feather past that width, not past
+      // the widest the range allows
+      const hook = resolvePresence(lib.biomes[0]!.presence);
+      const out = (d: number) => hook(fields.at(site.x + d, site.z));
+      expect(out(site.radius - 1)).toBeGreaterThan(0);
+      expect(out(site.radius + 150 + 1)).toBe(0);
+    }
+    // and they are not all the same width, or this would prove nothing
+    expect(widths.size).toBeGreaterThan(1);
   });
   it('carries a site in exactly the cells its presence hook carries one', () => {
     const lib = library([village()]);

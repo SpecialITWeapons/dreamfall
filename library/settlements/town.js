@@ -32,12 +32,22 @@ export const TOWN = {
   /** @type {[number, number]} */
   radius: [400, 900],
   /**
-   * Full strength, as the specification asks: a town levels its ground. The
-   * feather is wide because of what it has to let down -- `ground.maxCut`
-   * metres, and up to twice that where the town is already fading -- and 120 m
-   * over 300 is a shoulder where 120 over 170 would be a scarp.
+   * Half, where the specification asked for all of it, and the photograph is
+   * the argument. A town seated on a coastal hill has its centre ninety metres
+   * above the water; at full strength the whole eight hundred metre disc goes
+   * to that height and the result from the air is a pale mesa with buildings on
+   * top, a geological event rather than a town. At a half the disc is pulled
+   * half way -- the ground inside it moves five to twelve metres where it moved
+   * ten to twenty-four before, which is flat enough for streets -- and the drop
+   * at the rim halves with it. What a town needs is level streets, not a level
+   * county, and the streets have their own slope rule for what is left.
+   *
+   * The feather stays at 300 and not wider, which is the other half of the same
+   * trade: the feather is also how far the town's own ground colour reaches, so
+   * every metre of it is a metre of painted disc with no town on it. At half
+   * strength the rim lets down 45 m over those 300, which is a shoulder.
    */
-  plateau: { strength: 1, feather: 300 },
+  plateau: { strength: 0.5, feather: 300 },
   /**
    * What ground a town will stand on, read twice -- by the presence hook, which
    * paints and flattens, and by the site finder, which seats the town -- and
@@ -148,8 +158,13 @@ export const TOWN = {
    */
   scenery: {
     species: { cypress: 1, oak: 0.5 },
-    density: 0.2,
-    grass: { tint: 'grassCool', density: 0.4 },
+    // Higher than a village's 0.3 and still thinner on the ground, because half
+    // a town's disc is reserved: two thousand lots at `depth * 0.7` apiece cover
+    // about a million square metres of the two a 800 m town has, so the scatter
+    // only ever sees the other half. What is left is trees between the houses
+    // and along the streets, which is what a town has.
+    density: 0.45,
+    grass: { tint: 'grassCool', density: 0.6 },
   },
   /**
    * A town's whitewash. Paler and more uniform than the village's on purpose:
@@ -159,10 +174,19 @@ export const TOWN = {
    */
   palette: ['white', 'white', 'white', 'barkPale', 'canopyCold', 'grassCool'],
   /**
-   * Its ground: paler and stonier than the village's clay, because a town paves
-   * what it walks on. It costs nothing -- the same three-layer painter, three
-   * different swatches -- and it is most of what tells the two apart from the
-   * air before a single roof is legible.
+   * Its ground, and this is the one number here chosen from a photograph rather
+   * than from an argument. It was stone over clay -- paler and stonier than the
+   * village, because a town paves what it walks on -- and from a kilometre and a
+   * half up a full plateau in that palette reads as a bald sand dune with specks
+   * on it. What a town looks like from the air is roofs and streets on green,
+   * not a quarry, so the ground under it goes grey-green and the stone becomes
+   * the patches people wore into it. It costs nothing: the same three-layer
+   * painter, three different swatches.
+   *
+   * Green and not grey-green, in the end. What tells a town from the country
+   * around it should be its roofs and its streets, not a kilometre-wide change
+   * of ground colour: the paler the disc, the more it reads from the air as a
+   * thing that happened to the terrain rather than a place on it.
    */
-  paint: { base: 'stoneWarm', alt: 'clay', rock: 'rockPale' },
+  paint: { base: 'paleGreen', alt: 'stoneWarm', rock: 'rockPale' },
 };

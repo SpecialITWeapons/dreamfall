@@ -10,6 +10,8 @@
  * same village comes out different, which is a thing a player can notice.
  */
 
+import { toPolyline } from './geometry.js';
+
 /** Steps of this length walk the contour; shorter reads as a polygon, longer cuts the corner. */
 const STEP = 25;
 /** How far to reach when measuring which way the ground falls. */
@@ -177,38 +179,49 @@ export function planVillage(site, params, kit) {
       }
     }
 
-  // Orchards, last of everything and therefore free: every draw below comes
-  // after every house, so a village that grew hedges kept all of its houses
-  // exactly where they were. A hedge claims no ground -- that is the contract's
-  // own word for it -- so what grows inside the plot is the biome's own scatter,
-  // which is what makes a walled square of trees read as a planted one.
-  const orchards = params.orchards;
-  if (!orchards) return;
-  const [ow, oh] = orchards.size;
-  const [from, to] = orchards.band;
-  for (let k = 0; k < orchards.tries; k++) {
-    const bearing = site.random() * Math.PI * 2,
-      out = (from + (to - from) * site.random()) * site.radius;
-    const x = site.x + Math.cos(bearing) * out,
-      z = site.z + Math.sin(bearing) * out;
-    // Not over the houses, and not up the side of the hill either: a hedge
-    // follows the ground it is laid on and a steep one reads as a fence falling
-    // over. A dropped plot is one orchard fewer, never a retry somewhere else.
-    if (taken.some((t) => Math.hypot(t.x - x, t.z - z) < Math.max(ow, oh) * 0.8)) continue;
-    if (kit.slope(x, z) > orchards.maxSlope) continue;
-    const ca = Math.cos(site.yaw),
-      sa = Math.sin(site.yaw);
-    /** @param {number} u @param {number} v @returns {[number, number]} */
-    const corner = (u, v) => [x + ca * u - sa * v, z + sa * u + ca * v];
-    kit.line(
-      [
-        corner(-ow / 2, -oh / 2),
-        corner(ow / 2, -oh / 2),
-        corner(ow / 2, oh / 2),
-        corner(-ow / 2, oh / 2),
-        corner(-ow / 2, -oh / 2),
-      ],
-      'hedge',
-    );
+  // Hedgerows, last of everything and therefore free: nothing below draws a
+  // number, so a village that grew hedges kept every house exactly where it
+  // was, and a test holds that.
+  //
+  // They run beside the lanes rather than round a plot, and that is a correction
+  // made from a picture. The first version fenced a square out on the fringe and
+  // left the biome's own scatter to fill it, on the argument that a line claims
+  // no ground. At the village's tree density the plot came out empty, and an
+  // empty hedge square on bare clay reads as a green picture frame lying in a
+  // field. A hedge beside a lane needs nothing inside it to read as a hedge.
+  const hedges = params.hedges;
+  if (!hedges) return;
+  for (const [index, road] of streets.entries()) {
+    const shoulder = index % 2 === 0 ? 1 : -1;
+    /** @type {Array<[number, number]>} */
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) kit.line(run, 'hedge');
+      run = [];
+    };
+    for (let i = 0; i < road.points.length; i++) {
+      // The way the lane runs here, from its neighbours rather than from one
+      // segment, so the hedge curves with it instead of stepping at every point.
+      const a = road.points[Math.max(0, i - 1)],
+        b = road.points[Math.min(road.points.length - 1, i + 1)],
+        here = road.points[i];
+      if (!a || !b || !here) continue;
+      const dx = b[0] - a[0],
+        dz = b[1] - a[1];
+      const len = Math.hypot(dx, dz) || 1;
+      const x = here[0] - (dz / len) * shoulder * hedges.offset,
+        z = here[1] + (dx / len) * shoulder * hedges.offset;
+      // Behind the houses, not through them: the offset clears the lots' own
+      // reservations, and what breaks the run is the village ending, a slope no
+      // hedge would be planted up, or another lane crossing -- a hedge laid over
+      // a road is the fault this whole arrangement exists to avoid.
+      const crossed = streets.some(
+        (other) => other !== road && toPolyline(other.points, x, z) < hedges.clear,
+      );
+      if (Math.hypot(x - site.x, z - site.z) > site.radius || crossed || kit.slope(x, z) > hedges.maxSlope)
+        flush();
+      else run.push([x, z]);
+    }
+    flush();
   }
 }

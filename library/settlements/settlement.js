@@ -47,10 +47,6 @@ const PAINT = { base: 'clay', alt: 'ochre', rock: 'rockPale' };
  */
 export function settlement(params, plan) {
   const { cell, salt } = params.lattice;
-  // The widest a site of this kind may be: the ground is claimed and flattened
-  // for that, whatever this particular settlement turns out to be. A narrow one
-  // then sits in a slightly wider clearing, which is what a village does.
-  const reach = params.radius[1];
   const paint = params.paint ?? PAINT;
   return defineBiome({
     id: params.id,
@@ -60,7 +56,14 @@ export function settlement(params, plan) {
       type: 'lattice',
       cell,
       salt,
-      radius: reach,
+      // The range, not its top: the hook draws this cell's own width out of the
+      // same lattice stream the site finder draws it from, so the ground that
+      // is painted and flattened is the ground the settlement covers. Handing
+      // it `radius[1]` claimed the widest a settlement of this kind could be,
+      // whatever this one turned out to be -- and for a town that is five
+      // hundred metres of levelled, painted nothing around a town that reads
+      // from the air as a bald dune with buildings on top of it.
+      radius: params.radius,
       feather: params.plateau.feather,
       odds: params.odds,
       land: params.ground.land,
@@ -72,7 +75,9 @@ export function settlement(params, plan) {
       type: 'plateau',
       cell,
       salt,
-      radius: reach,
+      // The same pair, and it must stay the same pair: a plateau wider than the
+      // presence over it levels ground that belongs to nobody.
+      radius: params.radius,
       feather: params.plateau.feather,
       strength: params.plateau.strength,
     },

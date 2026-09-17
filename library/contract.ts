@@ -239,7 +239,19 @@ export type PresenceDescriptor =
   | {
       type: 'lattice';
       cell: number;
-      radius?: number;
+      /**
+       * How wide, m. A pair is a range the cell draws its own width from, out
+       * of `SITE_STREAM.radius` -- the same draw the site finder makes, so the
+       * ground painted and flattened is the ground the settlement covers. A
+       * single number is that width everywhere, which is what a settlement of
+       * one size wants.
+       *
+       * The pair matters more the wider the settlement: a town drawn at 400 m
+       * whose hook was given 900 stands in five hundred metres of painted,
+       * levelled nothing, and from the air that reads as a bald dune with a
+       * town on top of it.
+       */
+      radius?: number | [number, number];
       feather?: number;
       odds?: number;
       salt?: number;
@@ -280,7 +292,8 @@ export type HeightDescriptor =
       type: 'plateau';
       cell: number;
       salt?: number;
-      radius?: number;
+      /** As the lattice hook's: a pair is drawn per cell, and must be the hook's own pair. */
+      radius?: number | [number, number];
       feather?: number;
       strength?: number;
     };

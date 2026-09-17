@@ -20,7 +20,7 @@ import type {
   SitesSpec,
 } from '../../../library/contract';
 import { swatchColor } from '../../../library/contract';
-import { resolvePresence } from '../../../library/standard/index.js';
+import { SITE_STREAM, resolvePresence } from '../../../library/standard/index.js';
 import { Color } from 'three';
 import { createFields } from '../terrain/Fields';
 import { LINE_KINDS } from './LineKit';
@@ -37,13 +37,13 @@ export { siteKey } from './Overrides';
  */
 const LATTICE_SALT = 0x5117;
 /**
- * The streams of a site's own cell. 0 and 1 belong to the lattice: the presence
- * hook draws the carry from 1, and 0 is left alone because it is salted like
- * the jitter. A site takes the ones after them.
+ * The streams of a site's own cell, taken from the library rather than written
+ * again here. The presence hook draws the width of a settlement out of
+ * `SITE_STREAM.radius` and the seat below draws it out of the same one, which
+ * is the whole reason the ground that is painted is the ground the settlement
+ * covers; two copies of the number would be two things to keep in step.
  */
-const RADIUS_STREAM = 2,
-  YAW_STREAM = 3,
-  PLAN_STREAM = 4;
+const { radius: RADIUS_STREAM, yaw: YAW_STREAM, plan: PLAN_STREAM } = SITE_STREAM;
 /** Plans further than this beyond the asking reach are forgotten, m. */
 const KEEP_PAD = 4000;
 

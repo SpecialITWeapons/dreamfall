@@ -189,13 +189,17 @@ subdirectory.
 
 ## Settlements
 
-- One lattice answers three questions -- where a site stands (the `lattice`
-  presence hook), where the ground goes flat (the `plateau` height hook) and
-  where the site is seated -- and the seat is not a fourth draw: `Sites` calls
-  the biome's own presence hook at the lattice centre and stands the settlement
-  there. Two draws on one cell agree about half the time, which is what two
-  coins do, and the other half is a village on the slope beside its own flat
-  square. `SitesSpec` therefore carries no odds and no land line of its own.
+- One lattice answers four questions -- where a site stands (the `lattice`
+  presence hook), how wide it is, where the ground goes flat (the `plateau`
+  height hook) and where the site is seated -- and none of them is a second
+  draw. `Sites` calls the biome's own presence hook at the lattice centre and
+  stands the settlement there, and both hooks take the `[min, max]` radius and
+  draw the width out of `SITE_STREAM.radius`, the same stream the seat draws it
+  from. Two draws on one cell agree about half the time, which is what two coins
+  do, and the other half is a village on the slope beside its own flat square --
+  or, when it is the width that disagrees, a town of four hundred metres
+  standing in nine hundred metres of levelled, painted nothing.
+  `SitesSpec` therefore carries no odds and no land line of its own.
 - A plan is data -- roads, lines, lots, reservations, never geometry -- and a
   pure function of its site, which is what lets a village be built and tested in
   Node; the pools make the geometry out of it, as they do out of a scatter. A
@@ -204,20 +208,30 @@ subdirectory.
   parameters carry the id, the name and the landmark, because a factory that
   knew the word "village" could only ever make one.
 - A plan may not plant and a scatter may not build: `kit.tree` inside a plan and
-  `kit.structure` inside a `populate` both throw. A hedge is how a plan says
-  "trees were planted here" -- `kit.line` claims no ground, so the biome's own
-  scatter fills the plot. And a settlement **sows the ground it claims**: its own
-  weight is what crowds the country's biomes out of it, so a settlement with no
-  `populate` is a disc of bare paint as wide as its presence. No thinning toward
-  the middle is needed -- the lots' reservations already refuse a tree where the
-  houses are.
-- `maxSlope` refuses a lattice cell whose centre is steep, measured across
-  `LATTICE_SLOPE_PROBE`; `maxCut` is what the settlement will let the ground
-  depart from its centre before it fades, in metres. They were one number until
-  a town asked: over 900 m the departure is the terrain's relief and has almost
-  nothing to do with the slope at the middle of it, so tightening `maxSlope`
-  only made towns rare. A settlement a few hundred metres wide can still leave
-  `maxCut` unsaid.
+  `kit.structure` inside a `populate` both throw. What a plan can lay is a
+  `kit.line` -- a fence, a wall, a hedge -- and it claims no ground, so it says
+  where people drew a boundary and nothing about what grows inside it. It does
+  not stand in for planting: a hedge squared off around a plot, on the argument
+  that the scatter would fill it, came out an empty green frame lying on bare
+  clay. A hedgerow beside a lane needs nothing inside it to read.
+- A settlement **sows the ground it claims**: its own weight is what crowds the
+  country's biomes out of it, so a settlement with no `populate` is a disc of
+  bare paint as wide as its presence. No thinning toward the middle is needed --
+  the lots' reservations already refuse a tree where the houses are -- but the
+  density has to be a real fraction of the country's, because those reservations
+  do less than they look: the village read 1.7 trees a hectare inside and 1.7
+  outside until its own density came down to 0.3.
+- `maxSlope` refuses a lattice **cell** whose centre is steep, measured across
+  `LATTICE_SLOPE_PROBE`; `maxCut` fades the settlement where the ground has run
+  too far from its centre, in metres. They were one number until a town asked,
+  and over 900 m that departure is the terrain's relief and has almost nothing
+  to do with the slope at the middle of it, so tightening the slope only made
+  towns rare. A small settlement can leave `maxCut` unsaid.
+- A settlement's `plateau.strength` is how much of a place it levels, and the
+  answer for a wide one is not "all of it": a town at full strength on a coastal
+  hill pulls its whole disc to the hilltop's height and reads from the air as a
+  pale mesa with buildings on it. Half is a town. What a settlement needs is
+  level streets, and a street has its own slope rule for the rest.
 - Plans are built in a queue with a budget of 4 ms a frame and cached wider than
   the ring, so a plan survives the ring leaving it and coming back. Seating
   reads the sampler and needs no window; the plan reads the height window, so a

@@ -566,6 +566,36 @@ Poprawki z 2026-09-16, z wykonania M4b (miasteczko):
 - **Dodatki, których M4a nie miało.** `kit.line` istnieje i wieś go używa: sady
   są żywopłotem wokół działki na obrzeżu, a żywopłot nie zajmuje gruntu, więc
   w środku rośnie własny scatter wsi. Propsów wzdłuż dróg nadal nie ma.
+- **Promień osady losuje krata, nie parametr.** Haki obecności i plateau
+  dostawały `radius[1]` — najszerszą osadę, jaką zakres dopuszcza — więc
+  miasteczko wylosowane na 400 m stało w pięciuset metrach wyrównanej,
+  pomalowanej pustki. Oba haki biorą teraz parę `[min, max]` i losują szerokość
+  ze strumienia `SITE_STREAM.radius`, tego samego, z którego losuje ją
+  `Sites.seat`. To jest ta sama zasada co „jedna loteria" z M4a, tylko o jedną
+  liczbę dalej.
+- **Plateau miasteczka to 0,5, nie 1,0** — i to jest największa poprawka
+  wybrana ze zdjęcia. Przy pełnej sile cały dysk o promieniu ośmiuset metrów
+  idzie do wysokości środka; miasteczko posadzone na nadmorskim wzgórzu ma ten
+  środek dziewięćdziesiąt metrów nad wodą, więc z 1,5 km czyta się jako blada
+  mesa z domami na wierzchu — zjawisko geologiczne, nie miejsce. Przy połowie
+  grunt wewnątrz rusza się o 5–10 m zamiast 10–24 (zmierzone) i dalej czyta się
+  jako grunt, a od tego, żeby ulica była pozioma, jest jej własna reguła
+  nachylenia. Specyfikacja mówiła „plateau pełne (1,0)" i to było po prostu
+  za dużo.
+- **Grunt miasteczka i sady.** Dwie rzeczy wybrane ze zdjęcia, nie z argumentu.
+  (1) Malowanie kamień-na-glinie czyta się z 1,5 km jako piasek; miasteczko ma
+  teraz grunt **zielony**, a kamień jest tym, co ludzie wydeptali — od kraju
+  dookoła ma je odróżniać dach i ulica, a nie kilometrowa zmiana koloru ziemi.
+  (2) Sad jako żywopłot obrysowany wokół działki, z założeniem, że scatter go
+  wypełni, wychodzi pustą zieloną ramką na glinie. Wieś kładzie żywopłoty
+  **wzdłuż dróg**, za ogrodami — płot przy drodze nie potrzebuje niczego
+  w środku, żeby się czytać.
+- **Czego zdjęcie nie potwierdziło.** Próbowano wygaszać osadę przy linii wody
+  (`dry`), żeby plateau nie wynosiło półki nad plażę. Wyszło odwrotnie: zamiast
+  złagodzić krawędź, ścisnęło ją w schodkowy mur, i eksperyment został cofnięty.
+  Zmierzone potem: najostrzejszy uskok przy krawędzi miasteczka to 5,7 m na 8 m,
+  a takie same uskoki są w paśmie 1300–1600 m, czyli **poza** jego zasięgiem.
+  Ta ząbkowana krawędź to naturalna linia brzegowa cypla, nie plateau.
 - **Osada sieje.** Tego w specyfikacji nie było i okazało się konieczne:
   własna waga osady wypycha biomy kraju z gruntu, który osada zajmuje, więc
   osada bez haka `populate` jest dyskiem malowanej gliny szerokim jak jej

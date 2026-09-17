@@ -157,7 +157,12 @@ biome's presence hook decides whether a cell carries a settlement at all, and
 `Sites` seats the settlement by calling that hook at the lattice centre. So
 presence, the plateau and the site finder read one lattice by construction --
 give `presence`, `height` and `sites` the same `cell` and the same `salt` and
-they cannot drift. They used to draw separately, and separately they agreed
+they cannot drift. Give the two hooks the same `[min, max]` **radius** as well,
+and not its top: they draw the width out of the cell's own stream, the same one
+the seat draws it from, so the ground that is painted and levelled is the ground
+the settlement covers. Handed the top instead, a town drawn at 400 m stands in
+five hundred metres of levelled nothing, which from the air is a bald dune with
+buildings on it. They used to draw separately, and separately they agreed
 about half the time; the other half was a village on the slope beside its own
 flat square, or a flat square with no village.
 
@@ -176,6 +181,13 @@ barely depends on the slope in the middle of it, so a town written with a strict
 merely rarer. A village leaves `maxCut` unsaid and lets the slope stand for
 both, which at 250 m is fair enough.
 
+The other number to be careful with is **`plateau.strength`**, and the mistake
+to avoid is thinking a big settlement wants a big one. A town at full strength
+pulls its whole disc to the height of its centre; seated on a coastal hill that
+is a pale mesa with buildings on top, which is a geological event rather than a
+place. Half of that levels the ground enough for streets and leaves it reading
+as ground.
+
 A settlement should also **sow the ground it claims** -- give it a `populate`
 like any other biome. Its own weight is what crowds the country's trees and
 grass out of the ground it stands on, so one without a `populate` is a disc of
@@ -187,9 +199,12 @@ tree where the houses are.
 `kit.line(points, kind)` for a fence, a wall or a hedge, `kit.structure(id, x, z,
 { yaw, floors })` for a plot, `kit.reserve(x, z, radius)` for ground nothing else
 may use. It may not plant: `kit.tree` inside a plan throws, because a settlement
-plants through its biome's `populate` and its cells. A hedge is how a plan says
-trees were planted here -- a line claims no ground, so the scatter fills the plot
-and the square of trees reads as an orchard. It reads the ground through
+plants through its biome's `populate` and its cells. A line claims no ground, so
+it says where people drew a boundary and nothing about what grows inside it --
+which is why the village lays its hedges **along its lanes** rather than around
+a plot. The plot version was tried: at a village's tree density it came out
+empty, and an empty hedge square on bare clay reads as a green picture frame
+dropped in a field. It reads the ground through
 `kit.height` and
 `kit.slope` rather than off a window of terrain, and draws every random it needs
 from `site.random()` in a fixed order -- change the order and the same cell grows

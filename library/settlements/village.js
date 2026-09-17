@@ -18,7 +18,7 @@ export const VILLAGE = {
   /** Weak on purpose: a village sits on its hill, it does not cut it flat. */
   plateau: { strength: 0.3, feather: 170 },
   /**
-   * What ground a village will stand on. These three numbers are read twice --
+   * What ground a village will stand on. These numbers are read twice --
    * by the presence hook, which paints and flattens, and by the site finder,
    * which seats the village -- and they must be the same numbers both times.
    */
@@ -43,17 +43,20 @@ export const VILLAGE = {
   /** Relative weights by structure id; the validator checks them against the registry. */
   buildings: { cottage: 1, barn: 0.3, mill: 0.05 },
   /**
-   * Orchards: a hedge around a plot out on the fringe, with nothing inside it.
-   * A line claims no ground by contract, so the village's own trees grow in
-   * there on their own -- the hedge says which trees were planted on purpose,
-   * and costs a ribbon rather than a scatter of its own.
+   * Hedgerows: a hedge behind the houses, following the lane they stand on.
    *
-   * `tries` and not `count`: a plot that lands on the houses or on a slope is
-   * dropped, and a village crowded to its edge simply has fewer orchards. They
-   * are drawn last of everything, so adding them moved not one house.
+   * This started as orchards -- a hedge squared off around a plot on the fringe,
+   * with the village's own scatter left to fill it, since a line claims no
+   * ground. The picture killed it: at a village's tree density the plot comes
+   * out empty, and an empty hedge square on bare clay reads as a green picture
+   * frame dropped in a field. A hedge beside a lane needs nothing inside it.
+   *
+   * `offset` clears the lots: a house sits `lots.setback` from the axis and
+   * reserves `lots.depth * 0.7` around itself, so 27 m is behind the gardens.
+   * `clear` is how near another lane a hedge may come before it gives way --
+   * a hedge laid across a road is the one thing this must not do.
    */
-  /** @type {{ tries: number, band: [number, number], size: [number, number], maxSlope: number }} */
-  orchards: { tries: 5, band: [0.55, 0.92], size: [34, 26], maxSlope: 0.32 },
+  hedges: { offset: 27, clear: 11, maxSlope: 0.35 },
   /**
    * What grows on the ground a village claims. Without it the village is a
    * disc of painted clay 420 m across -- radius plus feather -- with two

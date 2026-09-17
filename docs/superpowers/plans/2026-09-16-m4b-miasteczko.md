@@ -523,3 +523,29 @@ z powyższych:
   od 1,4 do 2,4 promienia leży wewnątrz obecności wsi (promień + pióro), więc
   „las na zewnątrz" był przerzedzony przez samą wieś. Stosunek czytał się jako
   0,74 dla czegoś, co naprawdę wynosi 0,40.
+
+## Po zdjęciach (2026-09-17)
+
+Etap był zielony i zamknięty; zdjęcia z lotu pokazały trzy rzeczy, których
+żaden test nie mówi. Właściciel zdecydował, że przy tym projekcie wolno zmieniać
+zasady, jeśli poprawiają wygląd — więc zmienione.
+
+1. **Promień z kraty.** Haki obecności i plateau dostawały `radius[1]`, czyli
+   najszerszą osadę, jaką zakres dopuszcza. Miasteczko wylosowane na 400 m stało
+   w pięciuset metrach wyrównanej, pomalowanej pustki. Oba haki losują teraz
+   szerokość ze strumienia `SITE_STREAM.radius` — tego samego, z którego losuje
+   ją `Sites.seat`. Ta sama zasada co „jedna loteria" z M4a, o jedną liczbę dalej.
+2. **Żywopłoty zamiast sadów.** Obrysowana działka z założeniem, że scatter ją
+   wypełni, wychodzi pustą zieloną ramką na glinie. Żywopłot wzdłuż drogi, za
+   ogrodami, nie potrzebuje nic w środku. 6,3 przebiegu i 485 m żywopłotu na wieś.
+3. **Plateau 1,0 → 0,5 i grunt na zielony.** To była największa poprawka i
+   najdłużej szukana. Po drodze wykonano jeden eksperyment, który zdjęcie
+   obaliło: wygaszanie osady przy linii wody (`dry`) miało powstrzymać plateau
+   przed wynoszeniem półki nad plażę, a zamiast złagodzić krawędź — ścisnęło ją
+   w schodkowy mur. Cofnięte. Zmierzone dopiero potem: najostrzejszy uskok przy
+   krawędzi to 5,7 m na 8 m, a identyczne uskoki są w paśmie 1300–1600 m, poza
+   zasięgiem miasteczka. To jest naturalna linia brzegowa cypla.
+
+Morał, ten sam co w całym M4b: **liczba, która wygląda jak narzędzie do danego
+problemu, zwykle nim nie jest, dopóki się tego nie zmierzy.** Trzy razy z rzędu
+— `maxSlope`, rezerwacje parcel, `dry`.

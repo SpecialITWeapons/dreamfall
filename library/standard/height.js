@@ -6,6 +6,7 @@
  */
 
 import { clamp01, sstep } from './math.js';
+import { widestOf, widthOf } from './presence.js';
 
 /**
  * Lift or sink the ground by a fixed amount.
@@ -47,14 +48,25 @@ export function terraces({ step, sharpness = 1 }) {
  * reads its own texel and cannot go asking the sampler about another one in the
  * middle of a fill.
  *
- * @param {{ cell: number, salt?: number, radius?: number, feather?: number, strength?: number }} spec
+ * The radius may be a pair, and then it is drawn from the cell's own stream --
+ * the same draw the presence hook and the site finder make. It has to be the
+ * hook's own pair: a plateau a hundred metres wider than the presence above it
+ * is a hundred metres of levelled ground belonging to no biome, and a plateau
+ * narrower is a settlement with its outskirts on the hillside.
+ *
+ * @param {{ cell: number, salt?: number, radius?: number | [number, number], feather?: number, strength?: number }} spec
  * @returns {(f: import('../contract').Fields, base: number) => number}
  */
 export function plateau({ cell, salt = 0x5117, radius = 200, feather = 150, strength = 1 }) {
   const k = clamp01(strength);
+  const widest = widestOf(radius);
   return (f, base) => {
     const hit = f.lattice(cell, salt);
-    return base + (hit.h - base) * k * (1 - sstep(radius, radius + feather, hit.d));
+    // Out of reach of the widest plateau this cell could carry: the ground is
+    // its own, and the width is not drawn. Every texel of the window asks this.
+    if (hit.d >= widest + feather) return base;
+    const width = widthOf(radius, hit);
+    return base + (hit.h - base) * k * (1 - sstep(width, width + feather, hit.d));
   };
 }
 

@@ -22,6 +22,8 @@
  * village of a hundred and fifty can afford and a town cannot.
  */
 
+import { toSegment } from './geometry.js';
+
 /**
  * Metres of street per radian of the wander: a street's slow curve runs through
  * a period in some 560 m, which reads as a street laid by eye. The wander is a
@@ -76,19 +78,6 @@ const LANDMARK_FLOORS = [3, 4];
  */
 function facing(ux, uz, shoulder) {
   return Math.atan2(ux, uz) + (shoulder > 0 ? 0 : Math.PI);
-}
-
-/**
- * The distance from a point to a segment, m.
- *
- * @param {number} ax @param {number} az @param {number} bx @param {number} bz
- * @param {number} x @param {number} z
- */
-function toSegment(ax, az, bx, bz, x, z) {
-  const dx = bx - ax,
-    dz = bz - az;
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
-  return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
 }
 
 /**

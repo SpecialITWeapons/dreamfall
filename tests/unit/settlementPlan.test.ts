@@ -171,40 +171,33 @@ describe('planVillage', () => {
     for (const lot of plan().lots)
       expect(Math.hypot(lot.x - one.x, lot.z - one.z)).toBeLessThanOrEqual(one.radius);
   });
-  it('hedges an orchard or two on the fringe, and nowhere near the houses', () => {
+  it('runs a hedgerow behind the houses along the lane, and never across another one', () => {
     const one = site();
-    const { lines, lots } = plan();
+    const { lines, lots, roads } = plan();
     expect(lines.length).toBeGreaterThan(0);
-    expect(lines.length).toBeLessThanOrEqual(VILLAGE.orchards.tries);
-    const [ow, oh] = VILLAGE.orchards.size;
+    const toRoadAxis = (road: RoadSpec, x: number, z: number) => toRoad(road, x, z);
     for (const hedge of lines) {
       expect(hedge.kind).toBe('hedge');
-      // a closed plot: five points, the last one back at the first
-      expect(hedge.points).toHaveLength(5);
-      expect(hedge.points[4]).toEqual(hedge.points[0]);
-      const xs = hedge.points.map((p) => p[0]),
-        zs = hedge.points.map((p) => p[1]);
-      const cx = (Math.min(...xs) + Math.max(...xs)) / 2,
-        cz = (Math.min(...zs) + Math.max(...zs)) / 2;
-      // out on the fringe, in the band the parameters name
-      const out = Math.hypot(cx - one.x, cz - one.z) / one.radius;
-      expect(out).toBeGreaterThanOrEqual(VILLAGE.orchards.band[0] - 1e-9);
-      expect(out).toBeLessThanOrEqual(VILLAGE.orchards.band[1] + 1e-9);
-      // the right size, whichever way the site's yaw turned it
-      const a = Math.hypot(
-          hedge.points[1]![0] - hedge.points[0]![0],
-          hedge.points[1]![1] - hedge.points[0]![1],
-        ),
-        b = Math.hypot(hedge.points[2]![0] - hedge.points[1]![0], hedge.points[2]![1] - hedge.points[1]![1]);
-      expect(a).toBeCloseTo(ow, 6);
-      expect(b).toBeCloseTo(oh, 6);
-      // and never over a house
-      for (const lot of lots)
-        expect(Math.hypot(lot.x - cx, lot.z - cz)).toBeGreaterThanOrEqual(Math.max(ow, oh) * 0.8);
+      expect(hedge.points.length).toBeGreaterThan(1);
+      for (const [x, z] of hedge.points) {
+        // inside the village
+        expect(Math.hypot(x - one.x, z - one.z)).toBeLessThanOrEqual(one.radius);
+        // behind the gardens: clear of every house's own reserved ground
+        for (const lot of lots)
+          expect(Math.hypot(lot.x - x, lot.z - z)).toBeGreaterThan(VILLAGE.lots.depth * 0.7);
+        // and beside a lane rather than over one. Its own lane is the near one;
+        // what may not happen is a hedge laid across a different lane.
+        const distances = roads.map((road) => toRoadAxis(road, x, z)).sort((a, b) => a - b);
+        expect(distances[1] ?? Infinity).toBeGreaterThanOrEqual(VILLAGE.hedges.clear);
+      }
     }
+    // it really is following a lane: its nearest road is about the offset away
+    const first = lines[0]!.points[0]!;
+    const nearest = Math.min(...roads.map((road) => toRoadAxis(road, first[0], first[1])));
+    expect(nearest).toBeLessThanOrEqual(VILLAGE.hedges.offset + 1);
   });
-  it('drew them last, so growing hedges moved not one house', () => {
-    const bare = plan({}, hillside, { ...VILLAGE, orchards: undefined as never });
+  it('drew them last and drew nothing for them, so hedges moved not one house', () => {
+    const bare = plan({}, hillside, { ...VILLAGE, hedges: undefined as never });
     const hedged = plan();
     expect(bare.lines).toHaveLength(0);
     expect(hedged.lots).toEqual(bare.lots);
