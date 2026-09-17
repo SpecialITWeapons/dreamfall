@@ -214,9 +214,16 @@ describe('createProceduralHuman', () => {
       k0 = knee.quaternion.clone();
     human.update(pose({ windPhase: Math.PI / 2 }), 0.05);
     const calm = q0.angleTo(shoulderL.quaternion);
-    expect(calm).toBeGreaterThan(0.01);
+    // The floor here was 0.01 when the joints were first-order filters, which
+    // move fastest in their first step. A spring starts from rest, so its first
+    // step is smaller and its third is larger -- that asymmetry is the weight
+    // this was changed to get, and the number moved with it rather than the
+    // spring being tuned to the number.
+    expect(calm).toBeGreaterThan(0.005);
     expect(calm).toBeLessThan(0.2);
-    expect(k0.angleTo(knee.quaternion)).toBeGreaterThan(0.01);
+    // and the knee less again in its first step, because it is a slower joint:
+    // 0.17 s against the shoulder's 0.10
+    expect(k0.angleTo(knee.quaternion)).toBeGreaterThan(0.002);
     human.update(pose({ windPhase: 0 }), 0.05);
     const g0 = shoulderL.quaternion.clone();
     human.update(pose({ windPhase: Math.PI / 2, gust: 1 }), 0.05);
@@ -278,6 +285,59 @@ describe('createProceduralHuman', () => {
     const bare = createProceduralHuman(lit, { fppHands: false });
     bare.update(pose({ view: 'fpp' }), 0.05);
     expect(meshes(bare.object).some((m) => m.visible)).toBe(false);
+  });
+  it('feels the air it is flying through, which it used not to at all', () => {
+    // `pose.speed` and `pose.vy` arrived every frame and were read nowhere.
+    // The sound knew about a dive -- `AmbienceModel` reads `speed / SPEED` --
+    // and the suit did not, so the rush of air got louder while the figure
+    // fluttered exactly as before.
+    const slow = createProceduralHuman(lit),
+      fast = createProceduralHuman(lit);
+    const air = { windPhase: 1.1, gust: 0.3 };
+    hold(slow, { ...air, speed: 30 });
+    hold(fast, { ...air, speed: 62 });
+    const angle = (h: ReturnType<typeof createProceduralHuman>, name: string) =>
+      h.object.getObjectByName(name)!.quaternion;
+    // Every joint of the fast figure sits somewhere else, and the far ones move
+    // more than the near ones, because a wrist trails further than a shoulder.
+    const shoulder = angle(slow, 'shoulderL').angleTo(angle(fast, 'shoulderL')),
+      ankle = angle(slow, 'ankleL').angleTo(angle(fast, 'ankleL'));
+    expect(shoulder).toBeGreaterThan(0.02);
+    expect(ankle).toBeGreaterThan(shoulder);
+    // And a dive arches it, which is a separate reading: same airspeed, different vy.
+    const level = createProceduralHuman(lit),
+      diving = createProceduralHuman(lit);
+    hold(level, { ...air, speed: 50, vy: 0 });
+    hold(diving, { ...air, speed: 50, vy: -18 });
+    expect(angle(level, 'hipL').angleTo(angle(diving, 'hipL'))).toBeGreaterThan(0.05);
+  });
+  it('does not ring when a frame runs long, and is where it is told when there is no frame', () => {
+    // The shoulder's own frequency is 10 rad/s; an explicit spring at 200 ms a
+    // frame is over the edge and rings. The substep is what keeps it honest, so
+    // this asks the joint to hold still against a still target across frames no
+    // sane loop should produce.
+    // Both figures fly the same eight seconds against the same still air; only
+    // the frame length differs. A spring that rings would not merely differ
+    // from the fine one, it would leave the flutter's own envelope entirely.
+    const coarse = createProceduralHuman(lit),
+      fine = createProceduralHuman(lit);
+    for (let i = 0; i < 40; i++) coarse.update(pose({ windPhase: 0.4 }), 0.2);
+    for (let i = 0; i < 400; i++) fine.update(pose({ windPhase: 0.4 }), 0.02);
+    const a = coarse.object.getObjectByName('shoulderL')!.quaternion,
+      b = fine.object.getObjectByName('shoulderL')!.quaternion;
+    expect(a.angleTo(b)).toBeLessThan(0.02);
+    // and dt <= 0 is still "be there now", velocity included: a spring that
+    // merely started moving would arrive during the first frame instead of
+    // before it
+    const placed = createProceduralHuman(lit);
+    placed.update(pose({ windPhase: 0.4 }), 0);
+    const at = placed.object.getObjectByName('shoulderL')!.quaternion.clone();
+    placed.update(pose({ windPhase: 0.4 }), 0.05);
+    // Not zero, because the slow drift is a function of elapsed time and 50 ms
+    // of it has now elapsed: 7e-5 rad. What it is being told apart from is a
+    // spring that was still travelling, which covers 5e-3 in its first 50 ms --
+    // seventy times as far.
+    expect(at.angleTo(placed.object.getObjectByName('shoulderL')!.quaternion)).toBeLessThan(5e-4);
   });
   it('recolors with an outfit and falls back to the default for an unknown id', () => {
     const human = createProceduralHuman(lit);

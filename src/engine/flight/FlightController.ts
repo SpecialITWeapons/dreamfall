@@ -405,7 +405,13 @@ export function createFlightController(deps: FlightDeps): FlightController {
         gusting = true;
       }
       s.gust += ((gusting ? 1 : 0) - s.gust) * Math.min(1, dt * (gusting ? 4 : 1.5));
-      s.windPhase += dt * (4.5 + 3.5 * s.gust + Math.abs(s.vy) * 0.1);
+      // The airspeed is in here, and it was not: the phase ran on the gust and
+      // the climb rate alone, so a dive made the rush of air louder --
+      // `AmbienceModel` reads `speed / SPEED` -- while the suit fluttered at
+      // exactly the same rate. The ear and the eye said different things about
+      // the same dive. It is the ratio and not the square, because this is a
+      // rate rather than a pressure; the figure squares it for its own flutter.
+      s.windPhase += dt * (4.5 + 3.5 * s.gust + Math.abs(s.vy) * 0.1) * (s.speed / SPEED);
       return true;
     },
     steerBy(delta) {

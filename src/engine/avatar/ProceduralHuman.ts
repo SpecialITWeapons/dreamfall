@@ -22,6 +22,7 @@ import {
 } from 'three';
 import { vertexColor } from 'three/tsl';
 import { FPP } from '../flight/ChaseCamera';
+import { SPEED } from '../flight/FlightController';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
@@ -105,6 +106,61 @@ const LAG: Record<Hinge['kind'], number> = {
   knee: 0.17,
   ankle: 0.24,
 };
+/**
+ * How far past its target a joint is allowed to swing, as a damping ratio: one
+ * is the old behaviour exactly, and below one the limb overshoots and comes
+ * back. That overshoot is the whole reason the spring is here. A first-order
+ * filter -- what this was -- can only ever slow down as it arrives, which is
+ * why every gust read as the figure being *moved* rather than as the figure
+ * having weight.
+ *
+ * The pose blend keeps a ratio of one on purpose: a joint that overshoots a
+ * blend between two poses does not swing past a target, it inverts an arm.
+ */
+const DAMPING = { joint: 0.62, pose: 1 };
+/**
+ * The air, as the figure feels it. `rush` is the airspeed over the nominal --
+ * the same number `AmbienceModel` calls `rush`, so the suit and the noise agree
+ * about a dive -- and what a limb feels is the dynamic pressure, which goes
+ * with its square. `trail` is how far that pressure pushes a joint back, and it
+ * grows with the distance from the chest: a wrist trails further than a
+ * shoulder for the same reason a flag's tip moves more than its rope.
+ */
+const TRAIL: Record<Hinge['kind'], number> = {
+  shoulder: 0.1,
+  elbow: 0.16,
+  hip: 0.08,
+  knee: 0.14,
+  ankle: 0.2,
+};
+
+/**
+ * One state of a joint: where it is and how fast it is going there. Semi-implicit
+ * Euler -- velocity first, then position -- because it is the cheapest
+ * integrator that does not feed energy into a spring, and this one is stiff:
+ * the shoulder's own frequency is 10 rad/s and a slow frame is 50 ms, which is
+ * exactly the band where the explicit form starts to ring. The substep keeps
+ * `omega * h` under a half whatever the frame does.
+ */
+interface Spring {
+  x: number;
+  v: number;
+}
+const settle = (s: Spring, target: number, omega: number, zeta: number, dt: number) => {
+  // dt <= 0 is "be there now": the world places the figure once before the
+  // first frame, and a spring that merely started moving would arrive during it.
+  if (dt <= 0) {
+    s.x = target;
+    s.v = 0;
+    return;
+  }
+  const steps = Math.min(8, Math.max(1, Math.ceil((omega * dt) / 0.5)));
+  const h = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    s.v += (omega * omega * (target - s.x) - 2 * zeta * omega * s.v) * h;
+    s.x += s.v * h;
+  }
+};
 const IDENTITY = new Quaternion();
 
 /**
@@ -155,11 +211,11 @@ interface Hinge {
   side: 1 | -1;
   kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
   /** What this joint is actually doing, as opposed to what the air asked for. */
-  swing: number;
-  drop: number;
-  back: number;
+  swing: Spring;
+  drop: Spring;
+  back: Spring;
   /** How far into the track this joint has folded, 0..1. */
-  fold: number;
+  fold: Spring;
 }
 
 export function createProceduralHuman(
@@ -244,7 +300,19 @@ export function createProceduralHuman(
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
-    const h: Hinge = { pivot, rest, track, world, side, kind, swing: 0, drop: 0, back: 0, fold: 0 };
+    const spring = (): Spring => ({ x: 0, v: 0 });
+    const h: Hinge = {
+      pivot,
+      rest,
+      track,
+      world,
+      side,
+      kind,
+      swing: spring(),
+      drop: spring(),
+      back: spring(),
+      fold: spring(),
+    };
     hinges.push(h);
     return h;
   };
@@ -339,10 +407,24 @@ export function createProceduralHuman(
       time += dt;
       object.position.set(pose.x, pose.y, pose.z);
       object.rotation.set(-pose.pitch, pose.heading, pose.bank);
-      // the hinges: wind flutter, stronger in a gust, plus a slow drift; the inner arm drops in a turn
-      const flutter = 0.05 + 0.09 * pose.gust;
+      // The air, as a limb feels it. `rush` is the airspeed over the nominal and
+      // the flutter goes with its square, because what shakes a suit is the
+      // dynamic pressure and not the speed. Before this the figure read neither
+      // `speed` nor `vy` at all -- they arrived every frame and were dropped --
+      // so a dive at 62 m/s fluttered exactly like a glide at 30 while the
+      // sound of it did not.
+      const rush = pose.speed / SPEED;
+      const press = rush * rush;
+      const flutter = (0.05 + 0.09 * pose.gust) * press;
       const slow = perlin2(time * 0.15, 0.37, 11) * 0.05;
       const w = pose.windPhase;
+      // What the pressure does besides shake: it pushes the limbs back. Above
+      // the nominal they trail, below it they come forward, and the far joints
+      // feel it more than the near ones.
+      const drag = press - 1;
+      // A dive also arches the back, and the figure has no spine joint to arch
+      // -- so the hips take it, which is where an arch is felt anyway.
+      const arch = Math.min(Math.max(-pose.vy / 20, -1), 1);
       // The air the figure meets: a dive sweeps the arms back into a track and
       // straightens the knees, a climb spreads the arms forward and wide. Both
       // are rotations around the figure's own up axis, so the arms travel in
@@ -352,9 +434,6 @@ export function createProceduralHuman(
       // somewhere specific to be.
       const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
 
-      // dt <= 0 is "place it, now": the world puts the figure down once before
-      // the first frame, and a test asks for a pose without a frame to reach it.
-      const caught = (kind: Hinge['kind']) => (dt > 0 ? 1 - Math.exp(-dt / LAG[kind]) : 1);
       for (const h of hinges) {
         const phase = h.side > 0 ? 0 : 2.1;
         let swing = 0,
@@ -373,7 +452,7 @@ export function createProceduralHuman(
             back = sweep < 0 ? sweep * 0.5 : 0;
             break;
           case 'hip':
-            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
+            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow + arch * 0.12;
             break;
           case 'knee':
             swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
@@ -382,22 +461,27 @@ export function createProceduralHuman(
             swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
-        const k = caught(h.kind);
-        h.swing += (swing - h.swing) * k;
-        h.drop += (drop - h.drop) * k;
-        h.back += (back - h.back) * k;
-        h.fold += (dive - h.fold) * k;
+        // The pressure trails the limb: it is a swing about the joint's own
+        // pitch axis, so an arm goes back along the body and a leg goes back
+        // along the flight, which is what the air does to both.
+        swing -= drag * TRAIL[h.kind];
+        const omega = 1 / LAG[h.kind];
+        settle(h.swing, swing, omega, DAMPING.joint, dt);
+        settle(h.drop, drop, omega, DAMPING.joint, dt);
+        settle(h.back, back, omega, DAMPING.joint, dt);
+        settle(h.fold, dive, omega, DAMPING.pose, dt);
+        const fold = Math.min(Math.max(h.fold.x, 0), 1);
         h.pivot.quaternion.copy(h.rest);
-        if (h.track && h.fold > 0) h.pivot.quaternion.slerp(h.track, h.fold);
+        if (h.track && fold > 0) h.pivot.quaternion.slerp(h.track, fold);
         // Straightening is a walk of the joint's own bend back toward none of
         // it, so the forearm ends up along the upper arm whatever direction the
         // upper arm is pointing by then.
-        if (h.kind === 'elbow' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.elbow);
-        if (h.kind === 'knee' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.knee);
+        if (h.kind === 'elbow' && fold > 0) h.pivot.quaternion.slerp(IDENTITY, fold * TRACK.elbow);
+        if (h.kind === 'knee' && fold > 0) h.pivot.quaternion.slerp(IDENTITY, fold * TRACK.knee);
         h.pivot.quaternion
-          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop))
-          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back))
-          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing));
+          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop.x))
+          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back.x))
+          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing.x));
       }
       // What the first person shows is not a list of names, it is whatever an
       // eye could actually look at: past the near plane and inside the frame.
