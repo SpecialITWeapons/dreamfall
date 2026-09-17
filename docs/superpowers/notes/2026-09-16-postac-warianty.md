@@ -1,5 +1,18 @@
 # Postać: jak ją zamodelować i jak poprawić jej ruch (2026-09-16)
 
+> **Zrobione (2026-09-17).** Wariant B — jedna ciągła skóra na kościach —
+> jest w repozytorium: `src/engine/avatar/Skin.ts` (czysta geometria, testy w
+> Node) i przepisany `ProceduralHuman.ts`. Wyszło **2 rysunki zamiast 20,
+> 1 120 trójkątów zamiast 3 528, 16 kości i tyle samo mikrosekund na klatkę**
+> — pomiar w `docs/perf-notes.md`, plan w
+> `docs/superpowers/plans/2026-09-17-postac-skora-na-kosciach.md`. Dwie rzeczy
+> z tej notatki okazały się nieprawdą po zmierzeniu: „3,5 µs na `update()`” to
+> była wartość **sprzed** sprężyn (dziś te same bryły kosztują 8,6 µs), a
+> „jeden rysunek” to dwa, bo głowa musi być osobną powierzchnią, żeby FPP miał
+> co chować. Zestaw póz z §5.3 też jest: pięć kształtów wybieranych z trzech
+> osi, +5,6 µs na klatkę, i dwa progi, które trzeba było przepisać z obwiedni
+> kontrolera zamiast ze zdjęcia spadochroniarza.
+
 Notatka badawcza, nie plan. Powstała na pytanie właściciela: *„szukam
 rozwiązania, jak tę postać zrobić, aby wyglądała najwierniej jak człowiek, jak
 to możliwe w tym silniku. Nie wiem, jakie są jeszcze sposoby, aby wymodelować

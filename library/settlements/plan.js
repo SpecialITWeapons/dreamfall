@@ -10,6 +10,8 @@
  * same village comes out different, which is a thing a player can notice.
  */
 
+import { toPolyline } from './geometry.js';
+
 /** Steps of this length walk the contour; shorter reads as a polygon, longer cuts the corner. */
 const STEP = 25;
 /** How far to reach when measuring which way the ground falls. */
@@ -162,11 +164,74 @@ export function planVillage(site, params, kit) {
             if (pick <= 0) break;
           }
           const floors = structure === 'mill' ? 3 : site.random() < 0.3 ? 2 : 1;
+          // The settlement's own tint, drawn here and nowhere else: it is the
+          // last number this lot takes from the stream, so adding one changes
+          // every house after it and none before. A tint multiplies what the
+          // recipe painted, so a palette of one white is a settlement whose
+          // houses are all exactly their recipe.
+          const palette = params.palette ?? ['white'];
+          const tint = palette[Math.min(palette.length - 1, Math.floor(site.random() * palette.length))];
           // Facing the street: the house turns its front to the axis it stands on.
           const yaw = Math.atan2(ux, uz) + (shoulder > 0 ? 0 : Math.PI);
-          kit.structure(structure, x, z, { yaw, floors });
+          kit.structure(structure, x, z, { yaw, floors, tint });
           kit.reserve(x, z, params.lots.depth * 0.7);
         }
       }
     }
+
+  // Hedgerows, last of everything and therefore free: nothing below draws a
+  // number, so a village that grew hedges kept every house exactly where it
+  // was, and a test holds that.
+  //
+  // They run beside the lanes rather than round a plot, and that is a correction
+  // made from a picture. The first version fenced a square out on the fringe and
+  // left the biome's own scatter to fill it, on the argument that a line claims
+  // no ground. At the village's tree density the plot came out empty, and an
+  // empty hedge square on bare clay reads as a green picture frame lying in a
+  // field. A hedge beside a lane needs nothing inside it to read as a hedge.
+  const hedges = params.hedges;
+  if (!hedges) return;
+  for (const [index, road] of streets.entries()) {
+    const shoulder = index % 2 === 0 ? 1 : -1;
+    /** @type {Array<[number, number]>} */
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) kit.line(run, 'hedge');
+      run = [];
+    };
+    for (let i = 0; i < road.points.length; i++) {
+      // The way the lane runs here, from its neighbours rather than from one
+      // segment, so the hedge curves with it instead of stepping at every point.
+      const a = road.points[Math.max(0, i - 1)],
+        b = road.points[Math.min(road.points.length - 1, i + 1)],
+        here = road.points[i];
+      if (!a || !b || !here) continue;
+      const dx = b[0] - a[0],
+        dz = b[1] - a[1];
+      const len = Math.hypot(dx, dz) || 1;
+      const x = here[0] - (dz / len) * shoulder * hedges.offset,
+        z = here[1] + (dx / len) * shoulder * hedges.offset;
+      // Behind the houses, not through them: the offset clears the lots' own
+      // reservations, and what breaks the run is the village ending, a slope no
+      // hedge would be planted up, or another lane crossing -- a hedge laid over
+      // a road is the fault this whole arrangement exists to avoid.
+      const crossed = streets.some(
+        (other) => other !== road && toPolyline(other.points, x, z) < hedges.clear,
+      );
+      // And off the houses themselves. The offset clears the lots of its own
+      // lane by arithmetic, but a lane that crosses another carries its hedge
+      // past that one's gardens, and a hedge through a kitchen is worse than no
+      // hedge at all.
+      const built = taken.some((t) => Math.hypot(t.x - x, t.z - z) < params.lots.depth * 0.75);
+      if (
+        Math.hypot(x - site.x, z - site.z) > site.radius ||
+        crossed ||
+        built ||
+        kit.slope(x, z) > hedges.maxSlope
+      )
+        flush();
+      else run.push([x, z]);
+    }
+    flush();
+  }
 }

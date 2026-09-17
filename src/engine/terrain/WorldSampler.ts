@@ -22,6 +22,23 @@ export const CLIMATE_SCALE = 12000;
 export const MAX_HEIGHT_DELTA = 300;
 /** How many biomes mix in one point (spec 5.7). */
 export const SLOTS = 3;
+/**
+ * The range the window's fourth slot byte covers, and the one thing that byte
+ * is: the climate temperature the snow line is drawn on, with the sampler's
+ * altitude cooling taken back off. Seed 42 spans 0.14 to 0.85 over a hundred
+ * kilometres, so two is room for a world hotter or higher than this one and
+ * still leaves 3 m of snow line to a step -- under a line that wanders 45 m.
+ *
+ * It is the byte that used to be reserved for standing water. That reservation
+ * was never going to work: a lake needs a surface **height**, and a byte over
+ * this world's relief is four metres a step, which is not water, it is a
+ * staircase. Standing water will want a channel of its own.
+ */
+export const BASE_TEMP_RANGE = 2;
+/** The climate temperature as the window carries it, and as the GPU reads it back. */
+export const packBaseTemp = (baseTemp: number) =>
+  Math.max(0, Math.min(255, Math.round((baseTemp / BASE_TEMP_RANGE) * 255)));
+export const unpackBaseTemp = (byte: number) => (byte / 255) * BASE_TEMP_RANGE;
 
 /** Somewhere to write the fields: the window uses Float32Array, the hooks Float64Array. */
 export type FieldsOut = Float32Array | Float64Array | number[];
@@ -117,6 +134,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
         out[1] = 1;
         out[2] = out[3] = 0;
         slots[0] = slots[1] = slots[2] = 0;
+        slots[3] = packBaseTemp(scratch[1]! + Math.max(0, scratch[0]!) / 2600);
         return;
       }
       const f = fields.at(x, z);
@@ -175,6 +193,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       slots[0] = i0;
       slots[1] = w1 > 0 ? i1 : i0;
       slots[2] = w2 > 0 ? i2 : i0;
+      slots[3] = packBaseTemp(f.baseTemp);
       // Height: every modifier reads the base height, never a neighbour's
       // answer, so the order of the registry cannot change the ground.
       const base = f.baseHeight;

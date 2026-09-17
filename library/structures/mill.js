@@ -7,9 +7,9 @@ import { defineStructure } from '../contract';
 export default defineStructure({
   id: 'mill',
   name: 'mill',
-  footprint: [4.8, 4.4],
+  footprint: [9, 8.3],
   floors: [3, 4],
-  floorHeight: 2.6,
+  floorHeight: 4.4,
   roof: 'hip',
   roofPitch: 1,
   palette: { wall: 'stoneWarm', roof: 'stoneDark', trim: 'barkDark', window: 'gold' },

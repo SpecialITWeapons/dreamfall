@@ -18,7 +18,11 @@ export interface Heightfield {
   readonly size: number;
   /** RGBA float texels (height, w0, w1, w2), ready for a DataTexture. */
   readonly data: Float32Array;
-  /** RGBA byte texels (i0, i1, i2, spare): which biomes the weights belong to. The spare byte is reserved for standing water. */
+  /**
+   * RGBA byte texels (i0, i1, i2, baseTemp): which biomes the weights belong
+   * to, and the climate temperature the snow line is drawn on -- see
+   * `packBaseTemp` in `WorldSampler`.
+   */
   readonly slots: Uint8Array;
   /** Grows on every write; the presentation uploads the texture when it changes. */
   readonly version: number;
@@ -60,7 +64,8 @@ export function createHeightfield(
     slots[o] = tmpSlots[0]!;
     slots[o + 1] = tmpSlots[1]!;
     slots[o + 2] = tmpSlots[2]!;
-    slots[o + 3] = 0;
+    // the fourth byte is the climate temperature the snow line is drawn on
+    slots[o + 3] = tmpSlots[3]!;
   };
   const texel = (ix: number, iz: number, channel: number) =>
     data[(wrap(iz) * size + wrap(ix)) * 4 + channel]!;

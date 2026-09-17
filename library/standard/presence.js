@@ -9,6 +9,28 @@
 import { clamp01, sstep } from './math.js';
 
 /**
+ * The streams of a lattice cell, numbered once for everyone who draws from one.
+ *
+ * Stream 0 is left alone: `Fields.lattice` keys the streams on the rounded
+ * centre and salts the first of them exactly as it salts the jitter, so a cell
+ * whose centre jittered towards its own lower corner would draw under a half
+ * every time -- with odds of a half that is two cells in three carrying a site
+ * rather than one in two. The streams after it are clean.
+ *
+ * They are one object because two sides read the same numbers and the whole
+ * value of that is that they cannot drift: the presence hook draws `carry` to
+ * decide whether a cell carries a settlement at all and `radius` to decide how
+ * wide it is, and the site finder draws the same `radius` to seat one that
+ * wide. One side changing its mind about which stream is which is a town
+ * painted at nine hundred metres standing at four.
+ *
+ * They live here rather than in the contract because the contract imports
+ * `three` for its colours, `three` is aliased to `three/webgpu`, and nothing
+ * under `library/standard/` may pull the renderer into a Node test.
+ */
+export const SITE_STREAM = { carry: 1, radius: 2, yaw: 3, plan: 4 };
+
+/**
  * The climate space, ported from fly-with-me: the axes are stretched around
  * their middle so the ends of temperature, moisture and region are reachable,
  * a cell is a soft sphere of this radius, and the sharpening keeps most ground
@@ -67,13 +89,34 @@ export function heightBand({ from, to, feather = 60 }) {
 const SHORE_REACH = 25;
 
 /**
- * The stream a cell draws its site from. Not stream 0: `Fields.lattice` keys the
- * streams on the rounded centre and salts the first of them exactly as it salts
- * the jitter, so a cell whose centre jittered towards the lower corner of itself
- * draws under a half every time -- with odds of a half that is two cells in
- * three carrying a site rather than one in two. The streams after it are clean.
+ * How wide this cell's settlement is, m. A pair is drawn from the cell's own
+ * radius stream -- `SITE_STREAM.radius`, the same one the site finder draws
+ * from, so the painted circle and the settlement inside it are one number.
+ *
+ * @param {number | [number, number] | undefined} radius
+ * @param {import('../contract').LatticeHit} hit
  */
-const CARRY = 1;
+export function widthOf(radius, hit) {
+  if (typeof radius === 'number') return radius;
+  if (!radius) return 200;
+  return radius[0] + hit.u(SITE_STREAM.radius) * (radius[1] - radius[0]);
+}
+
+/**
+ * The widest a settlement of these parameters can be, m -- known without a hit,
+ * and the reason drawing the width costs nothing. Every texel of a cell
+ * kilometres wide is asked, and nearly all of them are nowhere near its centre,
+ * so they are turned away on this number before the draw is ever made. Making
+ * the draw first cost a whole window fill: measured, `sites.near` over a nine
+ * kilometre reach went from under five seconds to over thirty.
+ *
+ * @param {number | [number, number] | undefined} radius
+ */
+export function widestOf(radius) {
+  if (typeof radius === 'number') return radius;
+  if (!radius) return 200;
+  return radius[1];
+}
 
 /**
  * A place someone built on: one centre per cell of a lattice, and a circle of
@@ -97,12 +140,25 @@ const CARRY = 1;
  * on this lattice -- the plan of the settlement, its buildings -- takes the
  * streams after it.
  *
- * `minTemp` is the last of the cell-level refusals and reads the centre's own
+ * `maxSlope` refuses the whole cell when the centre's own ground is steeper
+ * than it, and separately fades the settlement where the ground departs from
+ * that centre. The first is what the design asks for and what a seat is judged
+ * by; the second is what keeps a rough edge from reading as a village.
+ *
+ * `minTemp` is another of the cell-level refusals and reads the centre's own
  * temperature for the same reason `land` reads its height: a settlement that
  * refuses a glacier must refuse the whole cell, or the ground is painted and
  * flattened for a village the site finder will not seat.
  *
- * @param {{ cell: number, radius?: number, feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, shoreBonus?: number }} spec
+ * `maxCut` is the second of those two, said in metres instead: how far the
+ * ground may have run from the centre by the time it reaches here. A settlement
+ * a few hundred metres wide can leave it unsaid and let the slope stand for
+ * both, which is what a village does. One nine hundred metres wide cannot: over
+ * that distance the departure is the terrain's relief and has almost nothing to
+ * do with the slope at the centre, so the one number would have to be chosen
+ * for the fade and would then refuse most of the seats for no gain.
+ *
+ * @param {{ cell: number, radius?: number | [number, number], feather?: number, odds?: number, salt?: number, land?: number, minTemp?: number, maxSlope?: number, maxCut?: number, shoreBonus?: number }} spec
  * @returns {(f: import('../contract').Fields) => number}
  */
 export function lattice({
@@ -114,18 +170,35 @@ export function lattice({
   land = -Infinity,
   minTemp = -Infinity,
   maxSlope = Infinity,
+  maxCut = undefined,
   shoreBonus = 0,
 }) {
+  const widest = widestOf(radius);
   return (f) => {
     const hit = f.lattice(cell, salt);
     // Nearly every texel of a cell kilometres wide is nowhere near its centre,
-    // so the distance is asked first and the rest of the cell costs nothing.
-    const near = 1 - sstep(radius, radius + feather, hit.d);
+    // so the distance is asked first, against the widest this settlement could
+    // be, and the rest of the cell costs nothing -- not even the width draw.
+    if (hit.d >= widest + feather) return 0;
+    // How wide this particular settlement is, drawn from the cell's own stream
+    // when the parameters give a range: the ground is painted for the town that
+    // is actually there rather than for the widest one the range allows.
+    const width = widthOf(radius, hit);
+    const near = 1 - sstep(width, width + feather, hit.d);
     if (near === 0 || hit.h < land || hit.t < minTemp) return 0;
+    // The centre's own ground, refused for the whole cell. The rise measured
+    // below runs from the centre outward and is zero at the centre, so it can
+    // fade an edge and never refuse a seat -- and the seat is the only place a
+    // settlement is ever judged.
+    if (hit.s > maxSlope) return 0;
     const shore = 1 - sstep(0, SHORE_REACH, Math.abs(hit.h));
-    if (hit.u(CARRY) >= odds * (1 + shoreBonus * shore)) return 0;
-    if (maxSlope === Infinity) return near; // unset, it is no ceiling at all
-    const room = maxSlope * Math.max(hit.d, radius);
+    if (hit.u(SITE_STREAM.carry) >= odds * (1 + shoreBonus * shore)) return 0;
+    if (maxCut === undefined && maxSlope === Infinity) return near; // no cut ceiling at all
+    // Said in metres, the allowance is the same everywhere in the settlement.
+    // Said as a slope it grows with the distance, which is the older reading
+    // and the one a village keeps: out past the radius the fade is already
+    // doing the work and the term only has to stop fighting it.
+    const room = maxCut ?? maxSlope * Math.max(hit.d, width);
     return near * (1 - sstep(room, room * 2, Math.abs(f.baseHeight - hit.h)));
   };
 }

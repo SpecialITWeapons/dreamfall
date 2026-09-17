@@ -82,7 +82,7 @@ const metrics: SceneryMetrics = {
 };
 
 /** A sink that keeps what the ring offered it, and may be told to fill up. */
-const collector = (capacity = Infinity) => {
+const collector = (capacity = Infinity, houses = Infinity, standings = Infinity) => {
   const trees: TreeInstance[] = [],
     props: PropInstance[] = [],
     buildings: StructureInstance[] = [],
@@ -103,10 +103,12 @@ const collector = (capacity = Infinity) => {
       return true;
     },
     prop(p) {
+      if (props.length >= standings) return false;
       props.push({ ...p, tint: p.tint.clone() });
       return true;
     },
     structure(b) {
+      if (buildings.length >= houses) return false;
       buildings.push({ ...b, tint: b.tint.clone() });
       return true;
     },
@@ -205,13 +207,21 @@ const toRoad = (road: RoadSpec, x: number, z: number) => {
 /** A ring over the real seed-42 ground, small enough for a test window. */
 const ring = (
   lib: Library,
-  opts: { overrides?: Override[]; maxTrees?: number; radius?: number; sites?: Sites } = {},
+  opts: {
+    overrides?: Override[];
+    maxTrees?: number;
+    radius?: number;
+    sites?: Sites;
+    /** What the pools will take before they start turning things away. */
+    houses?: number;
+    standings?: number;
+  } = {},
 ) => {
   const sampler = createWorldSampler(42, { biomes: lib.biomes });
   const heightfield = createHeightfield(sampler, { size: 128 });
   heightfield.fillAll(0, 0);
   const obstacles = createObstacles();
-  const sink = collector();
+  const sink = collector(Infinity, opts.houses, opts.standings);
   return {
     ...sink,
     obstacles,
@@ -487,7 +497,48 @@ describe('the streamed ring', () => {
     r.ring.update(0, 0, false);
     expect(r.buildings).toEqual([]);
     expect(r.ring.buildings).toBe(0);
+    // ...and says so. Unbuilt is a hole in a settlement whichever way it
+    // happened, and the ring's own answer to both ways is a silent `continue`.
+    expect(r.ring.buildingsRefused).toBe(1);
     expect(r.obstacles.floorAt(40, -20, 0)).toBe(-Infinity);
+  });
+  it('counts the houses a full pool turned away, because losing them quietly is the worse bug', () => {
+    const lots = [lotAt(40, -20), lotAt(70, -20), lotAt(100, -20), lotAt(130, -20), lotAt(160, -20)];
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots })),
+      radius: 300,
+      houses: 3,
+    });
+    r.ring.update(0, 0, false);
+    expect(r.buildings).toHaveLength(3);
+    expect(r.ring.buildings).toBe(3);
+    expect(r.ring.buildingsRefused).toBe(2);
+    // and a house that never stood blocks nothing: the flight is told about
+    // what is there, not about what the plan wanted
+    expect(r.obstacles.floorAt(160, -20, 0)).toBe(-Infinity);
+  });
+  it('counts a prop a plan asked for and the pool refused, the same as a house', () => {
+    const r = ring(library([everywhere('woods', 0)], [stones]), {
+      sites: oneSite(
+        planOf({ x: 0, z: 0, lots: [lotAt(40, -20, 0, 'stones'), lotAt(70, -20, 0, 'stones')] }),
+      ),
+      radius: 300,
+      standings: 1,
+    });
+    r.ring.update(0, 0, false);
+    expect(r.ring.props).toBe(1);
+    expect(r.ring.buildingsRefused).toBe(1);
+  });
+  it('counts the refusals of the last rebuild and no others', () => {
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [lotAt(40, -20), lotAt(70, -20)] })),
+      radius: 300,
+      houses: 0,
+    });
+    r.ring.update(0, 0, false);
+    expect(r.ring.buildingsRefused).toBe(2);
+    r.ring.update(0, 0, true);
+    expect(r.ring.buildingsRefused).toBe(2); // the same two, counted once each
   });
   it('reads a lot with no floors as the prop the plan asked for', () => {
     const r = ring(library([everywhere('woods', 0)], [stones]), {

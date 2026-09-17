@@ -338,7 +338,11 @@ statycznie; mierzy je `tools/bench` i panel dev.
    ±MAX_HEIGHT_DELTA)`. Modyfikatory widzą wysokość bazową, nie wynik
    sąsiada, więc kolejność w rejestrze nie ma znaczenia.
 4. Zapis: `heightTex` RGBA32F `(h, w0, w1, w2)` i `biomeTex` RGBA8 `(i0, i1,
-   i2, spare)`. Bajt zapasowy jest zarezerwowany na wodę stojącą.
+   i2, baseTemp)`. Czwarty bajt to temperatura klimatyczna, na której rysowana
+   jest linia śniegu (`packBaseTemp`/`unpackBaseTemp`, zakres dwóch stopni).
+   Był zarezerwowany na wodę stojącą; ta rezerwacja nie mogła zadziałać, bo
+   jezioro potrzebuje wysokości lustra, a bajt rozciągnięty na relief tego
+   świata to cztery metry na krok.
 
 ### 6.2 Okno wysokości (`Heightfield`)
 
@@ -523,6 +527,85 @@ Poprawki z 2026-09-16, z wykonania M4a (wieś; miasteczko idzie do M4b):
   w Node bez okna terenu. Propsów wzdłuż dróg, płotów i sadów nie ma —
   `kit.line` rzuca do M4b.
 
+Poprawki z 2026-09-16, z wykonania M4b (miasteczko):
+
+- **Jeden wpis, dwie osady.** `settlement()` miał zaszyte słowo „village" w id,
+  nazwie i wywołaniu planu. Bierze teraz parametry i plan; parametry niosą
+  własne `id`, `name`, `landmark` i malowanie gruntu. Miasteczko to te same haki
+  co wieś, inne liczby i inny plan — `plan-town.js`.
+- **Miasteczko nie jest wsią z większymi liczbami**, i to zmierzono, zanim
+  powstało: układ wsi to jedna ulica wzdłuż warstwicy z bocznymi ścieżkami, co
+  wypełnia wstęgę. Rozciągnięta do promienia 900 m daje **147 parcel**, a nie
+  500–2000. Dysk wypełnia tylko siatka, więc miasteczko ma własny generator.
+- **`maxSlope` a `maxCut`.** Tabela wyżej żąda nachylenia < 0,25 w centrum,
+  a plan M4b zakładał dla miasteczka próg jeszcze ostrzejszy, bo jego plateau
+  jest pełne. Pomiar to obalił: na 895 stanowiskach ziarna 42 zaostrzenie
+  z 0,45 do 0,06 przesuwa medianę ucieczki gruntu od środka w promieniu 900 m
+  ze 167 m na 146 m — czyli o nic — i odrzuca dwa stanowiska na trzy (41 km
+  między miasteczkami robi się 78). Na setkach metrów to jest rzeźba terenu,
+  nie pochodna w jednym punkcie. Hak `lattice` ma więc dwie osobne liczby:
+  `maxSlope` odrzuca komórkę o stromym środku (mierzone przez 125 m),
+  a `maxCut` mówi w metrach, jak daleko grunt może uciec, zanim osada zgaśnie.
+  Wieś nie podaje `maxCut` i zachowuje się dokładnie jak przedtem.
+- **Ile budynków.** Nie `density(r)` i nie sufit: pierwszy przebieg planu zbiera
+  wszystkie parcele, jakie oferuje siatka, i sumuje ich wagi `1 - (r/R)²`,
+  a drugi przyjmuje taki ich udział, żeby liczba wypadła w `lots.count`. Sufit
+  obciąłby miasteczko przestrzennie — ulice chodzi się w kolejności, w jakiej je
+  położono, więc sufit buduje miasteczko bez jednego boku.
+- **Kondygnacje 1..4 malejące od centrum** — tak, ale liczba jest potem
+  **przycinana do zakresu, w którym dany przepis ma wypiek**: prośba o piętro
+  bez wypieku rzuca w kolejce. Parametry niosą ten zakres w `storeys`, bo plan
+  jest czystą funkcją i nie może zapytać kitu. Chata dostała trzecią
+  kondygnację, bo jedyne inne wypieki na trzy piętra to młyn i wieża.
+- **Dominanta.** Jest parametrem (`landmark: 'tower'`) i stawia się ją **raz,
+  po imieniu**, a nie wagą — waga nie umie powiedzieć „jeden". Stoi na obrzeżu
+  placu i obchodzi go, jeśli wylosowany kierunek postawiłby ją na jezdni
+  (na 120 miasteczek zdarzało się to jednemu na sześć). Wieża ma 46,2 albo
+  57,0 m — **nie 60**, bo lot omija tylko to, o czym wie na 70 m przed sobą.
+- **Miasteczko buduje się w całości.** `build` biegnie atomowo, a budżet
+  kolejki to 4 ms na klatkę; zmierzony koszt planu to 4,3 / 10,3 / 18,8 ms przy
+  400 / 650 / 900 m. Przyjęto jedną długą klatkę raz na 41 km lotu zamiast
+  maszynerii, która by ją usunęła. Próg, poniżej którego ta decyzja obowiązuje,
+  to 25 ms i jest zapisany w `docs/perf-notes.md`.
+- **Dodatki, których M4a nie miało.** `kit.line` istnieje i wieś go używa: sady
+  są żywopłotem wokół działki na obrzeżu, a żywopłot nie zajmuje gruntu, więc
+  w środku rośnie własny scatter wsi. Propsów wzdłuż dróg nadal nie ma.
+- **Promień osady losuje krata, nie parametr.** Haki obecności i plateau
+  dostawały `radius[1]` — najszerszą osadę, jaką zakres dopuszcza — więc
+  miasteczko wylosowane na 400 m stało w pięciuset metrach wyrównanej,
+  pomalowanej pustki. Oba haki biorą teraz parę `[min, max]` i losują szerokość
+  ze strumienia `SITE_STREAM.radius`, tego samego, z którego losuje ją
+  `Sites.seat`. To jest ta sama zasada co „jedna loteria" z M4a, tylko o jedną
+  liczbę dalej.
+- **Plateau miasteczka to 0,5, nie 1,0** — i to jest największa poprawka
+  wybrana ze zdjęcia. Przy pełnej sile cały dysk o promieniu ośmiuset metrów
+  idzie do wysokości środka; miasteczko posadzone na nadmorskim wzgórzu ma ten
+  środek dziewięćdziesiąt metrów nad wodą, więc z 1,5 km czyta się jako blada
+  mesa z domami na wierzchu — zjawisko geologiczne, nie miejsce. Przy połowie
+  grunt wewnątrz rusza się o 5–10 m zamiast 10–24 (zmierzone) i dalej czyta się
+  jako grunt, a od tego, żeby ulica była pozioma, jest jej własna reguła
+  nachylenia. Specyfikacja mówiła „plateau pełne (1,0)" i to było po prostu
+  za dużo.
+- **Grunt miasteczka i sady.** Dwie rzeczy wybrane ze zdjęcia, nie z argumentu.
+  (1) Malowanie kamień-na-glinie czyta się z 1,5 km jako piasek; miasteczko ma
+  teraz grunt **zielony**, a kamień jest tym, co ludzie wydeptali — od kraju
+  dookoła ma je odróżniać dach i ulica, a nie kilometrowa zmiana koloru ziemi.
+  (2) Sad jako żywopłot obrysowany wokół działki, z założeniem, że scatter go
+  wypełni, wychodzi pustą zieloną ramką na glinie. Wieś kładzie żywopłoty
+  **wzdłuż dróg**, za ogrodami — płot przy drodze nie potrzebuje niczego
+  w środku, żeby się czytać.
+- **Czego zdjęcie nie potwierdziło.** Próbowano wygaszać osadę przy linii wody
+  (`dry`), żeby plateau nie wynosiło półki nad plażę. Wyszło odwrotnie: zamiast
+  złagodzić krawędź, ścisnęło ją w schodkowy mur, i eksperyment został cofnięty.
+  Zmierzone potem: najostrzejszy uskok przy krawędzi miasteczka to 5,7 m na 8 m,
+  a takie same uskoki są w paśmie 1300–1600 m, czyli **poza** jego zasięgiem.
+  Ta ząbkowana krawędź to naturalna linia brzegowa cypla, nie plateau.
+- **Osada sieje.** Tego w specyfikacji nie było i okazało się konieczne:
+  własna waga osady wypycha biomy kraju z gruntu, który osada zajmuje, więc
+  osada bez haka `populate` jest dyskiem malowanej gliny szerokim jak jej
+  obecność, z domami pośrodku. Obie osady mają teraz `populate`, a rezerwacje
+  parcel załatwiają przerzedzenie w zabudowie za darmo.
+
 Pierwsza wersja świadomie bez: malowanych pól na ziemi, mostów (po rzekach w
 M6: przeszkody z `bottom`, `kit.bridge(from, to, width)` z filarami, wykrywanie
 wąwozu wzdłuż drogi po `heightAt`), wnętrz.
@@ -547,8 +630,29 @@ export interface Avatar {
 `ProceduralHuman`: tułów, miednica, głowa z kaskiem i goglami, ramiona i
 przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty
 80°), uda odchylone do tyłu, kolana zgięte 57°, stopy na własnym zawiasie
-kostki (bez niego but jest tylko grubszą łydką); elipsoidy i walce
-w kolorach wierzchołków, budżet 4 000 trójkątów mierzony walidatorem.
+kostki (bez niego but jest tylko grubszą łydką); w kolorach wierzchołków,
+budżet 4 000 trójkątów mierzony walidatorem.
+
+> **Poprawka 2026-09-17: skóra na kościach zamiast brył.** Spec mówił
+> „elipsoidy i walce”, i przez cztery commity naprawcze to było dwadzieścia
+> osobnych brył, które przenikają się na twardych granicach koloru. Szew w
+> barku był nie do usunięcia pozą, bo nie był kwestią pozy. Postać jest dziś
+> **jedną skórą na szkielecie szesnastu kości** (`Skin.ts` + `SkinnedMesh`),
+> nadal proceduralną i z tych samych liczb: 2 rysunki zamiast 20, 1 120
+> trójkątów zamiast 3 528, ten sam koszt CPU na klatkę (`docs/perf-notes.md`).
+> §2 i §17 przewidywały to wprost — interfejs `Avatar` był po to, żeby
+> podmiana nie dotknęła silnika, i nie dotknęła: materiał świata sam dokłada
+> `skinning(object)` dla siatki skinowanej.
+>
+> **Poprawka 2026-09-17 (druga): pięć kształtów zamiast dwóch.** Ten akapit
+> opisuje jedną pozę i kąt wznoszenia, który ją odchyla — czyli kształt jako
+> **skutek** tego, jak autopilot zdecydował lecieć. Spadochroniarz robi
+> odwrotnie: zmienia kształt, **żeby** lecieć inaczej. Postać ma dziś pudełko,
+> deltę, track, wznoszenie i zakręt, wybierane z trzech osi (kąt lotu, prędkość
+> powietrzna, przechył) zamiast z jednej. Progi wyboru muszą leżeć wewnątrz
+> obwiedni kontrolera — `pitch -0,42..+0,56`, `rush 0,75..1,48`, `bank 0,47` —
+> i pilnuje tego test, bo pierwszy próg napisany „jak u spadochroniarza"
+> wypadał piątą część za najstromszym nurkowaniem tego świata.
 Zawiasy w barkach, łokciach, biodrach, kolanach i kostkach falują od `windPhase` i
 wolnego szumu; `bank` obraca ciało, `pitch` je unosi lub opuszcza; w skręcie
 ręka po wewnętrznej stronie schodzi niżej; kąt wznoszenia odchyla ręce (w
@@ -709,7 +813,15 @@ wersją.
 5. **M4 Osady.** Stanowiska z planem oddzielonym od geometrii, `RoadKit`,
    `StructureKit`, generator z parametrami wioski i miasteczka, przeszkody.
    Wynik: pierwsza osada znaleziona w locie.
-6. **M5 Dopieszczenie.** Porty Drogi Mlecznej i śniegu, otwarcie z kartą
+6. **M5 Dopieszczenie.** Porty Drogi Mlecznej (**zrobione 2026-09-17**: pole
+   pyłu i światło gwiazd rosną proceduralnie w `sky/GalaxyMatter.ts`, atlas
+   piecze się w wątku roboczym, bo to 3,5 s, a `GALAXY_HEADING` jest odczytem z
+   pieczenia, nie zgadywanką — było o trzy stopnie obok) i śniegu (**zrobione
+   2026-09-17**: warstwa świata nad `snowLineAt`, z nagą skałą alpejską pod
+   linią; `baseTemp` jedzie do shadera czwartym bajtem slotów — tym, który był
+   zarezerwowany dla stojącej wody i nigdy nie mógł jej obsłużyć, bo jezioro
+   potrzebuje wysokości lustra, a bajt na tym reliefie to cztery metry na
+   krok), otwarcie z kartą
    tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
    przegląd wydajności.
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,

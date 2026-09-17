@@ -1,29 +1,39 @@
-// The first figure: a skydiver's arch from ellipsoids and capsules with
-// vertex colors on the world's lit material, hinged at the shoulders,
-// elbows, hips, knees and ankles. The rest pose is the box position a belly-
-// to-earth jumper holds: upper arms out and forward, elbows squared, thighs
-// spread back, knees folded so the feet ride above the hips, toes pointed.
-// The hinges flutter with the wind and a slow noise, a gust is a burst of
-// stronger flutter, the inner arm drops in a turn, and the climb angle sweeps
-// the arms: back into a track in a dive, forward and wide in a climb.
-// Nothing here is a skeleton: the Avatar interface lets a skinned model
-// replace it without touching the engine. Budget: 4 000 triangles.
+// The figure: a skydiver as one continuous skin over a skeleton of sixteen
+// bones, with vertex colors on the world's lit material. It holds five shapes
+// -- the box a belly-to-earth jumper rides, a delta, a track, a flare, and a
+// turn laid over any of them -- and picks between them on how the flight is
+// actually going: the angle, the airspeed and the bank. On top of whichever it
+// is wearing, the joints flutter with the wind and a slow noise, a gust is a
+// burst of stronger flutter, and the dynamic pressure trails the limbs back.
+//
+// What this file owns is the skeleton, the shapes and the numbers a body is
+// made of -- the profiles below are the whole of what the figure looks like.
+// Sweeping a surface along them is `Skin.ts`, which knows nothing about people.
+// This used to be twenty solids parented to one another, and every shoulder
+// sweep opened a seam between two of them that no pose could close; the
+// Avatar interface was written so that this swap would not touch the engine,
+// and it did not. Budget: 4 000 triangles.
 import {
-  CapsuleGeometry,
+  Bone,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   Float32BufferAttribute,
   Group,
-  Mesh,
+  Skeleton,
+  SkinnedMesh,
+  Uint16BufferAttribute,
   Quaternion,
-  SphereGeometry,
   Vector3,
-  type BufferGeometry,
+  type Mesh,
   type Object3D,
 } from 'three';
 import { vertexColor } from 'three/tsl';
+import { SPEED } from '../flight/FlightController';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
+import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
 import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern } from './Outfits';
 
 export const HUMAN_TRIANGLE_BUDGET = 4000;
@@ -39,9 +49,7 @@ export interface ProceduralHuman extends Avatar {
 type Swatch = Exclude<keyof Outfit, 'id'>;
 
 const UP = new Vector3(0, 1, 0),
-  AXIS_X = new Vector3(1, 0, 0),
-  AXIS_Y = new Vector3(0, 1, 0),
-  AXIS_Z = new Vector3(0, 0, 1);
+  AXIS_X = new Vector3(1, 0, 0);
 
 // The arch, in the figure's frame (x left, y up, z ahead): joints and limb
 // directions. The elbow bends 80 degrees and the knee 57, so both read as
@@ -63,32 +71,136 @@ export const UPPER = { r: 0.055, len: 0.3 },
   SHIN = { r: 0.055, len: 0.4 };
 /** The boot: half width, half length and half thickness, m. */
 const FOOT = { rx: 0.055, ry: 0.115, rz: 0.045 };
-const upperDir = (side: number) => new Vector3(side * 0.78, -0.08, 0.62).normalize();
-const foreDir = (side: number) => new Vector3(side * -0.46, 0.16, 0.87).normalize();
-const thighDir = (side: number) => new Vector3(side * 0.3, -0.06, -0.95).normalize();
-const shinDir = (side: number) => new Vector3(side * 0.12, 0.8, -0.58).normalize();
-const footDir = (side: number) => new Vector3(side * 0.05, 0.42, -0.9).normalize();
+
 /**
- * Where the upper arms go in a full dive. A track is not the box turned about
- * the figure's own up axis -- that swings the arms out sideways, which is the
- * one direction a track does not go. It is a second pose, arms back along the
- * body, and a dive walks from one to the other.
+ * A pose is five directions a side: where the upper arm, the forearm, the
+ * thigh, the shin and the foot point in the figure's own frame. That is all a
+ * pose is, which is what lets there be five of them for the price of thirty
+ * numbers -- the quaternions a joint actually wears are read off these once,
+ * against the same chain rule `hinge` uses, so a pose cannot disagree with the
+ * skeleton it is worn on.
+ *
+ * `inner` is for the one pose that is not symmetric: in a turn the two sides of
+ * the body do different things, and which side is the inner one depends on
+ * which way the figure is banking.
  */
-const trackDir = (side: number) => new Vector3(side * 0.15, -0.02, -0.99).normalize();
+interface Pose {
+  upper(side: number, inner: boolean): Vector3;
+  fore(side: number, inner: boolean): Vector3;
+  thigh(side: number, inner: boolean): Vector3;
+  shin(side: number, inner: boolean): Vector3;
+  foot(side: number, inner: boolean): Vector3;
+}
+const dir = (x: number, y: number, z: number) => new Vector3(x, y, z).normalize();
+
 /**
- * The track. A dive folds the box into it: the upper arms swing back through
- * this many radians about the figure's own up axis, the elbows straighten by
- * this share of their bend, and the knees give up some of theirs -- so the
- * forearms end up along the body with the hands at the hips, which is the
- * position the owner asked for and the one that actually goes fast. `at` is the
- * pitch that counts as all the way down.
+ * The five shapes, and the order the weights come in. A skydiver **changes
+ * shape in order to fly differently**; before this the figure did the opposite,
+ * the autopilot decided the angle and the shape was its consequence, read off
+ * one axis. Now the shape is read off three -- airspeed, flight angle and bank
+ * -- and one axis can no longer decide everything.
  */
+const POSES = {
+  /** Belly to earth, arms out and forward, elbows squared, knees folded. The one the skin is cut for. */
+  box: {
+    upper: (side) => dir(side * 0.78, -0.08, 0.62),
+    fore: (side) => dir(side * -0.46, 0.16, 0.87),
+    thigh: (side) => dir(side * 0.3, -0.06, -0.95),
+    shin: (side) => dir(side * 0.12, 0.8, -0.58),
+    foot: (side) => dir(side * 0.05, 0.42, -0.9),
+  },
+  /** Halfway: arms swept back but still out, elbows still bent, knees half open. */
+  delta: {
+    upper: (side) => dir(side * 0.7, -0.06, -0.28),
+    fore: (side) => dir(side * 0.28, 0.06, -0.72),
+    thigh: (side) => dir(side * 0.22, -0.04, -0.97),
+    shin: (side) => dir(side * 0.14, 0.42, -0.9),
+    foot: (side) => dir(side * 0.05, 0.28, -0.95),
+  },
+  /**
+   * Fast and straight: arms back along the body with the hands at the hips,
+   * legs straight and closed. A track is not the box turned about the figure's
+   * own up axis -- that swings the arms out sideways, which is the one
+   * direction a track does not go.
+   */
+  track: {
+    upper: (side) => dir(side * 0.15, -0.02, -0.99),
+    fore: (side) => dir(side * 0.1, -0.02, -0.99),
+    thigh: (side) => dir(side * 0.12, -0.02, -0.99),
+    shin: (side) => dir(side * 0.1, 0.02, -0.99),
+    foot: (side) => dir(side * 0.05, 0.18, -0.98),
+  },
+  /**
+   * Nose up and slow, which in this world is one state and not two: a climb is
+   * paid for in airspeed, so `speed 30` and `pitch +0.56` arrive together and
+   * the same shape answers both. The arms sweep **back** along the hips and the
+   * knees stay folded -- the chest leads and the rest of the figure trails it,
+   * the way a bird pulling up out of a dive does.
+   *
+   * The first draft of this reached the arms forward and high, which is what a
+   * jumper's flare looks like and is not what this is. In a photograph it read
+   * as a figure being lifted by the wrists. What tells the climb from the track
+   * is the legs: both sweep the arms back, and only the track straightens out.
+   */
+  climb: {
+    upper: (side) => dir(side * 0.48, -0.22, -0.85),
+    fore: (side) => dir(side * 0.16, 0.24, -0.96),
+    thigh: (side) => dir(side * 0.34, -0.1, -0.93),
+    shin: (side) => dir(side * 0.14, 0.94, -0.3),
+    foot: (side) => dir(side * 0.05, 0.6, -0.8),
+  },
+  /**
+   * A turn, which is the only shape the two sides of the body disagree about:
+   * the inner arm drops and comes back, the outer one rises and reaches
+   * forward, the inner knee folds and the outer leg goes long. This replaces
+   * the old `drop`, which lowered the inner arm and did nothing else --
+   * a bank that only one limb has heard of reads as a twitch, not a turn.
+   */
+  turn: {
+    upper: (side, inner) => (inner ? dir(side * 0.74, -0.34, 0.5) : dir(side * 0.76, 0.22, 0.6)),
+    fore: (side, inner) => (inner ? dir(side * -0.4, -0.1, 0.9) : dir(side * -0.48, 0.3, 0.82)),
+    thigh: (side, inner) => (inner ? dir(side * 0.26, -0.16, -0.95) : dir(side * 0.32, 0.02, -0.95)),
+    shin: (side, inner) => (inner ? dir(side * 0.12, 0.9, -0.42) : dir(side * 0.12, 0.6, -0.78)),
+    foot: (side, inner) => (inner ? dir(side * 0.05, 0.5, -0.86) : dir(side * 0.05, 0.3, -0.94)),
+  },
+} satisfies Record<string, Pose>;
+
 /**
- * How far a full dive folds the box into a track: all the way to trackDir at
- * the shoulder, this share of the elbow's bend and of the knee's. `at` is the
- * pitch that counts as all the way down.
+ * The slots a hinge keeps a quaternion and a weight in. The turn is two slots
+ * rather than one because the pose is mirrored, and a single slot whose target
+ * flips as the bank crosses zero would apply whatever weight the spring still
+ * held to the wrong side of the body.
  */
-const TRACK = { at: 0.5, elbow: 0.85, knee: 0.4 };
+const SLOTS = ['box', 'delta', 'track', 'climb', 'turnIn', 'turnOut'] as const;
+type Slot = (typeof SLOTS)[number];
+/** Which pose each slot wears, and whether this side is the inner one in it. */
+const SLOT_POSE: Record<Slot, { pose: Pose; inner: boolean }> = {
+  box: { pose: POSES.box, inner: false },
+  delta: { pose: POSES.delta, inner: false },
+  track: { pose: POSES.track, inner: false },
+  climb: { pose: POSES.climb, inner: false },
+  turnIn: { pose: POSES.turn, inner: true },
+  turnOut: { pose: POSES.turn, inner: false },
+};
+
+/**
+ * Where the shapes sit on the three axes, and **every one of them is inside
+ * what the flight can actually produce**, which is the first thing a threshold
+ * like this gets wrong. Measured against the controller, flying each corner of
+ * its envelope for a minute with room under it: the steepest sustained dive is
+ * `pitch -0.42` at `rush 1.48`, the steepest climb `+0.56` at `rush 0.75`, and
+ * a hard turn rolls to `0.47`. `dive` was written as 0.5 first, from a picture
+ * of a skydiver rather than from the figure's own envelope -- which put the
+ * track a fifth of the way past the fastest dive this world has, so the pose
+ * existed and could never be reached.
+ *
+ * `lean` is the most of the figure a turn is allowed to take over: a turn is a
+ * shape laid over whatever it was doing, not one instead of it, which is why a
+ * banked track still tracks. `floor` is the weight below which a slot is not
+ * worth a slerp, and is what keeps the blend at two or three shapes rather
+ * than six.
+ */
+export const POSE = { dive: 0.4, climb: 0.42, fast: 0.28, slow: 0.22, bank: 0.38, lean: 0.7, floor: 0.005 };
 /**
  * How long a joint takes to catch up with what the air is asking of it, s. The
  * limbs used to arrive in the same frame as the shoulders, which is what made
@@ -104,195 +216,409 @@ const LAG: Record<Hinge['kind'], number> = {
   knee: 0.17,
   ankle: 0.24,
 };
-const IDENTITY = new Quaternion();
+/**
+ * How far past its target a joint is allowed to swing, as a damping ratio: one
+ * is the old behaviour exactly, and below one the limb overshoots and comes
+ * back. That overshoot is the whole reason the spring is here. A first-order
+ * filter -- what this was -- can only ever slow down as it arrives, which is
+ * why every gust read as the figure being *moved* rather than as the figure
+ * having weight.
+ *
+ * The pose blend keeps a ratio of one on purpose: a joint that overshoots a
+ * blend between two poses does not swing past a target, it inverts an arm.
+ */
+const DAMPING = { joint: 0.62, pose: 1 };
+/**
+ * The air, as the figure feels it. `rush` is the airspeed over the nominal --
+ * the same number `AmbienceModel` calls `rush`, so the suit and the noise agree
+ * about a dive -- and what a limb feels is the dynamic pressure, which goes
+ * with its square. `trail` is how far that pressure pushes a joint back, and it
+ * grows with the distance from the chest: a wrist trails further than a
+ * shoulder for the same reason a flag's tip moves more than its rope.
+ */
+const TRAIL: Record<Hinge['kind'], number> = {
+  shoulder: 0.1,
+  elbow: 0.16,
+  hip: 0.08,
+  knee: 0.14,
+  ankle: 0.2,
+};
 
-/** Fills the color attribute with one color; writes into the existing buffer when there is one, so a repaint is an upload, not a new buffer. */
-function paint(geometry: BufferGeometry, hex: number): BufferGeometry {
-  const color = new Color(hex);
-  const count = geometry.getAttribute('position').count;
-  const existing = geometry.getAttribute('color');
-  const colors = existing ? (existing.array as Float32Array) : new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
+/**
+ * One state of a joint: where it is and how fast it is going there. Semi-implicit
+ * Euler -- velocity first, then position -- because it is the cheapest
+ * integrator that does not feed energy into a spring, and this one is stiff:
+ * the shoulder's own frequency is 10 rad/s and a slow frame is 50 ms, which is
+ * exactly the band where the explicit form starts to ring. The substep keeps
+ * `omega * h` under a half whatever the frame does.
+ */
+interface Spring {
+  x: number;
+  v: number;
+}
+const settle = (s: Spring, target: number, omega: number, zeta: number, dt: number) => {
+  // dt <= 0 is "be there now": the world places the figure once before the
+  // first frame, and a spring that merely started moving would arrive during it.
+  if (dt <= 0) {
+    s.x = target;
+    s.v = 0;
+    return;
   }
-  if (existing) existing.needsUpdate = true;
-  else geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-  return geometry;
-}
-function ellipsoid(rx: number, ry: number, rz: number, segments = 16, rings = 10): BufferGeometry {
-  const g = new SphereGeometry(1, segments, rings);
-  g.scale(rx, ry, rz);
-  return g;
-}
-/** A limb from its joint at the origin along +y; the far joint sits at y = length. */
-function limb(radius: number, length: number): BufferGeometry {
-  const g = new CapsuleGeometry(radius, length, 4, 8);
-  g.translate(0, length / 2, 0);
-  return g;
-}
+  const steps = Math.min(8, Math.max(1, Math.ceil((omega * dt) / 0.5)));
+  const h = dt / steps;
+  for (let i = 0; i < steps; i++) {
+    s.v += (omega * omega * (target - s.x) - 2 * zeta * omega * s.v) * h;
+    s.x += s.v * h;
+  }
+};
+/** Clipped to 0..1, or to `min`..1 where a value is allowed to go the other way. */
+const clamp01 = (v: number, min = 0) => (v < min ? min : v > 1 ? 1 : v);
+
+/**
+ * A profile: half-width along a chain, given as stops and read between them.
+ * This is the shape of the body and it is deliberately data -- a waist, a
+ * shoulder, a calf and an ankle are four numbers here, and were four solids
+ * before.
+ */
+const ramp =
+  (stops: Array<[number, number]>) =>
+  (t: number): number => {
+    for (let i = 1; i < stops.length; i++) {
+      const [ta, ra] = stops[i - 1]!,
+        [tb, rb] = stops[i]!;
+      if (t <= tb) return ra + ((rb - ra) * Math.min(Math.max(t - ta, 0), tb - ta)) / (tb - ta || 1);
+    }
+    return stops[stops.length - 1]![1];
+  };
+/** A swatch by distance along a chain: the first stop whose end is past t. */
+const bands =
+  (stops: Array<[number, string]>) =>
+  (t: number): string =>
+    stops.find(([end]) => t <= end)?.[1] ?? stops[stops.length - 1]![1];
+
+type Kind = 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+
+/**
+ * What every joint wears in one pose, on one side: parent-relative, by the same
+ * chain rule the skeleton is built with -- a joint's own quaternion is its
+ * parent's orientation undone and its own put on. Doing it here rather than
+ * writing the numbers down twice is why a pose cannot drift out of step with
+ * the skeleton it is worn on.
+ */
+const poseQuats = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Quaternion> => {
+  const q = (d: Vector3) => new Quaternion().setFromUnitVectors(UP, d);
+  const upper = q(pose.upper(side, inner)),
+    fore = q(pose.fore(side, inner)),
+    thigh = q(pose.thigh(side, inner)),
+    shin = q(pose.shin(side, inner)),
+    foot = q(pose.foot(side, inner));
+  return {
+    shoulder: upper.clone(),
+    elbow: upper.clone().invert().multiply(fore),
+    hip: thigh.clone(),
+    knee: thigh.clone().invert().multiply(shin),
+    ankle: shin.clone().invert().multiply(foot),
+  };
+};
 
 interface Hinge {
-  pivot: Group;
+  pivot: Bone;
+  /** The box, which is the pose the skin is cut for; the same as `targets.box`. */
   rest: Quaternion;
-  /** Where a full dive takes this joint, when it has somewhere else to be. */
-  track?: Quaternion;
-  /** Orientation in the figure's frame, for the child hinge's rest. */
-  world: Quaternion;
+  /** Where this joint goes in each of the shapes, parent-relative. */
+  targets: Record<Slot, Quaternion>;
+  /**
+   * How much of each shape this joint is wearing. It is a spring per slot and
+   * not one set for the whole figure, because a shape has to arrive the way a
+   * gust does -- the shoulder first and the ankle last -- and a figure whose
+   * every joint changed pose on the same frame is the puppet this file spent
+   * two commits getting rid of.
+   */
+  weight: Record<Slot, Spring>;
   side: 1 | -1;
-  kind: 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
+  kind: Kind;
   /** What this joint is actually doing, as opposed to what the air asked for. */
-  swing: number;
-  drop: number;
-  back: number;
-  /** How far into the track this joint has folded, 0..1. */
-  fold: number;
+  swing: Spring;
 }
 
 export function createProceduralHuman(
   litMaterial: LitMaterial,
-  opts: { fppHands?: boolean; outfit?: Outfit; pattern?: Pattern } = {},
+  opts: { outfit?: Outfit; pattern?: Pattern } = {},
 ): ProceduralHuman {
-  const fppHands = opts.fppHands ?? true;
   let outfit = opts.outfit ?? DEFAULT_OUTFIT;
   let pattern = opts.pattern ?? DEFAULT_PATTERN;
   const material = litMaterial(vertexColor().rgb);
-  const meshes: Mesh[] = [];
-  const bySwatch: Record<Swatch, Mesh[]> = {
-    suit: [],
-    trim: [],
-    helmet: [],
-    goggles: [],
-    boots: [],
-    gloves: [],
-    skin: [],
-  };
-  const hands = new Set<Mesh>();
-  let triangles = 0;
-  const part = (
-    name: string,
-    geometry: BufferGeometry,
-    swatch: Swatch,
-    parent: Object3D,
-    x = 0,
-    y = 0,
-    z = 0,
-  ) => {
-    const mesh = new Mesh(paint(geometry, outfit[swatch]), material);
-    mesh.name = name;
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    parent.add(mesh);
-    meshes.push(mesh);
-    bySwatch[swatch].push(mesh);
-    triangles += (geometry.index ? geometry.index.count : geometry.getAttribute('position').count) / 3;
-    return mesh;
+  /** Every bone, in the order the skeleton keeps them; the skin indexes into this. */
+  const bones: Bone[] = [];
+  const boneIndex = (name: string) => {
+    const at = bones.findIndex((b) => b.name === name);
+    if (at < 0) throw new Error(`the skin asks for a bone called ${name}, and there is none`);
+    return at;
   };
   const object = new Group();
   object.name = 'human';
   object.rotation.order = 'YXZ';
-  const body = new Group();
+  const body = new Bone();
+  body.name = 'body';
+  bones.push(body);
   object.add(body);
-  part('torso', ellipsoid(TORSO.rx, TORSO.ry, TORSO.rz), 'suit', body, TORSO.at.x, TORSO.at.y, TORSO.at.z);
-  part('pelvis', ellipsoid(0.18, 0.12, 0.16), 'suit', body, 0, -0.01, -0.3);
-  const head = new Group();
-  head.position.set(0, 0.02, 0.42);
-  body.add(head);
-  // The helmet is a shell over the skull and the back of the head, sized so the
-  // face stays outside it; the goggles are a band wider than the shell and the
-  // peak sits proud above them, so from behind and from the side the head reads
-  // as a helmet rather than as one more ball.
-  part('head', ellipsoid(0.105, 0.105, 0.105, 12, 8), 'skin', head, 0, -0.01, 0.055);
-  part('helmet', ellipsoid(0.125, 0.115, 0.125), 'helmet', head, 0, 0.02, 0);
-  part('visor', ellipsoid(0.113, 0.026, 0.05, 12, 8), 'helmet', head, 0, 0.062, 0.105);
-  part('goggles', ellipsoid(0.115, 0.042, 0.075, 12, 8), 'goggles', head, 0, 0.005, 0.085);
+  // The neck carries the head and does not turn -- yet. It is a bone rather than
+  // a group so the head's skin has something to hang on, and so the day the
+  // head looks where the flight is going is a day this file changes one number.
+  const neck = new Bone();
+  neck.name = 'neck';
+  neck.position.set(0, 0.02, 0.34);
+  bones.push(neck);
+  body.add(neck);
   const hinges: Hinge[] = [];
-  const hinge = (
-    kind: Hinge['kind'],
-    name: string,
-    parent: Object3D,
-    at: Vector3,
-    dir: Vector3,
-    above: Hinge | null,
-    side: 1 | -1,
-    tracked?: Vector3,
-  ): Hinge => {
-    const world = new Quaternion().setFromUnitVectors(UP, dir);
-    const rest = above ? above.world.clone().invert().multiply(world) : world.clone();
-    const track = tracked
-      ? (() => {
-          const w = new Quaternion().setFromUnitVectors(UP, tracked);
-          return above ? above.world.clone().invert().multiply(w) : w;
-        })()
-      : undefined;
-    const pivot = new Group();
+  const hinge = (kind: Hinge['kind'], name: string, parent: Object3D, at: Vector3, side: 1 | -1): Hinge => {
+    const targets = {} as Record<Slot, Quaternion>;
+    const weight = {} as Record<Slot, Spring>;
+    for (const slot of SLOTS) {
+      const { pose, inner } = SLOT_POSE[slot];
+      targets[slot] = poseQuats(pose, side, inner)[kind];
+      // The figure starts in the box and walks out of it, which is also what
+      // `dt <= 0` has to reproduce on the very first frame.
+      weight[slot] = { x: slot === 'box' ? 1 : 0, v: 0 };
+    }
+    const rest = targets.box;
+    const pivot = new Bone();
     pivot.name = name;
     pivot.position.copy(at);
     pivot.quaternion.copy(rest);
     parent.add(pivot);
-    const h: Hinge = { pivot, rest, track, world, side, kind, swing: 0, drop: 0, back: 0, fold: 0 };
+    bones.push(pivot);
+    const h: Hinge = { pivot, rest, targets, weight, side, kind, swing: { x: 0, v: 0 } };
     hinges.push(h);
     return h;
   };
   for (const side of [1, -1] as const) {
     const s = side > 0 ? 'L' : 'R';
-    const shoulder = hinge(
-      'shoulder',
-      `shoulder${s}`,
-      body,
-      SHOULDER.clone().setX(side * SHOULDER.x),
-      upperDir(side),
-      null,
-      side,
-      trackDir(side),
-    );
-    // The cap rides on the joint, so it turns with the arm as a deltoid does
-    // and closes the seam at every sweep rather than only at rest.
-    // The whole arm is what the first person keeps: a forearm on its own hangs
-    // in the air with nothing joining it to the viewer, and the cap is what
-    // makes the shoulder end of it something rather than a cut.
-    hands.add(part('deltoid', ellipsoid(0.075, 0.075, 0.075, 12, 8), 'suit', shoulder.pivot));
-    hands.add(part('upperArm', limb(UPPER.r, UPPER.len), 'suit', shoulder.pivot));
-    const elbow = hinge(
-      'elbow',
-      `elbow${s}`,
-      shoulder.pivot,
-      new Vector3(0, UPPER.len, 0),
-      foreDir(side),
-      shoulder,
-      side,
-    );
-    hands.add(part('forearm', limb(FORE.r, FORE.len), 'trim', elbow.pivot));
-    hands.add(
-      part('hand', ellipsoid(0.045, 0.09, 0.03, 12, 8), 'gloves', elbow.pivot, 0, FORE.len + 0.05, 0),
-    );
-    const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), thighDir(side), null, side);
-    part('thigh', limb(THIGH.r, THIGH.len), 'suit', hip.pivot);
-    const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), shinDir(side), hip, side);
-    part('shin', limb(SHIN.r, SHIN.len), 'suit', knee.pivot);
+    const shoulder = hinge('shoulder', `shoulder${s}`, body, SHOULDER.clone().setX(side * SHOULDER.x), side);
+    const elbow = hinge('elbow', `elbow${s}`, shoulder.pivot, new Vector3(0, UPPER.len, 0), side);
+    // The wrist and the toe never turn; they are here because a chain of skin
+    // needs a bone at the end of it to hang the last ring on, and because a
+    // hand that follows the forearm is a hand rather than a paddle.
+    const wrist = new Bone();
+    wrist.name = `wrist${s}`;
+    wrist.position.set(0, FORE.len, 0);
+    bones.push(wrist);
+    elbow.pivot.add(wrist);
+    const hip = hinge('hip', `hip${s}`, body, HIP.clone().setX(side * HIP.x), side);
+    const knee = hinge('knee', `knee${s}`, hip.pivot, new Vector3(0, THIGH.len, 0), side);
     // The foot breaks 29 degrees away from the shin at the ankle: without a
     // hinge of its own a boot on the shin's axis is only a thicker shin, which
     // is what the figure had.
-    const ankle = hinge(
-      'ankle',
-      `ankle${s}`,
-      knee.pivot,
-      new Vector3(0, SHIN.len, 0),
-      footDir(side),
-      knee,
-      side,
-    );
-    part('boot', ellipsoid(FOOT.rx, FOOT.ry, FOOT.rz, 12, 8), 'boots', ankle.pivot, 0, FOOT.ry * 0.8, 0);
+    const ankle = hinge('ankle', `ankle${s}`, knee.pivot, new Vector3(0, SHIN.len, 0), side);
+    const toe = new Bone();
+    toe.name = `toe${s}`;
+    toe.position.set(0, FOOT.ry * 1.6, 0);
+    bones.push(toe);
+    ankle.pivot.add(toe);
   }
-  const qx = new Quaternion(),
-    qy = new Quaternion(),
-    qz = new Quaternion();
+
+  // The rest pose is what the skin is cut for, so the chains are read off the
+  // skeleton rather than written down a second time: a joint that moved in the
+  // pose above moves the skin with it, with nothing to keep in step by hand.
+  object.updateMatrixWorld(true);
+  const at = (name: string) => object.getObjectByName(name)!.getWorldPosition(new Vector3());
+  /** Where the hand ends: a little past the wrist, along the forearm it hangs on. */
+  const handAt = (side: 1 | -1) => {
+    const s = side > 0 ? 'L' : 'R';
+    const wrist = at(`wrist${s}`);
+    return wrist.clone().addScaledVector(
+      wrist
+        .clone()
+        .sub(at(`elbow${s}`))
+        .normalize(),
+      0.11,
+    );
+  };
+  const chain = (names: string[], rest: Omit<Chain, 'bones' | 'joints'> & { joints?: Vector3[] }): Chain => ({
+    ...rest,
+    bones: names,
+    joints: rest.joints ?? names.map(at),
+  });
+  /**
+   * The body, as four shapes and a head. Every number in the profiles is a
+   * half-width in metres at that share of the chain's length, and this is the
+   * whole of what the figure looks like -- the waist, the shoulder, the calf and
+   * the ankle used to be four solids and are now four stops on a curve.
+   */
+  const parts: Chain[] = [
+    // The spine, from the tail to the neck. Wider than it is thick, because a
+    // chest is, and a tube that is not says "pipe" from the first glance.
+    chain(['body', 'body', 'body', 'body', 'neck'], {
+      // The spine's bones sit on top of each other -- nothing along it turns
+      // yet -- so its stops are written here rather than read off the skeleton.
+      // The day a back arches, these become bones and this line goes.
+      joints: [
+        new Vector3(0, -0.02, -0.5),
+        new Vector3(0, -0.02, -0.32),
+        new Vector3(0, 0, -0.02),
+        new Vector3(0, 0.02, 0.2),
+        new Vector3(0, 0.02, 0.34),
+      ],
+      // Widest across the chest and narrower at the belly, which is the way
+      // round a person is. The first draft peaked at 0.5 -- the middle of the
+      // back -- and the photograph showed it: a paunch with shoulders sloping
+      // away from it.
+      profile: ramp([
+        [0, 0.085],
+        [0.16, 0.145],
+        [0.45, 0.138],
+        [0.74, 0.178],
+        [0.88, 0.163],
+        [1, 0.085],
+      ]),
+      swatch: () => 'suit',
+      sides: 12,
+      rings: 3,
+      flatten: 1.45,
+      capStart: true,
+      capEnd: false,
+    }),
+    ...([1, -1] as const).flatMap((side) => {
+      const s = side > 0 ? 'L' : 'R';
+      return [
+        // The arm: a deltoid at the shoulder, a taper to the wrist, a glove.
+        chain([`shoulder${s}`, `elbow${s}`, `wrist${s}`, `wrist${s}`], {
+          // The last stop reaches past the wrist: that is the hand.
+          joints: [at(`shoulder${s}`), at(`elbow${s}`), at(`wrist${s}`), handAt(side)],
+          profile: ramp([
+            [0, 0.092],
+            [0.16, 0.064],
+            [0.45, 0.055],
+            [0.7, 0.048],
+            [0.85, 0.046],
+            [0.93, 0.056],
+            [1, 0.024],
+          ]),
+          swatch: bands([
+            [0.45, 'suit'],
+            [0.85, 'trim'],
+            [1, 'gloves'],
+          ]),
+          sides: 8,
+          rings: 3,
+          capStart: true,
+          capEnd: true,
+        }),
+        // The leg: a thigh, a knee, a calf and a boot.
+        chain([`hip${s}`, `knee${s}`, `ankle${s}`, `toe${s}`], {
+          profile: ramp([
+            [0, 0.09],
+            [0.2, 0.077],
+            [0.42, 0.061],
+            [0.62, 0.052],
+            [0.82, 0.045],
+            [0.92, 0.058],
+            [1, 0.03],
+          ]),
+          swatch: bands([
+            [0.82, 'suit'],
+            [1, 'boots'],
+          ]),
+          sides: 8,
+          rings: 3,
+          flatten: 0.85,
+          capStart: true,
+          capEnd: true,
+        }),
+      ];
+    }),
+  ];
+  /**
+   * The head is its own surface on the same skeleton, and that is what lets the
+   * first person hide it: with one skin there is no "hide the head", only "hide
+   * the figure". Its bands are the helmet, the goggles and the face, in the
+   * order an eye meets them going forward.
+   */
+  const skull: Chain = {
+    bones: ['neck', 'neck', 'neck'],
+    joints: [new Vector3(0, 0.02, 0.3), new Vector3(0, 0.03, 0.42), new Vector3(0, 0.01, 0.58)],
+    profile: ramp([
+      [0, 0.075],
+      [0.3, 0.122],
+      [0.55, 0.128],
+      [0.8, 0.115],
+      [1, 0.062],
+    ]),
+    // A band is only a band if a ring lands in it. At three rings a segment the
+    // head's fall at 0, 0.107, 0.321, 0.428, 0.571, 0.857 and 1 -- and the
+    // goggles, written as 0.58 to 0.8, caught none of them: the figure flew
+    // about in a plain cream egg and nobody could see why. Four rings put two
+    // in the visor, and the stops are written against the rings rather than
+    // against a picture of a head.
+    swatch: bands([
+      [0.46, 'helmet'],
+      [0.8, 'goggles'],
+      [1, 'skin'],
+    ]),
+    sides: 10,
+    rings: 4,
+    capStart: true,
+    capEnd: true,
+  };
+
+  const skeleton = new Skeleton(bones);
+  const skinned = (skin: Skin, name: string): Mesh => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(skin.position, 3));
+    geometry.setAttribute('normal', new Float32BufferAttribute(skin.normal, 3));
+    geometry.setAttribute('color', new Float32BufferAttribute(skin.color, 3));
+    geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skin.skinIndex, 4));
+    geometry.setAttribute('skinWeight', new Float32BufferAttribute(skin.skinWeight, 4));
+    geometry.setIndex(new BufferAttribute(skin.index, 1));
+    geometry.computeBoundingSphere();
+    const mesh = new SkinnedMesh(geometry, material);
+    mesh.name = name;
+    mesh.castShadow = true;
+    // A skinned mesh's bounding sphere is the rest pose's, and this figure's
+    // rest pose is an arch: culled against it, an arm in a track leaves the
+    // sphere and the whole body blinks out. One object, so this costs nothing.
+    mesh.frustumCulled = false;
+    object.add(mesh);
+    mesh.bind(skeleton);
+    return mesh;
+  };
+  const bodySkin = mergeSkins(parts.map((c) => buildChain(c, boneIndex)));
+  const headSkin = buildChain(skull, boneIndex);
+  const skins = [bodySkin, headSkin];
+  const meshes = [skinned(bodySkin, 'skin'), skinned(headSkin, 'skull')];
+  const triangles = skins.reduce((n, skin) => n + skin.index.length / 3, 0);
+  /**
+   * Repaint: one walk of the vertices, writing the swatch each one belongs to
+   * and the shade the generator baked into it. A swatch used to be a mesh, so a
+   * repaint was seven buffers; it is a range of vertices now, and it is still
+   * one upload per surface rather than a new buffer.
+   */
+  const repaint = () => {
+    const tint = new Color();
+    for (const [i, skin] of skins.entries()) {
+      const attribute = meshes[i]!.geometry.getAttribute('color');
+      const colors = attribute.array as Float32Array;
+      for (let v = 0; v < skin.swatch.length; v++) {
+        tint.set(outfit[skin.swatch[v]! as Swatch]);
+        const shade = skin.shade[v]!;
+        colors[v * 3] = tint.r * shade;
+        colors[v * 3 + 1] = tint.g * shade;
+        colors[v * 3 + 2] = tint.b * shade;
+      }
+      attribute.needsUpdate = true;
+    }
+  };
+  repaint();
+
+  const qx = new Quaternion();
+  /** What the shapes are being asked for this frame; one object, refilled, never allocated. */
+  const want: Record<Slot, number> = { box: 1, delta: 0, track: 0, climb: 0, turnIn: 0, turnOut: 0 };
   let time = 0;
   let view: FlightPose['view'] | null = null;
+  const eye = new Vector3(0, -0.03, 0.56);
   return {
     object,
-    eye: new Vector3(0, -0.03, 0.56),
+    eye,
     bounds: HUMAN_BOUNDS,
     get triangles() {
       return triangles;
@@ -301,41 +627,88 @@ export function createProceduralHuman(
       time += dt;
       object.position.set(pose.x, pose.y, pose.z);
       object.rotation.set(-pose.pitch, pose.heading, pose.bank);
-      // the hinges: wind flutter, stronger in a gust, plus a slow drift; the inner arm drops in a turn
-      const flutter = 0.05 + 0.09 * pose.gust;
-      const slow = perlin2(time * 0.15, 0.37, 11) * 0.05;
+      // The air, as a limb feels it. `rush` is the airspeed over the nominal and
+      // the flutter goes with its square, because what shakes a suit is the
+      // dynamic pressure and not the speed. Before this the figure read neither
+      // `speed` nor `vy` at all -- they arrived every frame and were dropped --
+      // so a dive at 62 m/s fluttered exactly like a glide at 30 while the
+      // sound of it did not.
+      const rush = pose.speed / SPEED;
+      const press = rush * rush;
+      const flutter = (0.05 + 0.09 * pose.gust) * press;
+      const drift = perlin2(time * 0.15, 0.37, 11) * 0.05;
       const w = pose.windPhase;
-      // The air the figure meets: a dive sweeps the arms back into a track and
-      // straightens the knees, a climb spreads the arms forward and wide. Both
-      // are rotations around the figure's own up axis, so the arms travel in
-      // the plane of the shoulders instead of flapping.
-      const dive = Math.min(Math.max(-pose.pitch, 0), TRACK.at) / TRACK.at;
-      // A climb still spreads the arms about the up axis; only the dive has
-      // somewhere specific to be.
-      const sweep = -Math.min(Math.max(pose.pitch, 0), 0.6) * 0.32;
+      // What the pressure does besides shake: it pushes the limbs back. Above
+      // the nominal they trail, below it they come forward, and the far joints
+      // feel it more than the near ones.
+      const drag = press - 1;
+      // A dive also arches the back, and the figure has no spine joint to arch
+      // -- so the hips take it, which is where an arch is felt anyway.
+      const arch = clamp01(-pose.vy / 20, -1);
 
-      // dt <= 0 is "place it, now": the world puts the figure down once before
-      // the first frame, and a test asks for a pose without a frame to reach it.
-      const caught = (kind: Hinge['kind']) => (dt > 0 ? 1 - Math.exp(-dt / LAG[kind]) : 1);
+      // ---- what shape the figure is holding ----------------------------------
+      // Three axes, not one. A skydiver changes shape in order to fly
+      // differently; this file used to read the shape off `pitch` alone, which
+      // meant a dive at 30 m/s and a dive at 62 looked identical and only the
+      // sound knew the difference.
+      const dive = clamp01(-pose.pitch / POSE.dive);
+      const flare = clamp01(pose.pitch / POSE.climb);
+      const fast = clamp01((rush - 1) / POSE.fast);
+      const slow = clamp01((1 - rush) / POSE.slow);
+      // How far down the go-fast road the figure has gone, off both axes at
+      // once, and then box -> delta -> track along it with the delta owning the
+      // middle. The first draft made the track the product of the two axes and
+      // the delta their disagreement, which is defensible on paper and wrong in
+      // the air: a dive buys airspeed, so the two axes agree within a second of
+      // each other and the delta was a shape the figure only ever flashed
+      // through. Measured on the real controller, this puts a level cruise in
+      // the box, a gentle descent (vy -6) at 85% delta and the steepest dive at
+      // a whole track -- three shapes that are held rather than passed.
+      const drive = (dive + fast) / 2;
+      // The climb is the other end of the same story and does not share the
+      // road: it takes what it is owed first and the three above divide what is
+      // left. Nose up and slow are one state here rather than two, because a
+      // climb in this world is paid for in airspeed.
+      const climb = Math.max(flare, slow);
+      const road = 1 - climb;
+      const track = clamp01((drive - 0.5) * 2) * road;
+      const delta = (1 - Math.abs(drive - 0.5) * 2) * road;
+      const box = clamp01((0.5 - drive) * 2) * road;
+      // A turn is a shape laid over whatever the figure was doing rather than
+      // one instead of it, so it takes a share and the rest keep their ratios:
+      // a banked track still tracks.
+      const lean = clamp01(Math.abs(pose.bank) / POSE.bank) * POSE.lean;
+      const spare = (1 - lean) / (track + delta + climb + box || 1);
+      want.box = box * spare;
+      want.delta = delta * spare;
+      want.track = track * spare;
+      want.climb = climb * spare;
+      // A roll about +z takes the left side (+x) down when the bank is
+      // negative, which is a turn to the left, and the left side is then the
+      // inner one.
+      const innerLeft = pose.bank < 0;
       for (const h of hinges) {
+        // The only two entries of `want` that are not the same for every joint:
+        // whichever of the two mirrored turns this side is not wearing gets
+        // nothing. They are two slots and not one because a single slot whose
+        // target flipped as the bank crossed zero would hand whatever weight
+        // the spring still held to the wrong side of the body -- and the bank
+        // crosses zero in the middle of every S-turn.
+        const inner = h.side > 0 === innerLeft;
+        want.turnIn = inner ? lean : 0;
+        want.turnOut = inner ? 0 : lean;
+
         const phase = h.side > 0 ? 0 : 2.1;
-        let swing = 0,
-          drop = 0,
-          back = 0;
+        let swing = 0;
         switch (h.kind) {
           case 'shoulder':
-            swing = Math.sin(w + phase) * flutter + slow;
-            drop = Math.max(0, -pose.bank * h.side) * 0.5;
-            back = sweep;
+            swing = Math.sin(w + phase) * flutter + drift;
             break;
           case 'elbow':
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
-            // In a climb the elbows help spread the arms; in a dive they have
-            // nothing to add, because straightening is what folds them in.
-            back = sweep < 0 ? sweep * 0.5 : 0;
             break;
           case 'hip':
-            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + slow;
+            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + drift + arch * 0.12;
             break;
           case 'knee':
             swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
@@ -344,26 +717,51 @@ export function createProceduralHuman(
             swing = Math.sin(w * 1.1 + 3.6 + phase) * flutter * 0.8;
             break;
         }
-        const k = caught(h.kind);
-        h.swing += (swing - h.swing) * k;
-        h.drop += (drop - h.drop) * k;
-        h.back += (back - h.back) * k;
-        h.fold += (dive - h.fold) * k;
+        // The pressure trails the limb: it is a swing about the joint's own
+        // pitch axis, so an arm goes back along the body and a leg goes back
+        // along the flight, which is what the air does to both.
+        swing -= drag * TRAIL[h.kind];
+        const omega = 1 / LAG[h.kind];
+        settle(h.swing, swing, omega, DAMPING.joint, dt);
+
+        // The shapes, blended by what this joint has actually taken up. The
+        // weights are sprung and then renormalised, so a joint on its way from
+        // one shape to another is never wearing more or less than one pose --
+        // it is the running average that keeps a blend on the sphere.
+        let sum = 0;
+        for (const slot of SLOTS) {
+          const spring = h.weight[slot];
+          settle(spring, want[slot], omega, DAMPING.pose, dt);
+          if (spring.x < 0) spring.x = 0;
+          sum += spring.x;
+        }
+        // An incremental weighted mean on the sphere: each shape in turn,
+        // slerped by its share of everything counted so far.
+        let taken = 0;
         h.pivot.quaternion.copy(h.rest);
-        if (h.track && h.fold > 0) h.pivot.quaternion.slerp(h.track, h.fold);
-        // Straightening is a walk of the joint's own bend back toward none of
-        // it, so the forearm ends up along the upper arm whatever direction the
-        // upper arm is pointing by then.
-        if (h.kind === 'elbow' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.elbow);
-        if (h.kind === 'knee' && h.fold > 0) h.pivot.quaternion.slerp(IDENTITY, h.fold * TRACK.knee);
-        h.pivot.quaternion
-          .premultiply(qz.setFromAxisAngle(AXIS_Z, -h.side * h.drop))
-          .premultiply(qy.setFromAxisAngle(AXIS_Y, h.side * h.back))
-          .premultiply(qx.setFromAxisAngle(AXIS_X, h.swing));
+        for (const slot of SLOTS) {
+          const share = sum > 0 ? h.weight[slot].x / sum : slot === 'box' ? 1 : 0;
+          if (share <= POSE.floor) continue;
+          taken += share;
+          // The first shape kept arrives at a ratio of exactly one, which is
+          // what makes the `rest` this started from a placeholder rather than a
+          // sixth vote.
+          h.pivot.quaternion.slerp(h.targets[slot], share / taken);
+        }
+        h.pivot.quaternion.premultiply(qx.setFromAxisAngle(AXIS_X, h.swing.x));
       }
+      // The first person draws none of the figure, and that is what being one
+      // surface costs. What was here before was a list of parts to keep, and
+      // the list was wrong: the parts on it -- the forearms -- were the two
+      // black shapes the owner saw in the top corners, out at 71.6 degrees off
+      // the axis of a frame whose half is 37.5. A skin cannot be culled part by
+      // part, so the choice is the whole body or none of it, and measured,
+      // none of this pose is inside the frame anyway. The day a pose brings the
+      // hands forward, the forearms become a chain of their own with a surface
+      // of their own, and then there is something to decide again.
       if (pose.view !== view) {
         view = pose.view;
-        for (const m of meshes) m.visible = view === 'tpp' || (fppHands && hands.has(m));
+        for (const m of meshes) m.visible = view === 'tpp';
       }
     },
     get outfit() {
@@ -375,11 +773,11 @@ export function createProceduralHuman(
     setOutfit(next, nextPattern) {
       outfit = next;
       pattern = nextPattern;
-      for (const swatch of Object.keys(bySwatch) as Swatch[])
-        for (const m of bySwatch[swatch]) paint(m.geometry, outfit[swatch]);
+      repaint();
     },
     dispose() {
       for (const m of meshes) m.geometry.dispose();
+      skeleton.dispose();
       material.dispose();
     },
   };

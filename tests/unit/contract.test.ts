@@ -275,6 +275,9 @@ describe('validateLibrary: structures and the sites that place them', () => {
         settled({ id: 'hookless', sites: sites({ build: undefined as unknown as SitesSpec['build'] }) }),
         // a lattice this fine is a town's, and a town is its own entry
         settled({ id: 'crowded', sites: sites({ cell: 900 }) }),
+        // a tint is a colour like any other and meets the same envelope: this
+        // one would paint a house in neon and is refused by its index
+        settled({ id: 'garish', sites: sites({ palette: ['barkPale', '#00ff88'] }) }),
         // and this one is the drift itself: 2200 m fits four sites inside the
         // 1900 m the guard was written against and nine inside the 2600 the
         // ring actually reaches, so it passed until the reach was told the truth
@@ -287,6 +290,7 @@ describe('validateLibrary: structures and the sites that place them', () => {
     expect(all).toContain('biome drifting.sites: needs a lattice presence to stand on');
     expect(all).toContain('biome crowded.sites.cell: 900 m puts up to 36 sites in the ring, the budget is 4');
     expect(all).toContain('biome drifted.sites.cell: 2200 m puts up to 9 sites in the ring, the budget is 4');
+    expect(all).toContain('biome garish.sites.palette[1]: #00ff88 is outside the palette envelope');
     expect(all).toContain('biome hookless.sites: needs a build hook');
   });
 });
@@ -339,17 +343,21 @@ describe('validateLibrary: what a biome asks to grow in it', () => {
 });
 
 describe('the library itself', () => {
-  it('ships ten climate biomes and one settlement, and they pass their own validator', () => {
+  it('ships ten climate biomes and two settlements, and they pass their own validator', () => {
     const library = createLibrary();
-    expect(library.biomes).toHaveLength(11);
+    expect(library.biomes).toHaveLength(12);
     expect(library.biomes[0]!.id).toBe('wildsong'); // the fallback for an unclaimed texel
     expect(validateLibrary(library)).toEqual([]);
-    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(11);
-    // The settlement is the odd one and the only one: it is claimed off a
-    // lattice rather than out of climate space, and it is the last in the list
-    // because the first biome is the one that takes unclaimed ground.
-    expect(library.biomes.filter((b) => b.sites).map((b) => b.id)).toEqual(['village']);
-    expect(library.biomes.at(-1)!.id).toBe('village');
+    expect(new Set(library.biomes.map((b) => b.id)).size).toBe(12);
+    // The settlements are the odd ones: they are claimed off a lattice rather
+    // than out of climate space, and they come last in the list because the
+    // first biome is the one that takes unclaimed ground. Two lattices, two
+    // salts, two cell sizes -- one for a village every 13 km and one for a town
+    // every 41.
+    expect(library.biomes.filter((b) => b.sites).map((b) => b.id)).toEqual(['village', 'town']);
+    expect(library.biomes.at(-1)!.id).toBe('town');
+    const lattices = library.biomes.filter((b) => b.sites).map((b) => `${b.sites!.cell}:${b.sites!.salt}`);
+    expect(new Set(lattices).size).toBe(lattices.length);
     for (const biome of library.biomes) {
       expect(biome.kind).toBe('biome');
       expect(biome.name.length).toBeGreaterThan(2);
@@ -362,17 +370,31 @@ describe('the library itself', () => {
     expect(library.props).toHaveLength(2);
     expect(validateLibrary(library)).toEqual([]);
     const baked = new Set(library.species!.map((s) => s.id));
-    // Every biome that grows anything grows something baked; the settlement
-    // grows nothing, which is how its ground stays a village and not a wood.
-    const growing = library.biomes.filter((b) => !b.sites);
-    expect(growing).toHaveLength(10);
-    for (const biome of growing) {
+    // Every biome grows something baked, the settlements included. They used to
+    // grow nothing, on the theory that it was what kept their ground a village
+    // and not a wood; what it actually kept was a disc of bare paint as wide as
+    // the presence, because a settlement's own weight crowds the country's
+    // biomes out of the ground it stands on and then sows nothing there.
+    for (const biome of library.biomes) {
       const sown = biome.populate as ScatterSpec;
       expect(sown.type).toBe('scatter');
       expect(Object.keys(sown.species).length).toBeGreaterThan(0);
       for (const id of Object.keys(sown.species)) expect(baked.has(id)).toBe(true);
+      for (const id of Object.keys(sown.props ?? {}))
+        expect(library.props!.some((p) => p.id === id)).toBe(true);
     }
-    for (const biome of library.biomes) if (biome.sites) expect(biome.populate).toBeUndefined();
+    // and a settlement grows less than the country: it is a place people cleared
+    const settled = library.biomes.filter((b) => b.sites);
+    expect(settled.map((b) => b.id)).toEqual(['village', 'town']);
+    const wildest = Math.max(
+      ...library.biomes.filter((b) => !b.sites).map((b) => (b.populate as ScatterSpec).density),
+    );
+    for (const biome of settled) {
+      expect((biome.populate as ScatterSpec).density).toBeLessThan(wildest);
+      // and the grass is the half of it that shows: without one, the ground a
+      // settlement claims is balder than the meadow it was cut out of
+      expect((biome.populate as ScatterSpec).grass!.density).toBeGreaterThan(0);
+    }
     // one species grows its own way, so the bake hook has a live example
     expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
     // and every crown fits the budget the baker will enforce again at bake time

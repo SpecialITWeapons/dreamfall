@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFields } from '../../src/engine/terrain/Fields';
-import { CELL, createWorldSampler } from '../../src/engine/terrain/WorldSampler';
+import { CELL, createWorldSampler, type WorldSampler } from '../../src/engine/terrain/WorldSampler';
 
 const fields = () => createFields(createWorldSampler(42));
 /** Walks east from the origin until the ground meets a condition, so a test asserts about real terrain. */
@@ -152,6 +152,70 @@ describe('createFields', () => {
     const same = f.at(3400, 2600).lattice(6000, 3);
     expect(same.cx).toBe(hit.cx);
     expect(same.h).toBe(hit.h);
+  });
+
+  it('carries the slope at the centre, measured across the span a settlement is wide', () => {
+    // A plane: the slope is the plane's own, whatever the probe, and the hook
+    // that refuses a cell on it is refusing the hillside rather than one
+    // sixteen-metre span of a rough one.
+    const tilt = 0.3;
+    const ground = (height: (x: number) => number): WorldSampler => ({
+      seed: 0,
+      seeds: { S1: 0, S2: 0, S3: 0 },
+      sample(x, z, out) {
+        this.baseFields(x, z, out);
+      },
+      baseFields(x, _z, out) {
+        out[0] = height(x);
+        out[1] = out[2] = out[3] = out[4] = 0.5;
+      },
+      sampleWindow(x, z, out, slots) {
+        this.baseFields(x, z, out);
+        out[1] = 1;
+        out[2] = out[3] = 0;
+        slots[0] = slots[1] = slots[2] = 0;
+      },
+    });
+    const plane = ground((x) => tilt * x);
+    const hit = createFields(plane).at(3000, 3000).lattice(6000, 3);
+    expect(hit.s).toBeCloseTo(tilt, 9);
+    // and it is the centre's, like h and t: flat ground reads zero however
+    // rough the texel the hook happens to stand on
+    expect(
+      createFields(ground(() => 70))
+        .at(3000, 3000)
+        .lattice(6000, 3).s,
+    ).toBe(0);
+  });
+
+  it('remembers a centre per lattice, so two of them do not take turns evicting each other', () => {
+    // The registry carries more than one lattice -- a village on six kilometres
+    // and a town on twenty -- and the window is filled texel by texel, each of
+    // them asking every lattice in turn. With one remembered answer the pair
+    // thrash it and every texel pays for both: measured over a full 560x560
+    // window of seed 42, 783 ms with one lattice against 1810 with two.
+    let sampled = 0;
+    const counting = {
+      ...createWorldSampler(42),
+      baseFields(x: number, z: number, out: Float64Array) {
+        sampled++;
+        createWorldSampler(42).baseFields(x, z, out);
+      },
+    };
+    const f = createFields(counting);
+    // One texel asking both lattices costs two samples: its own fields, and...
+    // nothing else, because each centre is remembered from the texel before.
+    f.at(3000, 3000).lattice(6000, 3);
+    f.at(3000, 3000).lattice(20000, 7);
+    const afterFirst = sampled;
+    // Nine more texels of the same two cells: the fields of each, and not one
+    // centre sampled again.
+    for (let k = 1; k <= 9; k++) {
+      f.at(3000 + k, 3000 + k).lattice(6000, 3);
+      f.at(3000 + k, 3000 + k).lattice(20000, 7);
+    }
+    // two `at` calls a texel, nine texels, and no centre re-read
+    expect(sampled - afterFirst).toBe(9 * 2);
   });
 
   it('gives one lattice centre per cell, with its own random stream', () => {

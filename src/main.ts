@@ -338,6 +338,9 @@ installDebug(window, {
   get orbit() {
     return { ...steering.orbit };
   },
+  get galaxy() {
+    return world.galaxy;
+  },
   get wind() {
     return world.wind;
   },

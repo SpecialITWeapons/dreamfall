@@ -192,8 +192,24 @@ export interface LatticeHit {
    * without its edge disagreeing with its middle.
    */
   t: number;
+  /**
+   * How steep the ground is at the centre: rise over run, measured across
+   * `LATTICE_SLOPE_PROBE` metres, which is the scale a settlement is built at
+   * rather than the scale one terrain cell is. A hook's own `maxSlope` compares
+   * against this to refuse a cell outright -- the rise it measures from the
+   * centre outward is zero at the centre and so can only ever fade an edge.
+   */
+  s: number;
   u(k: number): number;
 }
+/**
+ * Metres the lattice measures a centre's slope across. A settlement is hundreds
+ * of metres wide, so what matters is whether the hillside it sits on is steep,
+ * not whether one sixteen-metre span of it is; the owner picked the threshold
+ * from pictures framed at this distance, so the number and the pictures mean
+ * the same thing only while this does not move.
+ */
+export const LATTICE_SLOPE_PROBE = 125;
 
 /** What a biome's CPU hooks see, per texel of the height window. */
 export interface Fields {
@@ -223,7 +239,19 @@ export type PresenceDescriptor =
   | {
       type: 'lattice';
       cell: number;
-      radius?: number;
+      /**
+       * How wide, m. A pair is a range the cell draws its own width from, out
+       * of `SITE_STREAM.radius` -- the same draw the site finder makes, so the
+       * ground painted and flattened is the ground the settlement covers. A
+       * single number is that width everywhere, which is what a settlement of
+       * one size wants.
+       *
+       * The pair matters more the wider the settlement: a town drawn at 400 m
+       * whose hook was given 900 stands in five hundred metres of painted,
+       * levelled nothing, and from the air that reads as a bald dune with a
+       * town on top of it.
+       */
+      radius?: number | [number, number];
       feather?: number;
       odds?: number;
       salt?: number;
@@ -232,6 +260,23 @@ export type PresenceDescriptor =
       /** Temperature the centre must have, 0..1; nobody settles a glacier. */
       minTemp?: number;
       maxSlope?: number;
+      /**
+       * Metres the ground may depart from the centre before the settlement
+       * fades, in place of `maxSlope` times the radius.
+       *
+       * They are two different questions and one number answered both until a
+       * town asked. `maxSlope` refuses a centre whose own ground is steep,
+       * measured across `LATTICE_SLOPE_PROBE`; the fade asks how far the ground
+       * has run away from the centre by the time it reaches here, which over
+       * hundreds of metres is a matter of the terrain's relief and not of the
+       * slope at one point in it. Measured on seed 42 over 895 seats: tightening
+       * a town's `maxSlope` from 0.45 to 0.06 moved the median departure inside
+       * 900 m from 167 m to 146 m -- that is to say, not at all -- while
+       * refusing two seats in three. A settlement wide enough for the two to
+       * come apart says how deep a cut it will take and leaves the slope to
+       * refuse the hillside it was written for.
+       */
+      maxCut?: number;
       shoreBonus?: number;
     }
   | { type: 'mul'; of: PresenceDescriptor[] }
@@ -247,7 +292,8 @@ export type HeightDescriptor =
       type: 'plateau';
       cell: number;
       salt?: number;
-      radius?: number;
+      /** As the lattice hook's: a pair is drawn per cell, and must be the hook's own pair. */
+      radius?: number | [number, number];
       feather?: number;
       strength?: number;
     };
@@ -457,6 +503,19 @@ export interface SitesSpec {
   radius: [number, number];
   /** Relative weights by structure id; the validator checks them against the registry. */
   structures?: Record<string, number>;
+  /**
+   * Tints a lot is drawn from, in the order the plan draws them. A lot's tint
+   * reaches the pools as the instance colour, which **multiplies** the colours
+   * the recipe baked -- so these are tints and not colours: `white` leaves a
+   * house exactly as its recipe painted it and anything darker shades the whole
+   * of it, walls, roof and all. The swatch book's own tint group is the one to
+   * pick from.
+   *
+   * This is where a town may differ from a village while both are built out of
+   * the same three recipes, which is cheaper by a whole bake than giving the
+   * town recipes of its own.
+   */
+  palette?: SceneryColor[];
   /**
    * The settlement's own last word, asked at the centre the hook chose. It can
    * only refuse what the hook allowed, so a `fits` narrower than the presence
@@ -745,6 +804,7 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
         errors.push(`${where}.sites.radius: needs a [min, max] of positive meters`);
       else if (radius[1] > SITE_RADIUS)
         errors.push(`${where}.sites.radius: ${radius[1]} m, the budget is ${SITE_RADIUS}`);
+      for (const [i, tint] of (site.palette ?? []).entries()) colorAt(`${where}.sites.palette[${i}]`, tint);
       // The ids a settlement asks for are checked here for the same reason a
       // biome's species are: the site builds years after someone types them.
       for (const id of Object.keys(site.structures ?? {}))

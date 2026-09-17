@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { LotSpec, RoadSpec, Reservation, Site, SiteKit } from '../../library/contract';
+import type { SceneryColor } from '../../library/contract';
+import type { LineSpec, LotSpec, RoadSpec, Reservation, Site, SiteKit } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { VILLAGE } from '../../library/settlements/village.js';
 import { planVillage } from '../../library/settlements/plan.js';
@@ -29,28 +30,40 @@ const site = (over: Partial<Site> = {}): Site => {
 const collect = (ground = hillside) => {
   const roads: RoadSpec[] = [],
     lots: LotSpec[] = [],
+    lines: LineSpec[] = [],
     reservations: Reservation[] = [];
   const kit = {
     height: ground,
     slope: (x: number, z: number) => Math.abs(ground(x + 1, z) - ground(x - 1, z)) / 2,
     road: (points: Array<[number, number]>, width: number, opts?: { color?: string }) =>
       roads.push({ points, width, color: opts?.color }),
-    structure: (structure: string, x: number, z: number, opts?: { yaw?: number; floors?: number }) =>
-      lots.push({ structure, x, z, yaw: opts?.yaw ?? 0, floors: opts?.floors ?? 1 }),
+    structure: (
+      structure: string,
+      x: number,
+      z: number,
+      opts?: { yaw?: number; floors?: number; tint?: SceneryColor },
+    ) =>
+      lots.push({
+        structure,
+        x,
+        z,
+        yaw: opts?.yaw ?? 0,
+        floors: opts?.floors ?? 1,
+        ...(opts?.tint === undefined ? {} : { tint: opts.tint }),
+      }),
     reserve: (x: number, z: number, radius: number) => reservations.push({ x, z, radius }),
-    line: () => {
-      throw new Error('no lines in M4a');
-    },
+    line: (points: Array<[number, number]>, kind: string, opts?: { height?: number }) =>
+      lines.push({ points, kind, ...(opts?.height === undefined ? {} : { height: opts.height }) }),
     tree: () => {},
     prop: () => {},
     color: () => ({}) as never,
   } as unknown as SiteKit;
-  return { kit, roads, lots, reservations };
+  return { kit, roads, lots, lines, reservations };
 };
 
-const plan = (over: Partial<Site> = {}, ground = hillside) => {
+const plan = (over: Partial<Site> = {}, ground = hillside, params = VILLAGE) => {
   const out = collect(ground);
-  planVillage(site(over), VILLAGE, out.kit);
+  planVillage(site(over), params, out.kit);
   return out;
 };
 
@@ -131,9 +144,64 @@ describe('planVillage', () => {
       expect(lot.floors).toBeLessThanOrEqual(spec!.floors[1]);
     }
   });
+  it('tints its houses out of the settlement palette, and nothing else', () => {
+    // A tint multiplies what the recipe painted, so this is what lets a town
+    // and a village be built out of the same three recipes and not look it --
+    // no second bake, no second pool, one instance colour.
+    const { lots } = plan();
+    expect(lots.length).toBeGreaterThan(20);
+    const used = new Set(lots.map((l) => l.tint));
+    for (const tint of used) expect(VILLAGE.palette).toContain(tint);
+    expect(used.size).toBeGreaterThan(1);
+    // white is in the palette twice, so a house left exactly as its recipe
+    // painted it is the commonest kind
+    const plain = lots.filter((l) => l.tint === 'white').length;
+    expect(plain / lots.length).toBeGreaterThan(0.25);
+
+    // A palette of one is a settlement whose houses are all their own recipe.
+    const one = plan({}, hillside, { ...VILLAGE, palette: ['white'] });
+    expect(new Set(one.lots.map((l) => l.tint))).toEqual(new Set(['white']));
+    // and a different palette is a different-looking settlement on the same plan
+    const other = plan({}, hillside, { ...VILLAGE, palette: ['barkDark'] });
+    expect(other.lots.map((l) => [l.x, l.z])).toEqual(one.lots.map((l) => [l.x, l.z]));
+    expect(new Set(other.lots.map((l) => l.tint))).toEqual(new Set(['barkDark']));
+  });
   it('keeps the village inside its own radius', () => {
     const one = site();
     for (const lot of plan().lots)
       expect(Math.hypot(lot.x - one.x, lot.z - one.z)).toBeLessThanOrEqual(one.radius);
+  });
+  it('runs a hedgerow behind the houses along the lane, and never across another one', () => {
+    const one = site();
+    const { lines, lots, roads } = plan();
+    expect(lines.length).toBeGreaterThan(0);
+    const toRoadAxis = (road: RoadSpec, x: number, z: number) => toRoad(road, x, z);
+    for (const hedge of lines) {
+      expect(hedge.kind).toBe('hedge');
+      expect(hedge.points.length).toBeGreaterThan(1);
+      for (const [x, z] of hedge.points) {
+        // inside the village
+        expect(Math.hypot(x - one.x, z - one.z)).toBeLessThanOrEqual(one.radius);
+        // behind the gardens: clear of every house's own reserved ground
+        for (const lot of lots)
+          expect(Math.hypot(lot.x - x, lot.z - z)).toBeGreaterThan(VILLAGE.lots.depth * 0.7);
+        // and beside a lane rather than over one. Its own lane is the near one;
+        // what may not happen is a hedge laid across a different lane.
+        const distances = roads.map((road) => toRoadAxis(road, x, z)).sort((a, b) => a - b);
+        expect(distances[1] ?? Infinity).toBeGreaterThanOrEqual(VILLAGE.hedges.clear);
+      }
+    }
+    // it really is following a lane: its nearest road is about the offset away
+    const first = lines[0]!.points[0]!;
+    const nearest = Math.min(...roads.map((road) => toRoadAxis(road, first[0], first[1])));
+    expect(nearest).toBeLessThanOrEqual(VILLAGE.hedges.offset + 1);
+  });
+  it('drew them last and drew nothing for them, so hedges moved not one house', () => {
+    const bare = plan({}, hillside, { ...VILLAGE, hedges: undefined as never });
+    const hedged = plan();
+    expect(bare.lines).toHaveLength(0);
+    expect(hedged.lots).toEqual(bare.lots);
+    expect(hedged.roads).toEqual(bare.roads);
+    expect(hedged.reservations).toEqual(bare.reservations);
   });
 });

@@ -3,7 +3,7 @@
 // it: there is exactly one, rewritten in place, because a full window is
 // 313 600 texels and an object per texel would be 313 600 objects. Pure CPU:
 // base fields, noise and hashes, no three, no DOM.
-import type { Fields, LatticeHit } from '../../../library/contract';
+import { LATTICE_SLOPE_PROBE, type Fields, type LatticeHit } from '../../../library/contract';
 import { fbm, hash2, sstep } from './noise';
 import { CELL, type WorldSampler } from './WorldSampler';
 
@@ -32,21 +32,34 @@ export function createFields(sampler: WorldSampler): FieldsReader {
   const salted = (salt: number) => (salt ^ Math.imul(sampler.seed, 0x9e3779b1)) >>> 0;
   let ix = 0,
     iz = 0;
-  // The centre's own height, sampled once per lattice cell rather than once per
-  // texel. A lattice cell is kilometres wide and the window is filled row by
-  // row, so one remembered answer covers almost every query; without it a
-  // presence hook that asks for a lattice would double the cost of a fill.
-  const centre = new Float64Array(5);
-  let atX = NaN,
-    atZ = NaN,
-    centreHeight = 0,
-    centreTemp = 0;
+  // The centre's own height and temperature, sampled once per lattice cell
+  // rather than once per texel. A lattice cell is kilometres wide and the window
+  // is filled row by row, so a remembered answer covers almost every query;
+  // without one, a presence hook that asks for a lattice doubles the cost of a
+  // fill.
+  //
+  // There are SEATS of them, not one, because the registry carries more than one
+  // lattice: a village on six kilometres and a town on twenty are two different
+  // centres asked for the same texel, and a single slot is thrashed by the pair.
+  // Measured on a full 560x560 window of seed 42: 783 ms with one lattice and
+  // 1810 ms with two, which is the whole saving handed back. The slots are
+  // scanned rather than hashed because there are four of them.
+  const centre = new Float64Array(5),
+    around = new Float64Array(5);
+  const SEATS = 4;
+  const seatX = new Float64Array(SEATS).fill(NaN),
+    seatZ = new Float64Array(SEATS).fill(NaN),
+    seatH = new Float64Array(SEATS),
+    seatT = new Float64Array(SEATS),
+    seatS = new Float64Array(SEATS);
+  let nextSeat = 0;
   const hit: LatticeHit & { cell: number; salt: number; ix: number; iz: number } = {
     cx: 0,
     cz: 0,
     d: 0,
     h: 0,
     t: 0,
+    s: 0,
     cell: 0,
     salt: 0,
     ix: 0,
@@ -89,15 +102,42 @@ export function createFields(sampler: WorldSampler): FieldsReader {
       hit.cx = (cx + 0.5 + jx) * cell;
       hit.cz = (cz + 0.5 + jz) * cell;
       hit.d = Math.hypot(hit.cx - fields.x, hit.cz - fields.z);
-      if (hit.cx !== atX || hit.cz !== atZ) {
+      let seat = -1;
+      for (let k = 0; k < SEATS; k++)
+        if (seatX[k] === hit.cx && seatZ[k] === hit.cz) {
+          seat = k;
+          break;
+        }
+      if (seat < 0) {
         sampler.baseFields(hit.cx, hit.cz, centre);
-        centreHeight = centre[0]!;
-        centreTemp = centre[1]!;
-        atX = hit.cx;
-        atZ = hit.cz;
+        // Four more samples, once per lattice cell rather than per texel, for
+        // the one question a hook cannot ask from the centre outward: how steep
+        // is the ground the settlement would stand on. Central differences, the
+        // same arithmetic the height window's own slopeAt uses, over the span a
+        // settlement is wide.
+        const p = LATTICE_SLOPE_PROBE;
+        sampler.baseFields(hit.cx + p, hit.cz, around);
+        const east = around[0]!;
+        sampler.baseFields(hit.cx - p, hit.cz, around);
+        const west = around[0]!;
+        sampler.baseFields(hit.cx, hit.cz + p, around);
+        const south = around[0]!;
+        sampler.baseFields(hit.cx, hit.cz - p, around);
+        const north = around[0]!;
+        // Round robin, because the lattices take turns by texel: whatever is
+        // evicted is the one asked longest ago, which with one slot per lattice
+        // is never the one about to be asked.
+        seat = nextSeat;
+        nextSeat = (nextSeat + 1) % SEATS;
+        seatX[seat] = hit.cx;
+        seatZ[seat] = hit.cz;
+        seatH[seat] = centre[0]!;
+        seatT[seat] = centre[1]!;
+        seatS[seat] = Math.hypot((east - west) / (2 * p), (south - north) / (2 * p));
       }
-      hit.h = centreHeight;
-      hit.t = centreTemp;
+      hit.h = seatH[seat]!;
+      hit.t = seatT[seat]!;
+      hit.s = seatS[seat]!;
       hit.cell = cell;
       // The stream the hit hands out is salted too: the sites of M4 stand on
       // this lattice, and two worlds whose villages sit on the same grid are

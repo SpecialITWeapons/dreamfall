@@ -34,8 +34,9 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `sky/Wind.ts`) import neither `three/webgpu`, `three/tsl` nor the DOM; from
-  `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
+  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`) import neither
+  `three/webgpu`, `three/tsl` nor
+  the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
   checked by Playwright on WebGL2.
 - The CPU height field is the sole source of truth for terrain; the GPU only
@@ -62,9 +63,14 @@ subdirectory.
 
 - The CPU heightfield is the only terrain truth; `heightAt` interpolates the
   exact rendered triangle (same diagonal as `buildGrid`), never bilinearly.
-- The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, spare)` from
+- The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, baseTemp)` from
   one sampling: heights interpolate across the triangle, weights belong to the
-  cell, and the spare byte is reserved for standing water.
+  cell, and the **fourth slot byte is the climate temperature the snow line is
+  drawn on** (`packBaseTemp`/`unpackBaseTemp`, over a range of two), which is
+  what lets the ground shader draw a snow line the CPU's tree line agrees with:
+  one line and not two. It was reserved for standing water, and that reservation
+  could never have worked -- a lake needs a surface height, and a byte over this
+  world's relief is four metres a step.
 - Presence is the CPU's: every biome's hook is clipped to 0..1, normalised, and
   the three strongest are kept and renormalised. The GPU only reads the result,
   which is why a biome may have any presence function rather than a point in
@@ -73,6 +79,11 @@ subdirectory.
 - A height hook sees the base height, never a neighbour's answer, and its change
   is clipped to `MAX_HEIGHT_DELTA` and weighed by its own slot, so the order of
   the registry cannot move the ground.
+- Snow is a **world layer**, not a biome's: above `snowLineAt`, wandering with
+  noise and rising on the faces that meet the noon sun, holding only where the
+  ground is gentle enough (`SNOW.hold`, about 25 degrees) with bare alpine rock
+  in a band under it. A biome opts out with `snow: false`, which was in
+  `contract.ts` unread from M3a until now.
 - The ground material is composed once from the registry, one branch per biome
   gated at a hundredth of a fragment; ten biomes cost about 2 ms on a full
   window fill (530 ms against 528 without them), because the base fields are
@@ -90,6 +101,16 @@ subdirectory.
   directional light changes direction only at zero intensity.
 - The sky dome draws last among the opaque objects (`renderOrder 1`), writes
   no depth, and rides on the camera.
+- The Milky Way is grown, not downloaded: `sky/GalaxyMatter.ts` is the whole of
+  its shape -- a branching dust field and the stellar light behind it, in
+  galactic coordinates, pure CPU and tested in Node. `sky/MilkyWay.ts` bakes
+  that into an atlas and hands the dome a `galaxy` hook. **The bake is two
+  million texels and 3.5 s, so it runs in a worker** and the atlas is allocated
+  empty and filled when it arrives: an empty atlas is simply no galaxy, and the
+  start pays nothing for a sky nobody sees until nightfall. The core's bearing
+  is the other half -- 93 ms on the main thread, because the flight asks for it
+  on its first step -- and `GALAXY_HEADING` is that bearing with a unit test
+  asking the bake for it again, so there is one of it and not two.
 - Only the scene pass is multisampled; everything past tone mapping is
   eight-bit; `capture` renders before the display chain. It renders straight to
   its own target, so the scene compiles a second time for that configuration:
@@ -138,12 +159,34 @@ subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
-- The figure: the shoulder sits on the chest and the cap rides on the joint, so
-  the seam closes at every sweep; a dive is a second pose (`trackDir`) the
-  joints walk to, not a rotation of the first; every joint follows through a
-  first-order lag, longer the further it is from the chest, and `dt <= 0` means
-  "be there now", which is how the world places the figure before the first
-  frame.
+- The figure is **one skin on sixteen bones**, not a pile of solids: `Skin.ts`
+  is pure geometry (rings swept along a chain of joints, crowded where a joint
+  bends, weighted symmetrically across it) and is tested in Node;
+  `ProceduralHuman.ts` builds the `Bone` tree and two `SkinnedMesh`es -- the
+  body and the head, separate only so the first person can hide the figure
+  without hiding it part by part. The world's material needs no change:
+  `setupPosition` adds `skinning(object)` for a skinned mesh by itself.
+  Everything a chain looks like is its `profile` -- a half-width in metres at a
+  share of its length -- and its `swatch`, and **a swatch band is only a band if
+  a ring lands in it**: write the stops against the rings the chain samples at,
+  not against a picture of a body.
+- The figure's motion is **five shapes and the air**: box, delta, track, climb,
+  and a turn laid over any of the others rather than instead of it. A shape is
+  five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
+  else; the quaternions are read off them by the same chain rule the skeleton is
+  built with, so a pose cannot drift out of step with the bones. Which one is
+  worn is read off three axes -- flight angle, airspeed, bank -- and **every
+  threshold in `POSE` has to be inside what the controller can actually fly**:
+  it reaches `pitch -0.42..+0.56`, `rush 0.75..1.48` and `bank 0.47`, a test
+  asks the controller itself, and a number written from a picture of a skydiver
+  instead was a pose that existed and could not be reached. Nose up and slow are
+  one state and not two, because a climb is paid for in airspeed; the climb
+  sweeps the arms back like the track and is told from it by the knees.
+- Every joint is a spring-damper the air pushes, substepped so `omega * h` stays
+  under a half, slower the further it is from the chest; the shape weights are
+  sprung per joint too, so a shape arrives shoulder first and ankle last.
+  `dt <= 0` means "be there now" -- position and velocity both -- which is how
+  the world places the figure before the first frame.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own
@@ -186,24 +229,74 @@ subdirectory.
   baked forms an instance takes one of, because one card is a line seen from
   above and a meadow of them reads as streaks. Each form is a mesh of its own
   and `Grass.mesh` is the group of them.
+- The grass window is **a set of tiles written a rim at a time**, and the whole
+  of what makes that correct is that a tile's tufts are a pure function of its
+  own coordinates: nothing in the placement may read where the flyer is, or
+  approaching a meadow would change it. Crossing a cell drops the tiles that
+  left, moves the last live tuft into each hole, and writes only the arrivals;
+  only an origin jump rewrites everything, because only then are the matrices
+  wrong. Three numbers move together: a tile is taken by its centre so a tuft
+  may stand 45 m past `REACH`, which makes `GRASS_FADE[1] <= REACH - STEP - 45`,
+  and `CEILING` has to clear the fade or crossing it hides visible grass.
 
 ## Settlements
 
-- One lattice answers three questions -- where a site stands (the `lattice`
-  presence hook), where the ground goes flat (the `plateau` height hook) and
-  where the site is seated -- and the seat is not a fourth draw: `Sites` calls
-  the biome's own presence hook at the lattice centre and stands the settlement
-  there. Two draws on one cell agree about half the time, which is what two
-  coins do, and the other half is a village on the slope beside its own flat
-  square. `SitesSpec` therefore carries no odds and no land line of its own.
-- A plan is data -- roads, lots, reservations, never geometry -- and a pure
-  function of its site, which is what lets a village be built and tested in
-  Node; the pools make the geometry out of it, as they do out of a scatter.
+- One lattice answers four questions -- where a site stands (the `lattice`
+  presence hook), how wide it is, where the ground goes flat (the `plateau`
+  height hook) and where the site is seated -- and none of them is a second
+  draw. `Sites` calls the biome's own presence hook at the lattice centre and
+  stands the settlement there, and both hooks take the `[min, max]` radius and
+  draw the width out of `SITE_STREAM.radius`, the same stream the seat draws it
+  from. Two draws on one cell agree about half the time, which is what two coins
+  do, and the other half is a village on the slope beside its own flat square --
+  or, when it is the width that disagrees, a town of four hundred metres
+  standing in nine hundred metres of levelled, painted nothing.
+  `SitesSpec` therefore carries no odds and no land line of its own.
+- A plan is data -- roads, lines, lots, reservations, never geometry -- and a
+  pure function of its site, which is what lets a village be built and tested in
+  Node; the pools make the geometry out of it, as they do out of a scatter. A
+  settlement is that plan plus its parameters and nothing else: one entry,
+  `settlements/settlement.js`, makes the village and the town alike, and the
+  parameters carry the id, the name and the landmark, because a factory that
+  knew the word "village" could only ever make one.
+- A plan may not plant and a scatter may not build: `kit.tree` inside a plan and
+  `kit.structure` inside a `populate` both throw. What a plan can lay is a
+  `kit.line` -- a fence, a wall, a hedge -- and it claims no ground, so it says
+  where people drew a boundary and nothing about what grows inside it. It does
+  not stand in for planting: a hedge squared off around a plot, on the argument
+  that the scatter would fill it, came out an empty green frame lying on bare
+  clay. A hedgerow beside a lane needs nothing inside it to read.
+- A settlement **sows the ground it claims**: its own weight is what crowds the
+  country's biomes out of it, so a settlement with no `populate` is a disc of
+  bare paint as wide as its presence. No thinning toward the middle is needed --
+  the lots' reservations already refuse a tree where the houses are -- but the
+  density has to be a real fraction of the country's, because those reservations
+  do less than they look: the village read 1.7 trees a hectare inside and 1.7
+  outside until its own density came down to 0.3.
+- `maxSlope` refuses a lattice **cell** whose centre is steep, measured across
+  `LATTICE_SLOPE_PROBE`; `maxCut` fades the settlement where the ground has run
+  too far from its centre, in metres. They were one number until a town asked,
+  and over 900 m that departure is the terrain's relief and has almost nothing
+  to do with the slope at the middle of it, so tightening the slope only made
+  towns rare. A small settlement can leave `maxCut` unsaid.
+- A settlement's `plateau.strength` is how much of a place it levels, and the
+  answer for a wide one is not "all of it": a town at full strength on a coastal
+  hill pulls its whole disc to the hilltop's height and reads from the air as a
+  pale mesa with buildings on it. Half is a town. What a settlement needs is
+  level streets, and a street has its own slope rule for the rest.
 - Plans are built in a queue with a budget of 4 ms a frame and cached wider than
   the ring, so a plan survives the ring leaving it and coming back. Seating
   reads the sampler and needs no window; the plan reads the height window, so a
   site the window cannot answer for keeps its turn in the queue rather than
-  laying its street over the other side of the world.
+  laying its street over the other side of the world. The budget is checked
+  before a plan, never during one: a town costs 19 ms and is built whole on
+  purpose, because towns are 41 km apart and the machinery to slice one costs
+  more than the frame does. How many buildings it has is a **share of what its
+  streets offer** and never a cap on the count -- a cap walks the streets in the
+  order they were laid and builds a town with one side missing, which is the
+  fault the ring's own tree ceiling has -- and what the pools then refuse is
+  counted in `SceneryStats.buildingsRefused`, because a `continue` is how a
+  settlement quietly loses two hundred houses.
 - `cell.occupied` reads the plans' reservations and roads out of a hash grid
   filled at every rebuild, which is why the forest keeps off the square and the
   road.

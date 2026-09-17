@@ -3,7 +3,8 @@
 // only ever reads a direction, so its radius is free; it sits beyond the far
 // corner of the streamed terrain and draws last among the opaque objects, so
 // the depth test throws away every fragment the world already covers. The
-// Milky Way plugs in through `galaxy` in M5. Ported from fly-with-me.
+// Milky Way plugs in through `galaxy`; `MilkyWay.ts` is what fills it.
+// Ported from fly-with-me.
 import { BackSide, Mesh, SphereGeometry, type Vector3 } from 'three';
 import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
