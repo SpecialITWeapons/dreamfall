@@ -13,15 +13,17 @@ import { defineStructure } from '../contract';
 // It costs one more bake and one more pool -- a building is instanced whole, so
 // every count in `floors` is its own bake.
 //
-// Grown by about a third in 2026-09-17, from a photograph: against a wood whose
-// oaks stand forty to sixty metres, a five metre cottage read as a shed. One
-// storey is 6.4 m now and three are 13.2, which is a house under a tree rather
-// than a mushroom beside one. Lot depth and setback grew with it.
+// Grown twice on 2026-09-17, both times from a photograph and the second time
+// because the first was not enough. It began at 7 x 5.5 m on 2.8 m storeys,
+// which is 5.0 m to the ridge, under a wood whose oaks stand forty to sixty.
+// It is 14 x 11 on 4.2 m storeys now: 8.6 m at one storey and 17.0 at three.
+// Three to one against a tree is a house under it; ten to one is a mushroom
+// beside one. Lot depth and setback grew with it, twice.
 export default defineStructure({
   id: 'cottage',
   name: 'cottage',
-  footprint: [9.5, 7.5],
-  floorHeight: 3.4,
+  footprint: [14, 11],
+  floorHeight: 4.2,
   floors: [1, 3],
   roof: 'gable',
   roofPitch: 0.8,

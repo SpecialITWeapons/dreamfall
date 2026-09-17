@@ -218,7 +218,17 @@ export function planVillage(site, params, kit) {
       const crossed = streets.some(
         (other) => other !== road && toPolyline(other.points, x, z) < hedges.clear,
       );
-      if (Math.hypot(x - site.x, z - site.z) > site.radius || crossed || kit.slope(x, z) > hedges.maxSlope)
+      // And off the houses themselves. The offset clears the lots of its own
+      // lane by arithmetic, but a lane that crosses another carries its hedge
+      // past that one's gardens, and a hedge through a kitchen is worse than no
+      // hedge at all.
+      const built = taken.some((t) => Math.hypot(t.x - x, t.z - z) < params.lots.depth * 0.75);
+      if (
+        Math.hypot(x - site.x, z - site.z) > site.radius ||
+        crossed ||
+        built ||
+        kit.slope(x, z) > hedges.maxSlope
+      )
         flush();
       else run.push([x, z]);
     }

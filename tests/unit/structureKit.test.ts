@@ -247,20 +247,26 @@ describe('the landmark', () => {
     }
   });
 
-  it('stands 46 m over a village and 57 m over a town', () => {
+  it('stands 49 m over a village and 60 m over a town', () => {
     const short = bakeStructure(tower, tower.floors[0], kit),
       tall = bakeStructure(tower, tower.floors[1], kit);
-    expect(short.top).toBeGreaterThan(44);
-    expect(short.top).toBeLessThan(48);
-    expect(tall.top).toBeGreaterThan(55);
-    // spec 8 allows a landmark up to 60 m and no further
+    // It was 46 and 57 until the buildings around it grew and it widened with
+    // them: the spire and the gallery are fractions of the footprint, so a
+    // broader tower is a taller one even at the same stages.
+    expect(short.top).toBeGreaterThan(47);
+    expect(short.top).toBeLessThan(51);
+    expect(tall.top).toBeGreaterThan(57);
+    // spec 8 allows a landmark up to 60 m and no further, and this is now hard
+    // against that ceiling: the next thing to widen the tower has to lower a
+    // stage, or the flight -- which reads only 70 m ahead -- starts to care.
     expect(tall.top).toBeLessThanOrEqual(60);
     // one more stage, and the stage is where the height lives; the tolerance is
     // float32's, because the top is read back off a baked position buffer
     expect(tall.top).toBeCloseTo(short.top + stage, 4);
-    // Three times the tallest thing a village had: the mill is the shape a
-    // landmark must not be mistaken for.
-    expect(short.top).toBeGreaterThan(3 * bakeStructure(mill, mill.floors[1], kit).top);
+    // Twice the tallest thing a village has: the mill is the shape a landmark
+    // must not be mistaken for. It was three times before the mill grew with
+    // everything else, and two and a quarter is still a tower and not a silo.
+    expect(short.top).toBeGreaterThan(2 * bakeStructure(mill, mill.floors[1], kit).top);
     // Slender, because the flight reads a building as a disc of forbidden air
     // as tall as its top and keeps MIN_CLEARANCE over that: the height is the
     // point of a landmark and the girth is only in the way.

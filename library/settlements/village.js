@@ -34,9 +34,9 @@ export const VILLAGE = {
   },
   lots: {
     /** Front to back, m: also the space one house takes along the street. */
-    depth: 20,
+    depth: 24,
     /** From the axis of the street to the front of the house, m. */
-    setback: 11,
+    setback: 14,
     /** Houses thin out toward the edge; this is the share kept at the centre. */
     density: 0.9,
   },
@@ -56,7 +56,7 @@ export const VILLAGE = {
    * `clear` is how near another lane a hedge may come before it gives way --
    * a hedge laid across a road is the one thing this must not do.
    */
-  hedges: { offset: 27, clear: 11, maxSlope: 0.35 },
+  hedges: { offset: 34, clear: 13, maxSlope: 0.35 },
   /**
    * What grows on the ground a village claims. Without it the village is a
    * disc of painted clay 420 m across -- radius plus feather -- with two
