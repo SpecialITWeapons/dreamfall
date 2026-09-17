@@ -338,7 +338,11 @@ statycznie; mierzy je `tools/bench` i panel dev.
    ±MAX_HEIGHT_DELTA)`. Modyfikatory widzą wysokość bazową, nie wynik
    sąsiada, więc kolejność w rejestrze nie ma znaczenia.
 4. Zapis: `heightTex` RGBA32F `(h, w0, w1, w2)` i `biomeTex` RGBA8 `(i0, i1,
-   i2, spare)`. Bajt zapasowy jest zarezerwowany na wodę stojącą.
+   i2, baseTemp)`. Czwarty bajt to temperatura klimatyczna, na której rysowana
+   jest linia śniegu (`packBaseTemp`/`unpackBaseTemp`, zakres dwóch stopni).
+   Był zarezerwowany na wodę stojącą; ta rezerwacja nie mogła zadziałać, bo
+   jezioro potrzebuje wysokości lustra, a bajt rozciągnięty na relief tego
+   świata to cztery metry na krok.
 
 ### 6.2 Okno wysokości (`Heightfield`)
 
