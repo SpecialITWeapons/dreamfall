@@ -37,17 +37,18 @@ import {
   transformNormalToView,
   uniform,
   varying,
+  vec2,
   vec3,
 } from 'three/tsl';
 import { swatchColor, type Biome, type GroundCtx, type SceneryColor } from '../../../library/contract';
-import { resolveGround } from '../../../library/standard/index.js';
+import { SNOW_LINE, resolveGround } from '../../../library/standard/index.js';
 import type { Look } from '../render/ColorGrade';
 import type { LitMaterial } from '../render/SoftLighting';
 import type { GroundShade } from '../scenery/GroundShade';
 import { createCloudShadow } from '../sky/CloudShadow';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
-import { CELL } from './WorldSampler';
+import { BASE_TEMP_RANGE, CELL } from './WorldSampler';
 
 /** Rendered terrain, cells per side (±4.2 km). */
 export const TERRAIN_CELLS = 528;
@@ -107,6 +108,34 @@ const MEADOW = new Color(0x7caa48),
   STEPPE = new Color(0x9aa658),
   ROCK = new Color(0x8a9179);
 const K = (c: Color) => vec3(c.r, c.g, c.b);
+/**
+ * The world's snow, in the numbers the original drew it with. The line itself
+ * is the library's `SNOW_LINE` -- what is here is only how it wanders and what
+ * lies under it.
+ *
+ * `hold` is the slope up to which snow lies fully, as one minus the normal's
+ * y: 0.09 is about twenty-five degrees, which is roughly where it stops lying
+ * on a mountain and is why a summit pyramid is rock with snow in its gullies
+ * rather than a white cone.
+ */
+const SNOW = {
+  /** Metres the line rises on the sunny side. */
+  aspect: 50,
+  /** Metres of slow wander, so the line is not a contour drawn on the map. */
+  wander: 45,
+  /** Slope up to which snow lies fully. */
+  hold: 0.09,
+  /** Metres the cover takes to come in either side of the line. */
+  band: 26,
+  /** Metres of bare alpine rock under the line. */
+  rockBand: 320,
+} as const;
+/** Shaded snow is blue, and only shaded snow: lit snow is the day palette's own. */
+const SNOW_SHADE = K(new Color(0xb4c8ea));
+/** The rock the snow sits on, which is nobody's biome: it is what a mountain is made of. */
+const ALPINE_ROCK = K(new Color(0x565963));
+/** The sun's horizontal bearing at noon: which faces melt out first. */
+const NOON_XZ = vec2(-0.45, 0.55).normalize();
 const swatchNode = (value: SceneryColor) => {
   const c = new Color(swatchColor(value));
   return vec3(c.r, c.g, c.b);
@@ -188,11 +217,17 @@ export function createTerrain(deps: {
   const hooks = biomes.map((biome) => resolveGround(biome.ground));
   const colorNode = Fn(() => {
     const ground = vec3(0).toVar();
+    // How much of this fragment belongs to biomes that want the world's snow.
+    // `snow: false` is the contract's way for a biome to say the line is not
+    // its business -- a salt flat at altitude, a volcano -- and it has been in
+    // `contract.ts` unread since M3a.
+    const snowShare = float(0).toVar();
     if (biomes.length === 0) {
       // no registry: the built-in swatches, so the world still reads as ground
       const macro = smoothstep(0.18, 0.48, mx_noise_float(worldXZ.mul(0.012)));
       ground.assign(mix(K(MEADOW), K(STEPPE), macro));
       ground.assign(mix(ground, K(ROCK), smoothstep(0.32, 0.55, slope)));
+      snowShare.assign(1);
     } else {
       const weights = loadCell(ix, iz);
       const slots = loadSlots(ix, iz);
@@ -210,11 +245,42 @@ export function createTerrain(deps: {
           const out = hooks[k]!({ ...context, weight: mask, params: biomeParams[k]! } as GroundCtx);
           ground.addAssign(out.albedo.mul(mask));
           total.addAssign(mask);
+          if (biomes[k]!.snow !== false) snowShare.addAssign(mask);
         });
       });
       ground.divAssign(total.max(0.0001));
+      snowShare.divAssign(total.max(0.0001));
     }
     ground.assign(mix(palette.seaFloor, ground, smoothstep(-10.0, 0.5, h)));
+    // The world's snow, above the same line the tree line is drawn sixty metres
+    // over. `snowLineAt` is the library's and lives there because `library/`
+    // never imports from `src/`; what crosses over is its two numbers, so there
+    // is one line and not two -- the fault that rule was written against is a
+    // forest that stops where no snow starts.
+    //
+    // The line is not a contour. Faces toward the noon sun melt out higher, and
+    // a slow wander keeps it off the map. Snow holds where the ground is gentle
+    // enough to hold it; a steeper face is the rock underneath, which is also
+    // what makes a summit read as a summit rather than as an iced bun.
+    const baseTemp = loadSlots(ix, iz).w.mul(BASE_TEMP_RANGE);
+    const wander = mx_noise_float(worldXZ.mul(1 / 260))
+      .mul(SNOW.wander)
+      .add(mx_noise_float(worldXZ.mul(1 / 70)).mul(SNOW.wander * 0.3));
+    const aspect = normalize(normalV.xz.add(vec2(0.0001, 0)))
+      .dot(NOON_XZ)
+      .mul(smoothstep(0.04, 0.35, slope));
+    const line = baseTemp.mul(SNOW_LINE.slope).add(SNOW_LINE.base).add(aspect.mul(SNOW.aspect)).add(wander);
+    const hold = smoothstep(SNOW.hold + 0.2, SNOW.hold - 0.05, slope);
+    const cover = smoothstep(line.sub(SNOW.band), line.add(SNOW.band), h).mul(hold).mul(snowShare).toVar();
+    // Bare alpine rock in a band under the line: without it the meadow runs
+    // straight into the snow and the mountain has no mountain in it.
+    const alpine = smoothstep(line.sub(SNOW.rockBand), line.sub(30), h).mul(
+      smoothstep(SNOW.hold - 0.02, SNOW.hold + 0.16, slope),
+    );
+    ground.assign(mix(ground, ALPINE_ROCK, alpine.mul(float(1).sub(cover))));
+    // Shaded snow goes blue, and only shaded snow: lit snow is the palette's.
+    const lit = smoothstep(-0.05, 0.4, normalV.dot(u.uSunDir));
+    ground.assign(mix(ground, mix(SNOW_SHADE, palette.snow, lit), cover));
     return ground;
   })();
   const brush = mx_noise_float(worldXZ.mul(0.018))

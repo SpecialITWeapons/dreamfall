@@ -229,6 +229,56 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   expect(errors).toEqual([]);
 });
 
+test('the world turns white above the snow line, and bare rock where it is too steep to hold', async ({
+  page,
+}) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  // A summit of seed 42 in a biome that is not already pale: 834 m of ground
+  // against a 346 m line, so the same mountain has both sides of it on it.
+  const shades = await page.evaluate(async () => {
+    const w = window.__world!;
+    const peak = { x: 8500, z: 11000 };
+    const read = async (y: number) => {
+      w.state.x = peak.x;
+      w.state.z = peak.z;
+      w.state.y = y;
+      w.dayPhase = 0.32;
+      w.step(0.05);
+      return w.heightAt(peak.x, peak.z);
+    };
+    const ground = await read(1400);
+    // Straight down at the summit and straight down at the shore, from the
+    // same altitude: what changes between them is the ground, not the light.
+    const sample = async (x: number, z: number) => {
+      w.state.x = x;
+      w.state.z = z;
+      w.state.y = w.heightAt(x, z) + 300;
+      w.dayPhase = 0.32;
+      w.step(0.05);
+      const shot = await w.capture(64, 64);
+      if (!shot) return null;
+      let sum = 0,
+        n = 0;
+      // the lower half of the frame, which from here is ground and not sky
+      for (let py = 32; py < 64; py++)
+        for (let px = 0; px < 64; px++) {
+          const i = (py * 64 + px) * 4;
+          sum += shot.data[i]! * 0.2126 + shot.data[i + 1]! * 0.7152 + shot.data[i + 2]! * 0.0722;
+          n++;
+        }
+      return sum / n;
+    };
+    return { ground, high: await sample(peak.x, peak.z), low: await sample(peak.x + 2600, peak.z + 2600) };
+  });
+  expect(shades.ground).toBeGreaterThan(700);
+  // Ground over the line is markedly brighter than ground under it. The margin
+  // is wide on purpose: this is a software rasteriser and a tone curve.
+  expect(shades.high).toBeGreaterThan(shades.low! * 1.2);
+  expect(errors).toEqual([]);
+});
+
 test('an overlapping button releasing first does not end the drag the other button still owns', async ({
   page,
 }) => {

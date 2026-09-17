@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { N, createHeightfield } from '../../src/engine/terrain/Heightfield';
-import { CELL, createWorldSampler, type WorldSampler } from '../../src/engine/terrain/WorldSampler';
+import {
+  CELL,
+  createWorldSampler,
+  packBaseTemp,
+  unpackBaseTemp,
+  type WorldSampler,
+} from '../../src/engine/terrain/WorldSampler';
 
 /** A sampler whose height is a plane, so slopes and interpolation have exact answers. */
 const plane = (ax: number, az: number, c = 0): WorldSampler => ({
@@ -131,6 +137,7 @@ describe('createHeightfield', () => {
         slots[0] = east ? 2 : 0;
         slots[1] = east ? 3 : 1;
         slots[2] = 0;
+        slots[3] = packBaseTemp(0.6);
       },
     };
     const hf = createHeightfield(swapping, { size: 32 });
@@ -147,8 +154,11 @@ describe('createHeightfield', () => {
     // the height still comes off channel zero, interpolated on the drawn triangle
     expect(hf.heightAt(5 * CELL, 0)).toBeCloseTo(5 * CELL, 6);
     expect(hf.slots.length).toBe(32 * 32 * 4);
-    // the spare byte is reserved for standing water and stays zero
-    expect(hf.slots[3]).toBe(0);
+    // The fourth byte is the climate temperature the snow line is drawn on, and
+    // the window carries it rather than dropping it: it used to be written as
+    // zero here, which is a channel the sampler fills and nobody reads.
+    expect(hf.slots[3]).toBe(packBaseTemp(0.6));
+    expect(unpackBaseTemp(hf.slots[3]!)).toBeCloseTo(0.6, 2);
   });
   it('bumps one version for both arrays, so the presentation uploads them together', () => {
     const hf = createHeightfield(plane(1, 1), { size: 16 });

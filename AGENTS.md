@@ -74,6 +74,17 @@ subdirectory.
 - A height hook sees the base height, never a neighbour's answer, and its change
   is clipped to `MAX_HEIGHT_DELTA` and weighed by its own slot, so the order of
   the registry cannot move the ground.
+- The window's **fourth slot byte is the climate temperature the snow line is
+  drawn on** (`packBaseTemp`/`unpackBaseTemp`, over a range of two), which is
+  what lets the ground shader draw a snow line the CPU's tree line agrees with:
+  one line and not two. It was the byte reserved for standing water, and that
+  reservation could never have worked -- a lake needs a surface height, and a
+  byte over this world's relief is four metres a step.
+- Snow is a **world layer**, not a biome's: above `snowLineAt`, wandering with
+  noise and rising on the faces that meet the noon sun, holding only where the
+  ground is gentle enough (`SNOW.hold`, about 25 degrees) with bare alpine rock
+  in a band under it. A biome opts out with `snow: false`, which was in
+  `contract.ts` unread from M3a until now.
 - The ground material is composed once from the registry, one branch per biome
   gated at a hundredth of a fragment; ten biomes cost about 2 ms on a full
   window fill (530 ms against 528 without them), because the base fields are

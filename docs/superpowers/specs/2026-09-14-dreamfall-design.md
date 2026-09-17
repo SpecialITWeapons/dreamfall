@@ -812,7 +812,12 @@ wersją.
 6. **M5 Dopieszczenie.** Porty Drogi Mlecznej (**zrobione 2026-09-17**: pole
    pyłu i światło gwiazd rosną proceduralnie w `sky/GalaxyMatter.ts`, atlas
    piecze się w wątku roboczym, bo to 3,5 s, a `GALAXY_HEADING` jest odczytem z
-   pieczenia, nie zgadywanką — było o trzy stopnie obok) i śniegu, otwarcie z kartą
+   pieczenia, nie zgadywanką — było o trzy stopnie obok) i śniegu (**zrobione
+   2026-09-17**: warstwa świata nad `snowLineAt`, z nagą skałą alpejską pod
+   linią; `baseTemp` jedzie do shadera czwartym bajtem slotów — tym, który był
+   zarezerwowany dla stojącej wody i nigdy nie mógł jej obsłużyć, bo jezioro
+   potrzebuje wysokości lustra, a bajt na tym reliefie to cztery metry na
+   krok), otwarcie z kartą
    tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
    przegląd wydajności.
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,

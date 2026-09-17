@@ -637,3 +637,43 @@ the original. The bake's own answer is **1.0002** -- three degrees out, which
 is the flight turning toward where the core nearly is, once a night, forever.
 It is the measured number now and a unit test asks the bake for it again, so a
 galaxy that moves fails a test rather than leaving a stale heading behind.
+
+## M5: the snow, and the byte that was reserved for the wrong thing
+
+The snow line has existed on the CPU since M3b -- `snowLineAt(baseTemp)`, which
+the standard scatter reads to draw the tree line sixty metres over it -- and the
+ground shader could not read it, because the height window carries heights,
+weights and biome indices and no climate at all. So the world had a tree line
+with nothing above it.
+
+`baseTemp` now travels in the window's **fourth slot byte**, quantised over a
+range of two. Measured over 160 000 points of seed 42 across a hundred
+kilometres it runs 0.14 to 0.85, so two leaves room for a world hotter or higher
+than this one and still spends only 3 m of snow line on a step -- under a line
+that wanders 45 m by design.
+
+That byte was documented as reserved for standing water. **The reservation could
+never have worked**: a lake needs a surface height, and a byte over this world's
+relief (-48 m to 979 m on seed 42) is four metres a step, which is not water,
+it is a staircase. Standing water will want a channel of its own.
+
+What it buys, per fragment: two texture channels already being read, a multiply
+and an add. The snow itself is a `smoothstep` either side of the line times a
+slope term, plus a band of alpine rock under it -- no new texture, no new pass,
+and nothing at all below the line, which is most of any frame.
+
+### The picture that nearly sent this the wrong way
+
+The first summit picked for a photograph came out white from sea level to the
+peak, which reads exactly like a snow layer with its line broken. It was not:
+painting `cover`, `line` and `h` into the red, green and blue channels showed
+`cover` at zero across the lowland and the line landing at 400 m, both correct.
+The white was `frostpines`' own base colour, `frost`, and it has been there
+since M3a. A photograph of HEAD at the same spot said the same thing in one
+frame.
+
+Two things came out of that. The diagnostic is the cheap move and should be the
+first one: three numbers into three channels answers in one build what an hour
+of reading the shader does not. And a biome whose ground is already white makes
+the world's snow line invisible inside it -- which is the same two-lines fault
+in another disguise, and it is `frost`'s to answer for, not the snow's.

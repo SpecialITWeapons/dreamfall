@@ -60,7 +60,8 @@ export function createHeightfield(
     slots[o] = tmpSlots[0]!;
     slots[o + 1] = tmpSlots[1]!;
     slots[o + 2] = tmpSlots[2]!;
-    slots[o + 3] = 0;
+    // the fourth byte is the climate temperature the snow line is drawn on
+    slots[o + 3] = tmpSlots[3]!;
   };
   const texel = (ix: number, iz: number, channel: number) =>
     data[(wrap(iz) * size + wrap(ix)) * 4 + channel]!;
