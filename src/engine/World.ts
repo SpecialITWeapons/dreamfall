@@ -303,6 +303,10 @@ export function createWorld(opts: WorldOptions): World {
       place(0);
     },
     update(dt) {
+      // The first frame of actual flight is where the galaxy's bake belongs:
+      // the veil is up, the terrain is filled and the shaders are compiled, so
+      // the core it burns for a few seconds is a core nothing else wants.
+      galaxy.begin();
       steering.update(dt);
       sim.step(dt);
       place(dt);

@@ -1362,15 +1362,24 @@ test('the town costs the frame it was measured to cost, and no more', async ({ p
   }, TOWN);
   expect(queue.site!.id.startsWith('town')).toBe(true);
   expect(queue.buildings).toBeGreaterThan(500);
-  // This is the number M4b's threshold was set against, and the reason the town
-  // is built whole instead of in quarters. Measured in Node over this ground:
-  // 18.8 ms at the widest radius, 18.9 for this town through the queue. The
-  // ceiling here is twice that, which leaves a software rasteriser room to have
-  // a bad moment and still fails if a town ever costs two frames more than it
-  // was measured to. A town is 41 km from the next: one long frame every eleven
-  // to seventeen minutes of flying, deliberately, because the machinery to
-  // remove it costs more than it does.
-  expect(Math.max(...queue.ms)).toBeLessThanOrEqual(40);
+  // What M4b decided, and the thing worth defending, is the **shape**: a town is
+  // built whole in one frame, and nothing else in the rebuild costs a frame at
+  // all. That is machine-independent. Ten milliseconds is far over the queue's
+  // own 4 ms budget and far under what a town costs anywhere, so exactly one
+  // long frame in sixteen is the town and no second one is a plan that started
+  // being built in pieces.
+  expect(queue.ms.filter((v) => v > 10)).toHaveLength(1);
+  // And a ceiling, which is not machine-independent and cannot be. Measured in
+  // Node over this ground: 18.8 ms at the widest radius, 18.9 for this town
+  // through the queue; on a two-core CI runner under a software rasteriser the
+  // same work is 41. The ceiling was 40 -- twice the first of those numbers,
+  // set without ever having seen the second, so it failed the first time CI
+  // ever ran this test. Eighty is twice the slowest honest reading. It will not
+  // catch a town that got twice as dear on the runner; the assertion above and
+  // a local run will. A town is 41 km from the next, so this is one long frame
+  // every eleven to seventeen minutes of flying, deliberately, because the
+  // machinery to remove it costs more than it does.
+  expect(Math.max(...queue.ms)).toBeLessThanOrEqual(80);
   expect(errors).toEqual([]);
 });
 

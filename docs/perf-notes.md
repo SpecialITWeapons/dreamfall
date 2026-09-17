@@ -630,6 +630,26 @@ The worker regrows the dust rather than being handed it -- 49 ms against a
 transfer of 8.4 MB, and it leaves the main thread holding nothing it has no use
 for. The field is deterministic (a fixed seed inside it), so the two agree.
 
+### Two things CI said that this machine could not
+
+The first CI run over the galaxy failed, and both faults were real.
+
+**The bake was started behind the veil.** `createMilkyWay` began the worker in
+its constructor, which runs beside the terrain fill, the scenery build and the
+shader compile -- so the claim "the start pays nothing" was true of the main
+thread and false of the machine. On a two-core runner the start itself timed
+out twice. The world calls `galaxy.begin()` on its first frame of flight now,
+when the veil is up and the core the bake burns is one nothing else wants.
+
+**A frame budget was written against one machine's clock.** The town's plan
+costs 18.8 ms in Node here and the browser test's ceiling was 40, "twice the
+measured". On a two-core runner under a software rasteriser the same work is
+41 ms, so the ceiling failed the first time CI ever ran that test. The test
+asks two things now: that **exactly one frame in sixteen is a long one** --
+machine-independent, and the actual invariant, since a town built in pieces
+would show as two -- and a ceiling of 80, which is twice the slowest honest
+reading and is admitted in the comment to be what it is.
+
 ### One bearing, not two
 
 `SkyPulls.GALAXY_HEADING` was 0.95, guessed from the core longitude written in

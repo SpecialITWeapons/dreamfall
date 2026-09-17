@@ -34,6 +34,15 @@ export function galacticDirection(longitude: number, latitude: number, out: Vect
 export interface MilkyWay {
   /** What the dome adds to its own stars, in linear light, for a direction. */
   radiance: (dir: Node<'vec3'>) => Node<'vec3'>;
+  /**
+   * Begins the bake, once and only once. It is not begun in the constructor
+   * because the constructor runs **behind the veil**, beside the terrain fill,
+   * the scenery build and the shader compile -- and a worker burning a core
+   * there is a core the start does not have. On a two-core runner that showed
+   * up as the start itself timing out. The world calls this on its first frame
+   * instead, when the veil is up and the flight is already flying.
+   */
+  begin(): void;
   /** The bearing of the brightest place in the field: the core, as a world direction. */
   readonly brightest: Vector3;
   /** Milliseconds the atlas took to bake, or zero until it arrives. */
@@ -80,13 +89,19 @@ export function createMilkyWay(deps: MilkyWayDeps = {}): MilkyWay {
   map.needsUpdate = true;
 
   let bakeMs = 0,
-    baked = false;
-  const stop = (deps.bake ?? workerBake)((result) => {
-    (map.image.data as Uint8Array).set(result.data);
-    map.needsUpdate = true;
-    bakeMs = result.ms;
-    baked = true;
-  });
+    baked = false,
+    stop: (() => void) | null = null,
+    begun = false;
+  const begin = () => {
+    if (begun) return;
+    begun = true;
+    stop = (deps.bake ?? workerBake)((result) => {
+      (map.image.data as Uint8Array).set(result.data);
+      map.needsUpdate = true;
+      bakeMs = result.ms;
+      baked = true;
+    });
+  };
 
   const radiance = Fn(([dir]: [Node<'vec3'>]) => {
     const longitude = atan(dot(dir, vec3(UP)), dot(dir, vec3(RIGHT)))
@@ -105,6 +120,7 @@ export function createMilkyWay(deps: MilkyWayDeps = {}): MilkyWay {
 
   return {
     radiance: (dir) => radiance(dir) as Node<'vec3'>,
+    begin,
     brightest,
     get bakeMs() {
       return bakeMs;
@@ -113,7 +129,7 @@ export function createMilkyWay(deps: MilkyWayDeps = {}): MilkyWay {
       return baked;
     },
     dispose() {
-      stop();
+      stop?.();
       map.dispose();
     },
   };
