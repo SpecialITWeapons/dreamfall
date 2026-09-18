@@ -349,6 +349,7 @@ installDebug(window, {
       available: audio.available,
       state: audio.state,
       gain: audio.gain,
+      clock: audio.clock,
       muted: audio.muted,
       volume: audio.volume,
     };

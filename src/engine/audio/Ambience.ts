@@ -30,6 +30,14 @@ export interface Ambience {
   readonly started: boolean;
   readonly state: string;
   readonly gain: number;
+  /**
+   * The audio clock, in seconds. Every fade this graph schedules runs on it and
+   * not on the wall clock, and on a machine with no output device it crawls --
+   * a CI runner has been seen advancing it 0.48 s while eight seconds of ours
+   * passed. Anything asking how far a fade has got has to ask this too, or it
+   * is timing the runner rather than the sound.
+   */
+  readonly clock: number;
   readonly volume: number;
   readonly muted: boolean;
   /** Creates the context and the graph; call from a user gesture. */
@@ -113,6 +121,9 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
     },
     get gain() {
       return master?.gain.value ?? 0;
+    },
+    get clock() {
+      return ctx?.currentTime ?? 0;
     },
     get volume() {
       return volume;

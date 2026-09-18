@@ -492,10 +492,39 @@ test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
   await page.click('#muteBtn');
   await expect(page.locator('#muteBtn')).toHaveText('sound off');
   expect((await page.evaluate(() => window.__world!.audio)).muted).toBe(true);
-  if (running)
+  if (running) {
+    // Muting is a fade with a time constant of 0.3 s and, like the ramp above,
+    // it runs on the **audio clock**. Asking for a gain under 0.05 within eight
+    // of *our* seconds is asking the runner to own a sound card: CI advanced
+    // that clock 0.48 s in eight of ours, which left a gain of 0.135 on a fade
+    // that was behaving perfectly. So this reads the fade's own curve instead.
+    //
+    // The reference is taken after the click and never before it. Measured
+    // here, the audio clock jumps 7.9 s across that click -- the page stalls on
+    // a software rasteriser and the sound card does not wait for it -- so a
+    // reading from before the click predicts nothing about what follows.
+    const from = await page.evaluate(() => {
+      const a = window.__world!.audio;
+      return { gain: a.gain, clock: a.clock };
+    });
     await expect
-      .poll(() => page.evaluate(() => window.__world!.audio.gain), { timeout: 8_000 })
-      .toBeLessThan(0.05);
+      .poll(() => page.evaluate((c) => window.__world!.audio.clock - c, from.clock), {
+        timeout: 20_000,
+      })
+      .toBeGreaterThan(0.25);
+    const after = await page.evaluate(() => {
+      const a = window.__world!.audio;
+      return { gain: a.gain, clock: a.clock };
+    });
+    if (from.gain < 0.02) {
+      // the stall swallowed the whole fade; there is nothing left to watch
+      expect(after.gain).toBeLessThan(0.02);
+    } else {
+      // e^(-t/tau) from where the fade actually was, with a frame of slack
+      expect(after.gain).toBeLessThan(from.gain * Math.exp(-(after.clock - from.clock) / 0.3) + 0.02);
+      expect(after.gain).toBeLessThan(from.gain);
+    }
+  }
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).muted)).toBe(true);
   expect(errors).toEqual([]);
 });

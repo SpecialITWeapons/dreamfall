@@ -38,7 +38,14 @@ export interface WorldDebug {
   readonly wind: Wind;
   /** The Milky Way's atlas is baked off the main thread; this says whether it has arrived. */
   readonly galaxy: { baked: boolean; bakeMs: number };
-  readonly audio: { available: boolean; state: string; gain: number; muted: boolean; volume: number };
+  readonly audio: {
+    available: boolean;
+    state: string;
+    gain: number;
+    clock: number;
+    muted: boolean;
+    volume: number;
+  };
   /** The page continued a remembered flight. */
   readonly resumed: boolean;
   snapshot(): ResumeState;
