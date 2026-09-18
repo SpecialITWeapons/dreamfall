@@ -316,7 +316,14 @@ export function createWorld(opts: WorldOptions): World {
     // and never an accumulation -- and it goes on `uHorizon`, which in this
     // engine is the fog, the background and the dome's horizon at once.
     heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
-    const hazed = hazeAt(slotIds, slotWeights, hazeSpecs, state.y - heightAt(state.x, state.z), haze);
+    const hazed = hazeAt(
+      slotIds,
+      slotWeights,
+      hazeSpecs,
+      state.y - heightAt(state.x, state.z),
+      1 - uniforms.uNight.value,
+      haze,
+    );
     if (hazed > 0) {
       uniforms.uHorizon.value.lerp(haze, hazed);
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);

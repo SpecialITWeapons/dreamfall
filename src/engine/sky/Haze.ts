@@ -27,6 +27,12 @@ const fade = (v: number, from: number, to: number) => {
  * is gone by the time the flight is over it, which is what the altitude fade
  * is, and it is capped -- a biome may colour the horizon, never repaint it.
  *
+ * It is also **lit** air. At midnight there is nothing for a jungle to tint
+ * green, and tinting it anyway lifts the whole night sky toward the biome's
+ * colour: the Milky Way's own test caught that, with the core and the far side
+ * of the galaxy 0.058 and 0.051 where they had been 0.049 and 0.028 -- a
+ * difference washed out by a haze that should not have been there.
+ *
  * @returns how far to lerp toward `out`, 0 when there is nothing to do.
  */
 export const MAX_HAZE = 0.35;
@@ -36,6 +42,8 @@ export function hazeAt(
   weights: ArrayLike<number>,
   specs: ReadonlyArray<HazeSpec | undefined>,
   altitude: number,
+  /** How much daylight there is, 0 at midnight: haze is lit air, and unlit air is not hazy. */
+  daylight: number,
   out: Color,
 ): number {
   let amount = 0,
@@ -57,5 +65,5 @@ export function hazeAt(
   // the colour is the average of what asked for it, so two biomes tinting the
   // air do not brighten it by being two
   out.setRGB(r / amount, g / amount, b / amount);
-  return Math.min(MAX_HAZE, amount) * (1 - fade(altitude, 320, 1500));
+  return Math.min(MAX_HAZE, amount) * (1 - fade(altitude, 320, 1500)) * Math.max(0, Math.min(1, daylight));
 }

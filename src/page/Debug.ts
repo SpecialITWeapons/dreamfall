@@ -50,6 +50,8 @@ export interface WorldDebug {
   };
   /** The opening: how far up its title card is, and whether it has handed the flight over. */
   readonly opening: { card: number; done: boolean };
+  /** End the opening now, as any input would. */
+  skipOpening(): void;
   /** The page continued a remembered flight. */
   readonly resumed: boolean;
   snapshot(): ResumeState;

@@ -32,6 +32,7 @@ test('the veil holds until the first frame, then Begin starts the flight', async
   expect(await page.evaluate(() => window.__world!.frames)).toBe(idle);
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   await expect
     .poll(() => page.evaluate(() => window.__world!.frames), { timeout: 15_000 })
     .toBeGreaterThan(idle);
@@ -62,6 +63,7 @@ test('space pauses the flight and dispose releases the GPU', async ({ page }) =>
   const errors = await openWorld(page, 'seed=7&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   const baseline = await page.evaluate(() => window.__world!.memory());
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
@@ -103,6 +105,7 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   expect(start.origin).toEqual({ x: 0, z: 0 });
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   // fly 400 simulated seconds: the clearance must hold everywhere along the way,
   // and every step must carry the figure its own airspeed forward.
   const flown = await page.evaluate(() => {
@@ -153,6 +156,7 @@ test('the day turns: the sky is bright at noon and dark at midnight, and the sun
   const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
   const luminance = async (phase: number) =>
@@ -188,6 +192,7 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   // The atlas is two million texels of procedural matter and takes seconds. It
   // is baked in a worker precisely so the start does not wait for it, so what
   // this asserts is that the start did not: the page was ready and flying
@@ -197,12 +202,22 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
 
-  /** Mean luminance of the sky above the horizon, at midnight, on a heading. */
+  /**
+   * Mean luminance of the sky above the horizon, at midnight, on a heading.
+   *
+   * The altitude is set and not inherited, because the flight's own is not the
+   * test's business and one value of it is a trap: the cloud deck is at 520 m,
+   * and from just under it the top third of the frame is deck rather than sky.
+   * Measured at 450 m the core, the far side and the cross bearing all read
+   * 0.039 -- the same number three times, because what was being photographed
+   * was a ceiling. At 120 m they are 0.041, 0.028 and 0.022.
+   */
   const sky = (heading: number) =>
     page.evaluate(async (h) => {
       const w = window.__world!;
       w.setAutopilot(false);
       w.state.heading = h;
+      w.state.y = Math.max(0, w.heightAt(w.state.x, w.state.z)) + 120;
       w.dayPhase = 0.0;
       const shot = await w.capture(96, 54);
       if (!shot) return null;
@@ -219,7 +234,7 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
 
   // The core is the brightest thing in a moonless sky, the far side of the
   // galaxy is a fainter band, and square to both there is only the disc's glow.
-  // Measured at 0.049, 0.028 and 0.022; the margins are wide because this is a
+  // Measured at 0.041, 0.028 and 0.022; the margins are wide because this is a
   // software rasteriser and a tone curve, not a photometer.
   const core = await sky(GALAXY_HEADING);
   const away = await sky(GALAXY_HEADING + Math.PI);
@@ -296,6 +311,7 @@ test('an overlapping button releasing first does not end the drag the other butt
   const errors = await openWorld(page, 'seed=11&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   const result = await page.evaluate(() => {
     const c = document.getElementById('c')!;
     const fire = (type: string, init: PointerEventInit) =>
@@ -324,6 +340,7 @@ test('prefers-reduced-motion starts the flight paused with the audio context sus
   const errors = await openWorld(page, 'seed=13&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   expect(await page.evaluate(() => window.__world!.paused)).toBe(true);
   await expect
     .poll(() => page.evaluate(() => window.__world!.audio.state), { timeout: 5_000 })
@@ -331,10 +348,18 @@ test('prefers-reduced-motion starts the flight paused with the audio context sus
   expect(errors).toEqual([]);
 });
 
-const begun = async (page: Page, query: string) => {
+/**
+ * Begin, and skip the opening unless a test is there to watch it. Thirty
+ * seconds of scripted flight in front of a measurement is thirty seconds of
+ * something else being measured: the opening drives the stick, holds the
+ * camera and runs the day at three times its pace, and every test that flies
+ * somewhere and reads the sky was reading the opening instead.
+ */
+const begun = async (page: Page, query: string, opening = false) => {
   const errors = await openWorld(page, query);
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  if (!opening) await page.evaluate(() => window.__world!.skipOpening());
   return errors;
 };
 const paused = async (page: Page) => {
@@ -1570,7 +1595,7 @@ test('a country tints its own air, and the sky over it with it', async ({ page }
 });
 
 test('the opening plays once, and anything at all ends it', async ({ page }) => {
-  const errors = await begun(page, 'seed=42&webgl=1');
+  const errors = await begun(page, 'seed=42&webgl=1', true);
   /** The script's own seconds: the page runs in slow motion on a rasteriser. */
   const run = (seconds: number) =>
     page.evaluate((s) => {
@@ -1612,7 +1637,7 @@ test('the opening plays once, and anything at all ends it', async ({ page }) => 
 });
 
 test('a hand on the controls ends the opening, and a remembered flight never sees it', async ({ page }) => {
-  const errors = await begun(page, 'seed=42&webgl=1');
+  const errors = await begun(page, 'seed=42&webgl=1', true);
   await page.evaluate(() => {
     for (let i = 0; i < 120; i++) window.__world!.step(1 / 60);
   });

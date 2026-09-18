@@ -377,6 +377,11 @@ installDebug(window, {
   get opening() {
     return { card: world.opening.card, done: world.opening.done };
   },
+  skipOpening() {
+    world.skipOpening();
+    hud.setTitle(0);
+    hud.setOpening(false);
+  },
   resumed: resume !== null,
   snapshot: () => world.snapshot(),
   saveFlight,
