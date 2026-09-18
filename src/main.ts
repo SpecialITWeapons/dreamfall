@@ -74,7 +74,16 @@ hud.setVolume(audio.volume);
 hud.setMuted(audio.muted, audio.available);
 
 let lastSave = -Infinity;
-/** What the HUD has been told about the autopilot, so it is told again when that changes. */
+/**
+ * What the HUD has been told about the autopilot. It is written in one place
+ * -- `showAutopilot` -- with the call that tells the HUD, because a flag that
+ * says "already shown" while the pill shows the opposite is worse than no flag:
+ * Begin used to set the pill straight from the steering and leave this at its
+ * initial `true`, so the opening's hand-back found them equal, said nothing,
+ * and left "autopilot off -- arrows fly the figure" over a flight flying
+ * itself. CI caught it as a race: it needs a frame between Begin and the input
+ * that ends the opening, and a slow runner does not always have one.
+ */
 let shownAutopilot = true;
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
@@ -88,10 +97,7 @@ const loop = createLoop({
     // and the HUD has to hear about it: without this the banner still said
     // "autopilot off -- arrows fly the figure" over a flight flying itself, and
     // the button offered to resume what was already resumed.
-    if (steering.autopilot !== shownAutopilot) {
-      shownAutopilot = steering.autopilot;
-      hud.setAutopilot(shownAutopilot);
-    }
+    if (steering.autopilot !== shownAutopilot) showAutopilot();
     // a couple of times a minute while flying; never before Begin, when nothing has changed
     if (performance.now() - lastSave > 2000) saveFlight();
   },
@@ -164,7 +170,7 @@ const begin = () => {
     audio.suspend(true);
   }
   hud.setPaused(loop.paused);
-  hud.setAutopilot(steering.autopilot);
+  showAutopilot();
   canvas.removeAttribute('inert');
   canvas.focus({ preventScroll: true });
 };
@@ -196,7 +202,11 @@ const setView = (view: View) => {
   if (loop.running) loop.renderOnce();
 };
 hud.onView(() => setView(steering.view === 'tpp' ? 'fpp' : 'tpp'));
-const showAutopilot = () => hud.setAutopilot(steering.autopilot);
+/** The pill and the flag that remembers what the pill says, written together. */
+const showAutopilot = () => {
+  shownAutopilot = steering.autopilot;
+  hud.setAutopilot(shownAutopilot);
+};
 hud.onAutopilot(() => {
   steering.setAutopilot(true);
   showAutopilot();

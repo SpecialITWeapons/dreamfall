@@ -681,6 +681,15 @@ test('the registry reaches the page and two climates paint different ground', as
           w.step(0.02);
         }
         pin();
+        // One animation frame before the picture, and it is not politeness.
+        // Everything above happens inside one task, and three advances the node
+        // graph's frame id only in the renderer's own animation tick -- so a
+        // capture taken here carries whatever the nodes held before `dayPhase`
+        // was written, which on the first visit is the palette the page started
+        // at. CI read 0.243 between two visits to one place for exactly that
+        // reason, the same number twice.
+        await new Promise<void>((settled) => requestAnimationFrame(() => settled()));
+        pin();
         const shot = await w.capture(96, 54);
         if (!shot) return null;
         // The mean colour of the bottom left corner: ground from this height,
@@ -1664,6 +1673,9 @@ test('the opening plays once, and anything at all ends it', async ({ page }) => 
 });
 
 test('a hand on the controls ends the opening, and a remembered flight never sees it', async ({ page }) => {
+  // Two page starts with a reload between them, and each start compiles every
+  // shader in the scene: ninety seconds ran out on CI.
+  test.slow();
   const errors = await begun(page, 'seed=42&webgl=1', true);
   await page.evaluate(() => {
     for (let i = 0; i < 120; i++) window.__world!.step(1 / 60);
