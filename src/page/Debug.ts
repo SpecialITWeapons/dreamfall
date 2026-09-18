@@ -62,6 +62,13 @@ export interface WorldDebug {
   readonly gpuMs: number;
   /** The registry, in the order the window's slot indices point into. */
   readonly biomes: string[];
+  /** What a biome puts in its own air, 0..255 per channel, or null when it puts nothing. */
+  hazeOf(id: string): { r: number; g: number; b: number } | null;
+  /**
+   * The fog, the background and the dome's horizon, which are one uniform here:
+   * linear light, as the shader reads it and after the biome's haze has gone on.
+   */
+  readonly horizon: { r: number; g: number; b: number };
   /** The three biome slots of the cell a world point falls in, by name. */
   weightsAt(x: number, z: number): Array<{ id: string; weight: number }>;
   /** What the ring and the grass window hold, and what they cost. */

@@ -67,6 +67,12 @@ export interface WorldOptions {
 export interface World {
   readonly seed: number;
   readonly library: Library;
+  /**
+   * The fog, the background and the dome's horizon, which are one colour here.
+   * Exposed so a test can read what the shader reads: the biome's haze goes on
+   * this after the atmosphere has written the palette into it.
+   */
+  readonly horizon: { r: number; g: number; b: number };
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
   readonly sim: Simulation;
@@ -356,6 +362,10 @@ export function createWorld(opts: WorldOptions): World {
   return {
     seed: opts.seed,
     library,
+    get horizon() {
+      const c = uniforms.uHorizon.value;
+      return { r: c.r, g: c.g, b: c.b };
+    },
     scene,
     camera,
     sim,

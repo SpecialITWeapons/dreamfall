@@ -680,29 +680,38 @@ test('the registry reaches the page and two climates paint different ground', as
             b += shot.data[i + 2]!;
             n++;
           }
-        return [
-          r / n,
-          g / n,
-          b / n,
-          w.state.x - x,
-          w.state.z - z,
-          w.state.y,
-          w.scenery!.trees,
-          w.scenery!.grass,
-          w.scenery!.rebuilds,
-        ];
+        return {
+          colour: [r / n, g / n, b / n],
+          drift: [w.state.x - x, w.state.z - z, w.state.y],
+          trees: w.scenery!.trees,
+          grass: w.scenery!.grass,
+          rebuilds: w.scenery!.rebuilds,
+        };
       },
       { x, z, h },
     );
   const shotA = await groundAt(STEPPE.x, STEPPE.z, a.h);
   const shotAgain = await groundAt(STEPPE.x, STEPPE.z, a.h);
   const shotB = await groundAt(WILDSONG.x, WILDSONG.z, b.h);
-  const apart = (x: number[] | null, y: number[] | null) =>
-    x && y ? x.reduce((s, v, i) => s + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  /**
+   * How far apart two pictures are, and **only** the pictures. This used to
+   * average the differences across one flat array that also carried the drift,
+   * the altitude and the scenery counters -- and `rebuilds` is a counter that
+   * grows, so two extra ring rebuilds between the first visit and the second
+   * came out as 2/9 = 0.222 against a threshold of 0.002. A photograph and a
+   * tally do not belong in one average.
+   */
+  const apart = (x: typeof shotA, y: typeof shotA) =>
+    x && y ? x.colour.reduce((s, v, i) => s + Math.abs(v - y.colour[i]!), 0) / x.colour.length : NaN;
   // The pixels come back 0..1, so these are small numbers on purpose. Measured
   // at seed 42: steppe reads (0.29, 0.31, 0.11) and wildsong (0.17, 0.28, 0.08).
   expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
+  // and the place itself is the same place twice: the same forest, the same
+  // meadow, the flight pinned where it was put
+  expect(shotAgain!.trees).toBe(shotA!.trees);
+  expect(shotAgain!.grass).toBe(shotA!.grass);
+  for (const [i, v] of shotAgain!.drift.entries()) expect(v).toBeCloseTo(shotA!.drift[i]!, 3);
   // no console errors anywhere above is the proof that ten branches of TSL compiled
   expect(errors).toEqual([]);
 });
@@ -1523,9 +1532,6 @@ test('the country under the flight is heard, and only when it could be', async (
 test('a country tints its own air, and the sky over it with it', async ({ page }) => {
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
-  // Find ground where one biome owns the place: one that tints its air and one
-  // that does not, so the comparison is between two countries and not between
-  // two times of day.
   const found = await page.evaluate(
     (tinted) => {
       const w = window.__world!;
@@ -1549,48 +1555,52 @@ test('a country tints its own air, and the sky over it with it', async ({ page }
     },
     ['jungle', 'dunes', 'badlands', 'frostpines', 'moor'],
   );
-  const jungle = found.best; // one of the five that tint their air
-  const steppe = found.plain; // and one that tints nothing
-  expect(jungle, 'no biome that tints its air within sixty kilometres of the start').toBeTruthy();
-  expect(steppe).toBeTruthy();
+  const hazy = found.best; // one of the five that tint their air
+  const plain = found.plain; // and one that tints nothing
+  expect(hazy, 'no biome that tints its air within sixty kilometres of the start').toBeTruthy();
+  expect(plain).toBeTruthy();
 
-  /** The sky's own colour a little over the horizon, as the camera sees it. */
-  const sky = async (at: { x: number; z: number }) =>
-    page.evaluate(async (at) => {
+  /**
+   * The fog, the background and the dome's horizon -- one colour in this engine
+   * -- over a place, at one hour and one height.
+   *
+   * This reads the uniform rather than photographing the sky, and it is worth
+   * saying why: the tint is capped at a third of the way and half the biomes
+   * that carry one carry something pale. Measured on pixels, frostpines against
+   * wildsong moved the sky by **half a unit in 255** -- a real effect drowned in
+   * the difference between two landscapes. The uniform is what the shader is
+   * handed, and the shader's own path from it to the sky is what the day-turns
+   * and Milky Way tests already watch.
+   */
+  const horizonOver = async (at: { x: number; z: number }) =>
+    page.evaluate((at) => {
       const w = window.__world!;
       w.setAutopilot(false);
       w.state.x = at.x;
       w.state.z = at.z;
-      w.state.y = w.heightAt(at.x, at.z) + 120;
+      w.state.y = Math.max(0, w.heightAt(at.x, at.z)) + 120;
       w.dayPhase = 0.42;
-      for (let i = 0; i < 3; i++) w.step(1 / 60);
-      const shot = await w.capture(96, 54);
-      if (!shot) return null;
-      let r = 0,
-        g = 0,
-        n = 0;
-      // a band just above the horizon, which is where fog and sky are the same thing
-      for (let y = 20; y < 27; y++)
-        for (let x = 0; x < 96; x++) {
-          const i = (y * 96 + x) * 4;
-          r += shot.data[i]!;
-          g += shot.data[i + 1]!;
-          n++;
-        }
-      return { r: r / n, g: g / n };
+      for (let i = 0; i < 4; i++) w.step(1 / 60);
+      return w.horizon;
     }, at);
 
-  const over = await sky(jungle!);
-  const away = await sky(steppe!);
-  expect(over).toBeTruthy();
-  expect(away).toBeTruthy();
-  // The air over the tinted country is a different colour from the air over
-  // the plain one, at the same hour and from the same height. The tint is
-  // capped at a third of the way, so this is a shift and not a repaint --
-  // which is why the test asks for a difference in the ratio rather than for
-  // a colour it could name.
-  const shift = Math.abs(over!.g / over!.r - away!.g / away!.r);
-  expect(shift, `${jungle!.id} against ${steppe!.id}`).toBeGreaterThan(0.01);
+  const over = await horizonOver(hazy!);
+  const away = await horizonOver(plain!);
+  const tint = await page.evaluate((id) => window.__world!.hazeOf(id), hazy!.id);
+  expect(tint, `${hazy!.id} has no tint`).toBeTruthy();
+  // The two are different, and the difference points at the biome's own colour:
+  // a direction and a distance, rather than a colour the test could name, since
+  // what the cap buys is a tint and never a repaint.
+  const moved = Math.hypot(over.r - away.r, over.g - away.g, over.b - away.b);
+  const toward =
+    (over.r - away.r) * (tint!.r / 255 - away.r) +
+    (over.g - away.g) * (tint!.g / 255 - away.g) +
+    (over.b - away.b) * (tint!.b / 255 - away.b);
+  expect(moved, `${hazy!.id} against ${plain!.id}`).toBeGreaterThan(0.004);
+  expect(toward, `${hazy!.id} against ${plain!.id}`).toBeGreaterThan(0);
+  // and the plain country's air is the palette's own: nothing was added to it
+  const plainAgain = await horizonOver(plain!);
+  expect(Math.hypot(away.r - plainAgain.r, away.g - plainAgain.g, away.b - plainAgain.b)).toBeLessThan(1e-6);
   expect(errors).toEqual([]);
 });
 

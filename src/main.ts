@@ -1,6 +1,7 @@
 // Start: address parameters, memory, page, engine, world, input, loop,
 // lifecycle. A thin file: every decision has its own module; this just
 // wires them together.
+import { swatchColor } from '../library/contract';
 import { createEngine } from './engine/Engine';
 import type { View } from './engine/flight/Steering';
 import { createLoop } from './engine/Loop';
@@ -72,6 +73,8 @@ hud.setVolume(audio.volume);
 hud.setMuted(audio.muted, audio.available);
 
 let lastSave = -Infinity;
+/** What the HUD has been told about the autopilot, so it is told again when that changes. */
+let shownAutopilot = true;
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => {
@@ -80,6 +83,14 @@ const loop = createLoop({
     // away rather than sitting invisible over the canvas for the whole flight.
     hud.setTitle(world.opening.card);
     hud.setOpening(!world.opening.done);
+    // The opening flies with the autopilot off and hands it back at the end,
+    // and the HUD has to hear about it: without this the banner still said
+    // "autopilot off -- arrows fly the figure" over a flight flying itself, and
+    // the button offered to resume what was already resumed.
+    if (steering.autopilot !== shownAutopilot) {
+      shownAutopilot = steering.autopilot;
+      hud.setAutopilot(shownAutopilot);
+    }
     // a couple of times a minute while flying; never before Begin, when nothing has changed
     if (performance.now() - lastSave > 2000) saveFlight();
   },
@@ -403,6 +414,15 @@ installDebug(window, {
     return world.obstacles.size;
   },
   floorAt: (x: number, z: number) => world.sim.flight.floorAt(x, z),
+  get horizon() {
+    return world.horizon;
+  },
+  hazeOf(id: string) {
+    const biome = world.library.biomes.find((b) => b.id === id);
+    if (biome?.ambience?.fogTint === undefined) return null;
+    const hex = swatchColor(biome.ambience.fogTint);
+    return { r: (hex >> 16) & 255, g: (hex >> 8) & 255, b: hex & 255 };
+  },
   weightsAt(x: number, z: number) {
     const ids = new Uint8Array(3),
       weights = new Float32Array(3);
