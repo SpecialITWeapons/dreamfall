@@ -60,6 +60,15 @@ export interface Chain {
    * boot is longer than it is wide, and neither is a pipe.
    */
   flatten?: number;
+  /**
+   * Which way the first axis points, when it matters. The across-axis is
+   * otherwise seeded from x and carried along the chain, which is fine for a
+   * limb -- it only has to not spin -- and a lottery for anything flattened: a
+   * palm is wide across the hand and thin through it, and a palm whose first
+   * axis came out edge-on is a blade. Given here, it is projected square to the
+   * chain and carried from there as usual.
+   */
+  across?: Vector3;
 }
 
 export interface Skin {
@@ -163,7 +172,7 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
   const swatch: string[] = new Array<string>(count);
   const flatten = chain.flatten ?? 1;
   const frame = { u: new Vector3(), v: new Vector3() };
-  const carried = new Vector3(1, 0, 0);
+  const carried = chain.across ? chain.across.clone().normalize() : new Vector3(1, 0, 0);
   const point = new Vector3(),
     outward = new Vector3();
 

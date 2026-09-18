@@ -41,8 +41,11 @@ describe('describe', () => {
       if (bone.parent !== null) expect(root.getObjectByName(bone.parent)).toBeTruthy();
     }
 
-    // six chains: a spine, two arms, two legs and a head
-    expect(description.chains).toHaveLength(6);
+    // A spine, two arms, two legs, two palms, ten fingers, two boots and a
+    // head. The count is not pinned -- a figure gains parts -- but the bake
+    // reads this list and a figure that suddenly has three of them is one that
+    // lost its hands.
+    expect(description.chains.length).toBeGreaterThanOrEqual(12);
     const swatches = new Set<string>();
     const box = new Box3();
     for (const chain of description.chains) {
@@ -55,6 +58,13 @@ describe('describe', () => {
         expect(sample.radius).toBeLessThan(0.3);
         expect(chain.bones[sample.bone]).toBeTruthy();
         swatches.add(sample.swatch);
+        // A patched chain writes its colour at twelve bearings as well, because
+        // a visor is a place on the head and not a belt round it: a baker given
+        // the band alone would put a helmet on with no visor in it.
+        if (sample.ring) {
+          expect(sample.ring).toHaveLength(12);
+          for (const name of sample.ring) swatches.add(name);
+        }
         box.expandByPoint(new Vector3(...sample.at));
       }
       // Every chain's own bone list, so a baker can weight what it builds.
@@ -72,6 +82,12 @@ describe('describe', () => {
       );
     expect(drawn.containsBox(box)).toBe(true);
     // and it names every swatch the outfit does, because the bake paints from these
-    expect(swatches).toEqual(new Set(['suit', 'trim', 'gloves', 'boots', 'helmet', 'skin']));
+    // Seven, not six: the goggles are the one swatch that lives only in a
+    // patch, and until the ring bearings above were written down the
+    // description quietly lacked it -- which is exactly the colour a baker
+    // would have left off the head.
+    expect(swatches).toEqual(new Set(['suit', 'trim', 'gloves', 'boots', 'helmet', 'skin', 'goggles']));
+    // the head is the one chain that wears a patch, and it says so
+    expect(description.chains.filter((c) => c.samples.some((s) => s.ring))).toHaveLength(1);
   });
 });
