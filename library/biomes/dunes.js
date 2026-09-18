@@ -24,5 +24,6 @@ export default defineBiome({
     grass: { tint: 'grassGold', density: 0 },
   },
   // Sand, wind, and often the sea on the other side of it.
-  ambience: { layers: { 'wind-high': 0.9, surf: 0.45 } },
+  // Sand in the air, which is why a desert horizon has no line in it.
+  ambience: { layers: { 'wind-high': 0.9, surf: 0.45 }, fogTint: 'sandPale', fogTintAmount: 0.3 },
 });

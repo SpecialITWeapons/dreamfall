@@ -24,5 +24,6 @@ export default defineBiome({
     grass: { tint: 'grassCool', density: 0.15 },
   },
   // Cold and nearly empty. What lives here is not loud.
-  ambience: { layers: { 'wind-high': 0.7, birds: 0.12 } },
+  // Cold air over snow: the distance goes pale rather than blue.
+  ambience: { layers: { 'wind-high': 0.7, birds: 0.12 }, fogTint: 'frost', fogTintAmount: 0.24 },
 });

@@ -1494,3 +1494,77 @@ test('the country under the flight is heard, and only when it could be', async (
   expect(loudest).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
+
+test('a country tints its own air, and the sky over it with it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  // Find ground where one biome owns the place: one that tints its air and one
+  // that does not, so the comparison is between two countries and not between
+  // two times of day.
+  const found = await page.evaluate(
+    (tinted) => {
+      const w = window.__world!;
+      let best: { x: number; z: number; id: string } | null = null,
+        plain: { x: number; z: number; id: string } | null = null;
+      // One sweep, not one per biome: which countries seed 42 puts near the start
+      // is the terrain's business, so the test takes the best of whatever is
+      // there rather than naming a biome it may have to fly a day to reach.
+      for (let r = 400; r <= 60_000 && !(best && plain); r += 900)
+        for (let a = 0; a < 24; a++) {
+          const x = Math.sin((a / 24) * Math.PI * 2) * r,
+            z = Math.cos((a / 24) * Math.PI * 2) * r;
+          if (w.heightAt(x, z) < 5) continue;
+          const here = w.weightsAt(x, z)[0];
+          if (!here || here.weight < 0.7) continue;
+          const at = { x, z, id: here.id };
+          if (tinted.includes(here.id)) best ??= at;
+          else plain ??= at;
+        }
+      return { best, plain };
+    },
+    ['jungle', 'dunes', 'badlands', 'frostpines', 'moor'],
+  );
+  const jungle = found.best; // one of the five that tint their air
+  const steppe = found.plain; // and one that tints nothing
+  expect(jungle, 'no biome that tints its air within sixty kilometres of the start').toBeTruthy();
+  expect(steppe).toBeTruthy();
+
+  /** The sky's own colour a little over the horizon, as the camera sees it. */
+  const sky = async (at: { x: number; z: number }) =>
+    page.evaluate(async (at) => {
+      const w = window.__world!;
+      w.setAutopilot(false);
+      w.state.x = at.x;
+      w.state.z = at.z;
+      w.state.y = w.heightAt(at.x, at.z) + 120;
+      w.dayPhase = 0.42;
+      for (let i = 0; i < 3; i++) w.step(1 / 60);
+      const shot = await w.capture(96, 54);
+      if (!shot) return null;
+      let r = 0,
+        g = 0,
+        n = 0;
+      // a band just above the horizon, which is where fog and sky are the same thing
+      for (let y = 20; y < 27; y++)
+        for (let x = 0; x < 96; x++) {
+          const i = (y * 96 + x) * 4;
+          r += shot.data[i]!;
+          g += shot.data[i + 1]!;
+          n++;
+        }
+      return { r: r / n, g: g / n };
+    }, at);
+
+  const over = await sky(jungle!);
+  const away = await sky(steppe!);
+  expect(over).toBeTruthy();
+  expect(away).toBeTruthy();
+  // The air over the tinted country is a different colour from the air over
+  // the plain one, at the same hour and from the same height. The tint is
+  // capped at a third of the way, so this is a shift and not a repaint --
+  // which is why the test asks for a difference in the ratio rather than for
+  // a colour it could name.
+  const shift = Math.abs(over!.g / over!.r - away!.g / away!.r);
+  expect(shift, `${jungle!.id} against ${steppe!.id}`).toBeGreaterThan(0.01);
+  expect(errors).toEqual([]);
+});

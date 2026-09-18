@@ -5,12 +5,13 @@
 // constants. Coordinates: the simulation lives in world space in double
 // precision; the scene is in the local frame of a floating origin, and the
 // figure and the camera get their poses converted through it.
-import { PerspectiveCamera, Scene, Vector3 } from 'three';
+import { Color, PerspectiveCamera, Scene, Vector3 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { validateLibrary, type Library } from '../../library/contract';
+import { swatchColor, validateLibrary, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { layerMix } from './audio/AmbienceModel';
+import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
@@ -212,6 +213,17 @@ export function createWorld(opts: WorldOptions): World {
   const slotIds = new Uint8Array(3),
     slotWeights = new Float32Array(3);
   const ambienceSpecs = library.biomes.map((biome) => biome.ambience?.layers);
+  // The haze a country puts in its own air, resolved once: a swatch name is a
+  // colour the library knows and the sky does not.
+  const hazeSpecs = library.biomes.map((biome) =>
+    biome.ambience?.fogTint === undefined
+      ? undefined
+      : {
+          color: new Color(swatchColor(biome.ambience.fogTint)),
+          amount: biome.ambience.fogTintAmount ?? 0.2,
+        },
+  );
+  const haze = new Color();
   const toLocal = (v: Vector3) => v.set(origin.localX(v.x), v.y, origin.localZ(v.z));
   const place = (dt: number) => {
     // An origin jump moves the whole scene under the scenery, whose instances
@@ -262,6 +274,16 @@ export function createWorld(opts: WorldOptions): World {
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
     atmosphere.update(camera.position.y, follow);
+    // The biome's own air, over the palette's. It goes on after the atmosphere
+    // because the atmosphere copies the palette every frame, so this is a tint
+    // and never an accumulation -- and it goes on `uHorizon`, which in this
+    // engine is the fog, the background and the dome's horizon at once.
+    heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
+    const hazed = hazeAt(slotIds, slotWeights, hazeSpecs, state.y - heightAt(state.x, state.z), haze);
+    if (hazed > 0) {
+      uniforms.uHorizon.value.lerp(haze, hazed);
+      uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
+    }
     post.setExposure(atmosphere.exposure);
     cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
     clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
@@ -272,7 +294,6 @@ export function createWorld(opts: WorldOptions): World {
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;
-    heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
     audio.update(
       dt,
       sample,

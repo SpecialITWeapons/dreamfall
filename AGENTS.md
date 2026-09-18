@@ -34,7 +34,7 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`) import neither
+  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -206,6 +206,12 @@ subdirectory.
   only starts where they stop. Every fade in the graph runs on the **audio
   clock**, which a runner with no output device advances at a twentieth of
   wall time -- a test timing one against `setTimeout` is timing the runner.
+- A biome's `ambience.fogTint` is the air over it, and `sky/Haze.ts` mixes it
+  off the same three slots. It goes on **after** `atmosphere.update`, which
+  copies the palette every frame, so the tint never accumulates; it goes on
+  `uHorizon`, which here is the fog, the background and the dome's horizon at
+  once; it is capped at `MAX_HAZE` and fades out above the low air, because a
+  biome may colour a horizon and never repaint one.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.

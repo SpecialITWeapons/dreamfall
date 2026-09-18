@@ -24,5 +24,6 @@ export default defineBiome({
     grass: { tint: 'grassCool', density: 0.4 },
   },
   // A low sky over open heath: mostly weather, with something calling across it.
-  ambience: { layers: { 'wind-high': 0.55, birds: 0.25 } },
+  // A low sky pressed onto wet ground -- the one country here that is usually indoors.
+  ambience: { layers: { 'wind-high': 0.55, birds: 0.25 }, fogTint: 'rockCold', fogTintAmount: 0.18 },
 });
