@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.15 },
     grass: { tint: 'white', density: 1 },
   },
+  // The country the climate falls back to, and the one most likely to have a village in it.
+  ambience: { layers: { birds: 0.8, crickets: 0.5, bells: 0.4 } },
 });

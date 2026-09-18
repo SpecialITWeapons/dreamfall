@@ -43,6 +43,8 @@ export interface WorldDebug {
     state: string;
     gain: number;
     clock: number;
+    /** What the biomes under the flyer are asking for: crickets, birds, surf, bells, wind-high. */
+    layers: Record<string, number>;
     muted: boolean;
     volume: number;
   };

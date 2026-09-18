@@ -198,7 +198,14 @@ subdirectory.
   tab and leaving, never before Begin.
 - Sound starts on Begin (a gesture) and never before; pause and a hidden tab
   suspend the context; `AmbienceModel` holds the arithmetic so it is tested
-  in Node.
+  in Node. A biome's `ambience.layers` are mixed by the **height window's own
+  three slots** under the flyer, so the sound and the ground never disagree
+  about which country this is; `layerMix` then gates them, because the engine
+  and not the biome decides that crickets are the night's and birds the day's,
+  that a thing standing on the ground is gone by 450 m, and that the high wind
+  only starts where they stop. Every fade in the graph runs on the **audio
+  clock**, which a runner with no output device advances at a twentieth of
+  wall time -- a test timing one against `setTimeout` is timing the runner.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.

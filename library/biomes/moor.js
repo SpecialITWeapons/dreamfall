@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.8, cairns: 1 },
     grass: { tint: 'grassCool', density: 0.4 },
   },
+  // A low sky over open heath: mostly weather, with something calling across it.
+  ambience: { layers: { 'wind-high': 0.55, birds: 0.25 } },
 });

@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 1, cairns: 0.3 },
     grass: { tint: 'grassGold', density: 0 },
   },
+  // Bare rock has nothing to make a sound with; what it has is air moving over an edge.
+  ambience: { layers: { 'wind-high': 0.75, crickets: 0.2 } },
 });

@@ -822,8 +822,11 @@ wersją.
    zarezerwowany dla stojącej wody i nigdy nie mógł jej obsłużyć, bo jezioro
    potrzebuje wysokości lustra, a bajt na tym reliefie to cztery metry na
    krok), otwarcie z kartą
-   tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
-   przegląd wydajności.
+   tytułową, szafa, haki `ambience` (**zrobione 2026-09-18**: pięć warstw
+   syntezowanych w `Ambience.ts`, mieszanych wagami trzech slotów okna
+   wysokości pod postacią; bramkowanie po słońcu i po wysokości jest decyzją
+   silnika, nie bioma -- inaczej każdy biom pisałby te same dwie reguły),
+   panel dev, porty `bench` i `parity`, przegląd wydajności.
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,
    jeziora, pola uprawne.
 

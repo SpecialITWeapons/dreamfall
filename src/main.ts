@@ -350,6 +350,7 @@ installDebug(window, {
       state: audio.state,
       gain: audio.gain,
       clock: audio.clock,
+      layers: { ...audio.layers },
       muted: audio.muted,
       volume: audio.volume,
     };

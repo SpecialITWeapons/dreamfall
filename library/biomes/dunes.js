@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.1 },
     grass: { tint: 'grassGold', density: 0 },
   },
+  // Sand, wind, and often the sea on the other side of it.
+  ambience: { layers: { 'wind-high': 0.9, surf: 0.45 } },
 });

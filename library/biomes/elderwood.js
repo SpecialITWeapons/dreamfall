@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.3 },
     grass: { tint: 'grassCool', density: 0.5 },
   },
+  // Old timber and deep moss: fewer birds than an open wood, and they carry further.
+  ambience: { layers: { birds: 0.55, crickets: 0.35 } },
 });

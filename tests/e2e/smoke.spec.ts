@@ -1455,3 +1455,42 @@ test('the town draws: its streets, its houses and its landmark compile', async (
   // purpose, so a shader that only warned would not have got this far.
   expect(errors).toEqual([]);
 });
+
+test('the country under the flight is heard, and only when it could be', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  // What the biomes ask for, at a height and a time of day. The mix is the
+  // engine's answer and the graph's input, so reading it here is reading the
+  // same number the gains are set from.
+  const heard = (phase: number, over: number) =>
+    page.evaluate(
+      ({ phase, over }) => {
+        const w = window.__world!;
+        w.dayPhase = phase;
+        w.state.y = Math.max(0, w.heightAt(w.state.x, w.state.z)) + over;
+        for (let i = 0; i < 4; i++) w.step(1 / 60);
+        return w.audio.layers as Record<string, number>;
+      },
+      { phase, over },
+    );
+
+  // The sun decides two of the five: a dawn chorus at midnight is wrong in a
+  // way no biome would ever ask for, and so is a cricket at noon.
+  const midnight = await heard(0, 60);
+  expect(midnight.birds).toBe(0);
+  expect(midnight.bells).toBe(0);
+  const noon = await heard(0.5, 60);
+  expect(noon.crickets).toBe(0);
+
+  // Height decides the rest. Crickets, birds and bells stand on the ground and
+  // are gone by 450 m; the high wind only starts where they stop.
+  const up = await heard(0, 1500);
+  for (const layer of ['crickets', 'birds', 'bells']) expect(up[layer]).toBe(0);
+
+  // and something is heard somewhere: ten biomes that all say nothing would
+  // pass every assertion above.
+  const readings = [midnight, noon, up, await heard(0.5, 1500)];
+  const loudest = Math.max(...readings.flatMap((r) => Object.values(r)));
+  expect(loudest).toBeGreaterThan(0);
+  expect(loudest).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});

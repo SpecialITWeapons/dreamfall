@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.25 },
     grass: { tint: 'grassGold', density: 0.9 },
   },
+  // Grass gone to seed, full of insects, with nothing to stop the wind.
+  ambience: { layers: { crickets: 0.75, birds: 0.25, 'wind-high': 0.3 } },
 });

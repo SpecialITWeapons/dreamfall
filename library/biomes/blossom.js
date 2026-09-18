@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.1 },
     grass: { tint: 'white', density: 1 },
   },
+  // The one place that sounds like spring, and the one with people enough to ring something.
+  ambience: { layers: { birds: 1, crickets: 0.55, bells: 0.3 } },
 });

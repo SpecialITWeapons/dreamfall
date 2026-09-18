@@ -4,7 +4,7 @@
 // in the browser, so the arithmetic lives in AmbienceModel and this file is
 // the graph; it starts on Begin, the first user gesture, and never before.
 // Ported from fly-with-me.
-import { chimeNote, waterAmount, windParams } from './AmbienceModel';
+import { LAYERS, chimeNote, waterAmount, windParams, type Layer } from './AmbienceModel';
 
 export interface AmbienceSample {
   altitude: number;
@@ -25,11 +25,18 @@ export interface AmbienceOptions {
   createContext?: () => AudioContext | null;
 }
 
+/** No biome asking for anything: what `update` hears when nobody hands it a mix. */
+const EMPTY_LAYERS = Object.freeze(
+  Object.fromEntries(LAYERS.map((layer) => [layer, 0])) as Record<Layer, number>,
+);
+
 export interface Ambience {
   readonly available: boolean;
   readonly started: boolean;
   readonly state: string;
   readonly gain: number;
+  /** What the biomes under the flyer last asked for; zeros before the first step. */
+  readonly layers: Readonly<Record<Layer, number>>;
   /**
    * The audio clock, in seconds. Every fade this graph schedules runs on it and
    * not on the wall clock, and on a machine with no output device it crawls --
@@ -42,8 +49,22 @@ export interface Ambience {
   readonly muted: boolean;
   /** Creates the context and the graph; call from a user gesture. */
   start(): void;
-  update(dt: number, sample: AmbienceSample, groundAt: (x: number, z: number) => number): void;
+  /**
+   * One step. `layers` is what the biomes under the flyer are asking for, as
+   * `layerMix` worked it out; a call that leaves it out hears the world's own
+   * wind and water and nothing of the country it is over.
+   */
+  update(
+    dt: number,
+    sample: AmbienceSample,
+    groundAt: (x: number, z: number) => number,
+    layers?: Readonly<Record<Layer, number>>,
+  ): void;
   chime(count?: number): void;
+  /** One bird: a few whistled notes. A biome's `birds` layer is how often. */
+  bird(): void;
+  /** One bell, long and low, through the chime's delay. */
+  bell(): void;
   flutter(count?: number): void;
   toggleMute(): boolean;
   setVolume(v: number): void;
@@ -95,13 +116,21 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
     windFilter: BiquadFilterNode | null = null,
     windGain: GainNode | null = null,
     waterGain: GainNode | null = null,
+    surfGain: GainNode | null = null,
+    highGain: GainNode | null = null,
+    cricketGain: GainNode | null = null,
+    cricketTremolo: GainNode | null = null,
     delay: DelayNode | null = null,
     noise: AudioBuffer | null = null;
   let muted = opts.muted,
     volume = Math.max(0, Math.min(1, opts.volume)),
     started = false,
     available = typeof globalThis.AudioContext === 'function' || opts.createContext !== undefined;
+  /** The last mix handed over, kept so a test can ask what the world sounds like. */
+  let heard: Readonly<Record<Layer, number>> = EMPTY_LAYERS;
   let chimeTimer = 25,
+    birdTimer = 4,
+    bellTimer = 50,
     gusting = false;
   const applyGain = (seconds: number) => {
     if (master && ctx && ctx.state !== 'closed') {
@@ -124,6 +153,9 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
     },
     get clock() {
       return ctx?.currentTime ?? 0;
+    },
+    get layers() {
+      return heard;
     },
     get volume() {
       return volume;
@@ -168,6 +200,64 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       waterGain.gain.value = 0;
       water.connect(waterFilter).connect(waterGain).connect(master);
       water.start();
+      // The biome layers. Three of them are textures rather than events and
+      // are built here once: surf is the sea heard from a height, the high wind
+      // is the air the ground sounds have been left behind by, and a field of
+      // crickets is a band of noise with a tremolo on it -- not one chirp
+      // repeated, which is what a cricket sounds like and what a *field* of
+      // them does not.
+      const surf = ctx.createBufferSource();
+      surf.buffer = noise;
+      surf.loop = true;
+      surf.playbackRate.value = 0.55;
+      const surfFilter = ctx.createBiquadFilter();
+      surfFilter.type = 'lowpass';
+      surfFilter.frequency.value = 480;
+      surfFilter.Q.value = 0.7;
+      surfGain = ctx.createGain();
+      surfGain.gain.value = 0;
+      surf.connect(surfFilter).connect(surfGain).connect(master);
+      surf.start();
+      // the swell, so a coast breathes instead of hissing
+      const swell = ctx.createOscillator();
+      swell.frequency.value = 0.11;
+      const swellDepth = ctx.createGain();
+      swellDepth.gain.value = 0.35;
+      swell.connect(swellDepth).connect(surfFilter.frequency);
+      swell.start();
+
+      const high = ctx.createBufferSource();
+      high.buffer = noise;
+      high.loop = true;
+      high.playbackRate.value = 1.6;
+      const highFilter = ctx.createBiquadFilter();
+      highFilter.type = 'highpass';
+      highFilter.frequency.value = 1400;
+      highGain = ctx.createGain();
+      highGain.gain.value = 0;
+      high.connect(highFilter).connect(highGain).connect(master);
+      high.start();
+
+      const crickets = ctx.createBufferSource();
+      crickets.buffer = noise;
+      crickets.loop = true;
+      crickets.playbackRate.value = 2.4;
+      const cricketBand = ctx.createBiquadFilter();
+      cricketBand.type = 'bandpass';
+      cricketBand.frequency.value = 4600;
+      cricketBand.Q.value = 14;
+      cricketGain = ctx.createGain();
+      cricketGain.gain.value = 0;
+      crickets.connect(cricketBand).connect(cricketGain).connect(master);
+      crickets.start();
+      const tremolo = ctx.createOscillator();
+      tremolo.type = 'sawtooth';
+      tremolo.frequency.value = 13;
+      cricketTremolo = ctx.createGain();
+      cricketTremolo.gain.value = 0;
+      tremolo.connect(cricketTremolo).connect(cricketGain.gain);
+      tremolo.start();
+
       delay = ctx.createDelay(1.0);
       delay.delayTime.value = 0.42;
       const feedback = ctx.createGain();
@@ -235,7 +325,67 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
         };
       }
     },
-    update(dt, sample, groundAt) {
+    /** A bird: two or three whistled notes, each one sliding up and stopping. */
+    bird() {
+      if (!ctx || !master) return;
+      const at = ctx.currentTime;
+      const notes = 2 + Math.floor(random() * 2);
+      const base = 1900 + random() * 1400;
+      for (let i = 0; i < notes; i++) {
+        const t = at + i * (0.11 + random() * 0.09);
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        const f = base * (0.86 + random() * 0.3);
+        o.frequency.setValueAtTime(f, t);
+        o.frequency.exponentialRampToValueAtTime(f * (1.1 + random() * 0.35), t + 0.07);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.05, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+        o.connect(g).connect(master);
+        o.start(t);
+        o.stop(t + 0.14);
+        o.onended = () => {
+          o.disconnect();
+          g.disconnect();
+        };
+      }
+    },
+    /** A bell in a village: one low strike, long, through the same delay the chimes use. */
+    bell() {
+      if (!ctx || !master || !delay) return;
+      const t = ctx.currentTime;
+      const f = 148 + random() * 36;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 6);
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      // the clang: a partial a little off the octave, which is what stops a
+      // bell sounding like an organ
+      const o2 = ctx.createOscillator();
+      o2.type = 'sine';
+      o2.frequency.value = f * 2.76;
+      const g2 = ctx.createGain();
+      g2.gain.value = 0.25;
+      o.connect(g);
+      o2.connect(g2).connect(g);
+      g.connect(master);
+      g.connect(delay);
+      o.start(t);
+      o2.start(t);
+      o.stop(t + 6.5);
+      o2.stop(t + 6.5);
+      o.onended = () => {
+        o.disconnect();
+        o2.disconnect();
+        g2.disconnect();
+        g.disconnect();
+      };
+    },
+    update(dt, sample, groundAt, layers) {
       if (!ctx || !windFilter || !windGain || !waterGain) return;
       const wind = windParams(sample);
       windFilter.frequency.setTargetAtTime(wind.frequency, ctx.currentTime, 0.4);
@@ -245,6 +395,31 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
         ctx.currentTime,
         1.2,
       );
+      // What the country under the flyer is asking for. Every layer is a
+      // target the graph slides toward over a second and a half: a biome
+      // border crossed at fifty metres a second is a fade, not a cut.
+      const want = layers ?? EMPTY_LAYERS;
+      heard = want;
+      if (surfGain) surfGain.gain.setTargetAtTime(want.surf * 0.3, ctx.currentTime, 1.5);
+      if (highGain) highGain.gain.setTargetAtTime(want['wind-high'] * 0.12, ctx.currentTime, 1.5);
+      if (cricketGain && cricketTremolo) {
+        cricketGain.gain.setTargetAtTime(want.crickets * 0.035, ctx.currentTime, 1.5);
+        cricketTremolo.gain.setTargetAtTime(want.crickets * 0.03, ctx.currentTime, 1.5);
+      }
+      // and the two that are events rather than textures: the more of the
+      // biome is under the flyer the shorter the wait, and at zero they never
+      // come round at all.
+      birdTimer -= dt * want.birds;
+      if (birdTimer <= 0) {
+        api.bird();
+        birdTimer = 1.6 + random() * 5;
+      }
+      bellTimer -= dt * want.bells;
+      if (bellTimer <= 0) {
+        api.bell();
+        bellTimer = 45 + random() * 70;
+      }
+
       // the suit flutters at the front of every gust
       const gust = sample.gust > 0.5;
       if (gust && !gusting) api.flutter(3 + Math.floor(random() * 3));

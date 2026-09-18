@@ -10,6 +10,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { validateLibrary, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
+import { layerMix } from './audio/AmbienceModel';
 import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
@@ -35,7 +36,7 @@ import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
-import type { DayClock } from './time/DayClock';
+import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
 
 export interface WorldOptions {
@@ -205,6 +206,12 @@ export function createWorld(opts: WorldOptions): World {
     view: steering.view,
   };
   const sample = { altitude: 0, vy: 0, gust: 0, rush: 1, t: 0, x: 0, z: 0 };
+  // What the country under the flyer sounds like. The slots are the height
+  // window's own -- the same three the ground shader paints with -- so the
+  // sound and the picture never disagree about which biome this is.
+  const slotIds = new Uint8Array(3),
+    slotWeights = new Float32Array(3);
+  const ambienceSpecs = library.biomes.map((biome) => biome.ambience?.layers);
   const toLocal = (v: Vector3) => v.set(origin.localX(v.x), v.y, origin.localZ(v.z));
   const place = (dt: number) => {
     // An origin jump moves the whole scene under the scenery, whose instances
@@ -265,7 +272,19 @@ export function createWorld(opts: WorldOptions): World {
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;
-    audio.update(dt, sample, heightAt);
+    heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
+    audio.update(
+      dt,
+      sample,
+      heightAt,
+      layerMix({
+        ids: slotIds,
+        weights: slotWeights,
+        specs: ambienceSpecs,
+        solar: solar(clock.phase),
+        altitude: sample.altitude,
+      }),
+    );
   };
   if (!opts.deferScenery) plant();
   place(0);

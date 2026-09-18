@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.15 },
     grass: { tint: 'white', density: 0.8 },
   },
+  // The loudest country there is, and the only one as loud at midnight as at noon.
+  ambience: { layers: { crickets: 1, birds: 0.9 } },
 });

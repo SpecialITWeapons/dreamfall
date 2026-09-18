@@ -1,3 +1,4 @@
+import { LAYERS } from '../../src/engine/audio/AmbienceModel';
 import { describe, expect, it } from 'vitest';
 import {
   BUDGET,
@@ -412,6 +413,23 @@ describe('the library itself', () => {
         const d = Math.hypot(...points[i]!.map((v, k) => v - points[j]![k]!));
         expect(d).toBeGreaterThan(0.06);
       }
+  });
+  it('gives every biome something to sound like, out of the five layers there are', () => {
+    // `ambience` sat in the contract from M3a and nothing read it: ten biomes,
+    // one wind. A field that nothing reads is not a feature, it is a promise,
+    // and this is what keeps the promise kept once it has been.
+    for (const biome of createLibrary().biomes) {
+      if (biome.sites) continue; // the settlement claims a lattice cell, not a country
+      const layers = biome.ambience?.layers;
+      expect(layers, `${biome.id} says nothing`).toBeTruthy();
+      const named = Object.entries(layers!);
+      expect(named.length).toBeGreaterThan(0);
+      for (const [layer, amount] of named) {
+        expect(LAYERS).toContain(layer);
+        expect(amount).toBeGreaterThan(0);
+        expect(amount).toBeLessThanOrEqual(1);
+      }
+    }
   });
   it('paints every biome out of the swatch book, undercoat first', () => {
     for (const biome of createLibrary().biomes) {
