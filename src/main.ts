@@ -76,6 +76,10 @@ const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => {
     world.update(dt);
+    // The title card rides the opening's own fade; at zero the element goes
+    // away rather than sitting invisible over the canvas for the whole flight.
+    hud.setTitle(world.opening.card);
+    hud.setOpening(!world.opening.done);
     // a couple of times a minute while flying; never before Begin, when nothing has changed
     if (performance.now() - lastSave > 2000) saveFlight();
   },
@@ -170,6 +174,11 @@ let activePointerId = -1;
 let activeButton = -1;
 canvas.addEventListener('pointerdown', (e) => {
   if (!loop.running || disposed) return;
+  // A hand on the controls is the end of the opening, whatever it was going to
+  // do next. It goes here rather than inside `Steering`, because a click that
+  // starts no drag -- the left button on a page that only orbits with it -- is
+  // still somebody saying they have seen enough.
+  world.skipOpening();
   // a drag already owns the stick: a second button going down (e.g. the left
   // button while the right one steers) must not steal dragButton out from under
   // it, or the drag it interrupted never gets its matching pointerUp -- and with
@@ -228,6 +237,7 @@ addEventListener('keydown', (e) => {
   if (!loop.running) return;
   if (e.key.startsWith('Arrow')) e.preventDefault();
   if (loop.paused) return;
+  world.skipOpening();
   const action = steering.key(e.code);
   if (action === 'view') {
     hud.setView(steering.view);
@@ -240,6 +250,9 @@ addEventListener('keyup', (e) => {
 });
 motionPreference.addEventListener('change', (e) => {
   world.reducedMotion = e.matches;
+  // Asking for less motion in the middle of a scripted flight is asking for
+  // this one to stop.
+  if (e.matches) world.skipOpening();
   if (e.matches && loop.running && !loop.paused) togglePause();
 });
 
@@ -306,6 +319,12 @@ installDebug(window, {
   state: world.sim.state,
   step(dt) {
     world.update(dt);
+    // The card is the page's, not the world's, and a test stepping the world by
+    // hand is still entitled to see it: without this the opening advances and
+    // the title never appears, which is a difference between the tested page
+    // and the real one.
+    hud.setTitle(world.opening.card);
+    hud.setOpening(!world.opening.done);
     loop.renderOnce();
   },
   begin,
@@ -354,6 +373,9 @@ installDebug(window, {
       muted: audio.muted,
       volume: audio.volume,
     };
+  },
+  get opening() {
+    return { card: world.opening.card, done: world.opening.done };
   },
   resumed: resume !== null,
   snapshot: () => world.snapshot(),

@@ -11,6 +11,7 @@ import { swatchColor, validateLibrary, type Library } from '../../library/contra
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { layerMix } from './audio/AmbienceModel';
+import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
@@ -88,6 +89,14 @@ export interface World {
   /** Bakes and plants the scenery; idempotent, and already done unless deferScenery was set. */
   plant(): void;
   update(dt: number): void;
+  /**
+   * What the opening is asking for this frame, so the page can put its title
+   * card at the opacity the script wants. `done` once the flight is the
+   * autopilot's again.
+   */
+  readonly opening: Readonly<OpeningFrame>;
+  /** Any input at all ends the opening; the flight and the camera come back at once. */
+  skipOpening(): void;
   resize(aspect: number): void;
   heightAt(x: number, z: number): number;
   /** World to local, in place. */
@@ -123,17 +132,29 @@ export function createWorld(opts: WorldOptions): World {
   // forty times dearer and is baked off the main thread, so the start pays
   // nothing for a sky nobody can see until nightfall.
   const galaxy = createMilkyWay();
+  // The opening plays for a first flight and never for a continued one: a
+  // remembered flight is somebody coming back, and thirty seconds of titles is
+  // not what they came back for. A page that asked for less motion skips it too.
+  const opening = createOpening(!resume && !(opts.reducedMotion ?? false));
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
     obstacles,
     below: HUMAN_BOUNDS.below,
     resume,
+    // High enough that the climb has a deck to go through. Nothing else about
+    // the start moves: the flight's own clearance still owns the first frame.
+    startY: opening.live ? OPENING.startY : undefined,
   });
   const { state } = sim;
   // a remembered flight never resumes inside the ground it may have been saved over
   state.y = Math.max(state.y, sim.flight.floorAt(state.x, state.z) + MIN_CLEARANCE + HUMAN_BOUNDS.below);
   const clock = sim.clock;
+  // The sun a little under the rim, so the first act has something to rise.
+  if (opening.live) {
+    clock.phase = OPENING.dawn;
+    clock.evalPalette();
+  }
   const look = clock.look;
   const uniforms = createSkyUniforms(look);
   uniforms.uWind.value.set(wind.x, wind.z);
@@ -171,6 +192,22 @@ export function createWorld(opts: WorldOptions): World {
   });
   scene.add(avatar.object);
   const steering = createSteering(sim.flight, { view: opts.view, orbit: opts.orbit });
+  /** Where the camera hung before the script borrowed it. */
+  const framing = { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist };
+  /** Everything the opening was holding, handed back in one place. */
+  const endOpening = () => {
+    clock.rate = 1;
+    steering.orbit.yaw = framing.yaw;
+    steering.orbit.pitch = framing.pitch;
+    steering.orbit.dist = framing.dist;
+    steering.setAutopilot(true);
+  };
+  // The flight holds its course and its height while the script is level: with
+  // the autopilot on it would wander off on its own errands mid-shot, and
+  // `fly(0, 0)` is not enough to take it away, by design -- an arrow key that
+  // asks for nothing should not take the flight from anyone.
+  if (opening.live) steering.setAutopilot(false);
+
   const chase = createChaseCamera();
   const audio = createAmbience({ volume: opts.volume ?? 0.5, muted: opts.muted ?? false });
   const post = createPost(opts.renderer, scene, camera);
@@ -342,11 +379,33 @@ export function createWorld(opts: WorldOptions): World {
       plant();
       place(0);
     },
+    /** A key, a click, a finger: the script lets go of everything at once. */
+    skipOpening() {
+      if (!opening.live) return;
+      opening.skip();
+      endOpening();
+    },
+    get opening() {
+      return opening.frame;
+    },
     update(dt) {
       // The first frame of actual flight is where the galaxy's bake belongs:
       // the veil is up, the terrain is filled and the shaders are compiled, so
       // the core it burns for a few seconds is a core nothing else wants.
       galaxy.begin();
+      // The opening drives the flight with the verbs a pilot has and owns the
+      // camera and the pace of the day outright. It runs before the steering,
+      // so a hand on the stick is the thing that ends it rather than the thing
+      // that fights it.
+      if (opening.live) {
+        const script = opening.step(dt);
+        sim.flight.fly(script.yaw, script.climb);
+        steering.orbit.yaw = script.cameraYaw;
+        steering.orbit.pitch = script.cameraPitch;
+        steering.orbit.dist = script.cameraDist;
+        clock.rate = script.dayRate;
+        if (!opening.live) endOpening();
+      }
       steering.update(dt);
       sim.step(dt);
       place(dt);

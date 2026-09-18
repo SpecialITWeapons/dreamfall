@@ -191,6 +191,16 @@ subdirectory.
   sprung per joint too, so a shape arrives shoulder first and ankle last.
   `dt <= 0` means "be there now" -- position and velocity both -- which is how
   the world places the figure before the first frame.
+- The opening (`sim/Opening.ts`) is a pure function of how long it has been
+  running: five acts, a title card and the pace of the day. It drives the
+  flight with `fly(yaw, climb)`, which takes a **sign** as an arrow key does,
+  so the script cannot ask the figure for anything the flight would refuse a
+  person and the envelope holds through all of it. It owns the camera and the
+  clock outright and hands both back in one place. It plays for a first flight
+  only -- never for a resumed one, never under `prefers-reduced-motion` -- and
+  any input at all ends it. The flight starts under the cloud deck because the
+  climb is the act with something to see; a test holds the climb's length
+  against the flight's own climb rate.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own

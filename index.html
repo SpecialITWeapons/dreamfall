@@ -183,6 +183,54 @@
       #manual[hidden] {
         display: none;
       }
+      /* The title card: it sits over the opening and fades with it, and it is
+         never in the way -- no pointer events, and `aria-hidden`, because it
+         says nothing a screen reader has not already been told by the page. */
+      #title {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        align-content: center;
+        /* Above the middle, because the middle is where the figure is: the
+           first draft put the word straight through it. */
+        padding-bottom: 26vh;
+        justify-items: center;
+        gap: 0.9rem;
+        margin: 0;
+        pointer-events: none;
+        color: #f4ead0;
+        text-align: center;
+        text-shadow: 0 2px 26px rgba(8, 18, 26, 0.72);
+        z-index: 4;
+      }
+      #title h1 {
+        margin: 0;
+        font-size: clamp(2.6rem, 11vw, 6rem);
+        font-weight: 300;
+        letter-spacing: 0.34em;
+        text-indent: 0.34em; /* the tracking would push it off centre otherwise */
+        text-transform: lowercase;
+        line-height: 1;
+      }
+      #title p {
+        margin: 0;
+        font-size: clamp(0.66rem, 2.4vw, 0.86rem);
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+        text-transform: lowercase;
+        opacity: 0.82;
+      }
+      #title[hidden] {
+        display: none;
+      }
+      /* Nothing else is on screen while the opening plays: the controls have
+         nothing to control yet, and the manual banner would be telling the
+         truth about the autopilot and a lie about who is flying. */
+      body.opening #hud,
+      body.opening #manual {
+        opacity: 0 !important;
+        pointer-events: none;
+      }
       /* The controls line: one glass pill in the corner. */
       #hud {
         position: fixed;
@@ -333,6 +381,10 @@
       <p id="loadingText" role="status">waking the world</p>
       <a id="retryLink" hidden>try WebGL2</a>
       <noscript>JavaScript is needed to create this world.</noscript>
+    </div>
+    <div id="title" aria-hidden="true" hidden>
+      <h1>Dreamfall</h1>
+      <p>a flight across an endless world</p>
     </div>
     <p id="manual" role="status" hidden>autopilot off &mdash; arrows fly the figure</p>
     <div id="hud" inert>

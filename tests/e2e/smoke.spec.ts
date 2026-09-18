@@ -1568,3 +1568,71 @@ test('a country tints its own air, and the sky over it with it', async ({ page }
   expect(shift, `${jungle!.id} against ${steppe!.id}`).toBeGreaterThan(0.01);
   expect(errors).toEqual([]);
 });
+
+test('the opening plays once, and anything at all ends it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  /** The script's own seconds: the page runs in slow motion on a rasteriser. */
+  const run = (seconds: number) =>
+    page.evaluate((s) => {
+      for (let i = 0; i < Math.round(s * 60); i++) window.__world!.step(1 / 60);
+      const w = window.__world!;
+      return { card: w.opening.card, done: w.opening.done, y: w.state.y, phase: w.dayPhase };
+    }, seconds);
+
+  // It starts at dawn with a card over it, and under the cloud deck: the climb
+  // is the act with something to see and it needs something to climb through.
+  const early = await run(2);
+  expect(early.card).toBeGreaterThan(0.5);
+  expect(early.done).toBe(false);
+  expect(early.phase).toBeGreaterThan(0.1);
+  expect(early.phase).toBeLessThan(0.2);
+  const start = early.y;
+  expect(start).toBeLessThan(520);
+
+  // The card goes before the flight does anything worth watching, and the
+  // climb takes the figure over the deck.
+  const mid = await run(16);
+  expect(mid.card).toBe(0);
+  expect(mid.y).toBeGreaterThan(520);
+  expect(mid.done).toBe(false);
+
+  // It ends itself and hands the flight back.
+  const after = await run(14);
+  expect(after.done).toBe(true);
+  expect(await page.evaluate(() => window.__world!.state.autopilot ?? true)).toBe(true);
+  // and the day is the world's own again: a rate left at three would show up
+  // here as three times the phase in the same number of steps
+  const before = after.phase;
+  const later = await run(6);
+  expect((later.phase - before) * 600).toBeGreaterThan(4);
+  expect((later.phase - before) * 600).toBeLessThan(9);
+  expect(errors).toEqual([]);
+});
+
+test('a hand on the controls ends the opening, and a remembered flight never sees it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await page.evaluate(() => {
+    for (let i = 0; i < 120; i++) window.__world!.step(1 / 60);
+  });
+  expect(await page.evaluate(() => window.__world!.opening.done)).toBe(false);
+  // One arrow key. Not a drag, not the HUD: the cheapest thing a person does.
+  await page.keyboard.press('ArrowLeft');
+  const skipped = await page.evaluate(() => {
+    const w = window.__world!;
+    return { done: w.opening.done, card: w.opening.card };
+  });
+  expect(skipped.done).toBe(true);
+  expect(skipped.card).toBe(0);
+
+  // Now leave a flight behind and come back to it. Thirty seconds of titles is
+  // not what somebody coming back came back for.
+  await page.evaluate(() => window.__world!.saveFlight());
+  await page.reload();
+  await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 90_000 });
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.resumed)).toBe(true);
+  expect(await page.evaluate(() => window.__world!.opening.done)).toBe(true);
+  expect(await page.evaluate(() => window.__world!.opening.card)).toBe(0);
+  expect(errors).toEqual([]);
+});

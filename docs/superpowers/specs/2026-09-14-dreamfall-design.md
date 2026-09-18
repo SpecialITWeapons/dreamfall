@@ -822,7 +822,10 @@ wersją.
    zarezerwowany dla stojącej wody i nigdy nie mógł jej obsłużyć, bo jezioro
    potrzebuje wysokości lustra, a bajt na tym reliefie to cztery metry na
    krok), otwarcie z kartą
-   tytułową, szafa, haki `ambience` (**zrobione 2026-09-18**: pięć warstw
+   tytułową (**zrobione 2026-09-18**: pięć aktów jako czysta funkcja czasu w
+   `sim/Opening.ts`, sterujące lotem tymi samymi czasownikami co strzałki, więc
+   koperta lotu obowiązuje przez całe otwarcie; świt zmierzony, nie zgadnięty --
+   słońce wychodzi zza krawędzi przy fazie 0,126), szafa, haki `ambience` (**zrobione 2026-09-18**: pięć warstw
    syntezowanych w `Ambience.ts`, mieszanych wagami trzech slotów okna
    wysokości pod postacią; bramkowanie po słońcu i po wysokości jest decyzją
    silnika, nie bioma -- inaczej każdy biom pisałby te same dwie reguły),

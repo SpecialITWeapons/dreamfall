@@ -15,6 +15,7 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   const volume = doc.getElementById('volume') as HTMLInputElement;
   const autopilot = doc.getElementById('autopilotBtn') as HTMLButtonElement;
   const manual = doc.getElementById('manual')!;
+  const title = doc.getElementById('title')!;
   const view = doc.getElementById('viewBtn') as HTMLButtonElement;
   const backend = doc.getElementById('backendLabel')!;
   const idleMs = opts.idleMs ?? HUD_IDLE_MS;
@@ -123,6 +124,25 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
     },
     onView(cb: () => void) {
       viewListeners.push(cb);
+    },
+    /**
+     * The title card over the opening, at the opacity the script asks for. It
+     * is hidden outright at zero rather than left at `opacity: 0`, so that a
+     * card nobody is looking at is not a full-screen element over the canvas
+     * for the rest of the flight.
+     */
+    /**
+     * The opening is playing: the controls and the manual banner step out of
+     * the picture. It is a class on the body rather than a `hidden` on each,
+     * so neither fights the idle dimming or the `inert` the gate sets.
+     */
+    setOpening(on: boolean) {
+      doc.body.classList.toggle('opening', on);
+    },
+    setTitle(opacity: number) {
+      const on = opacity > 0.002;
+      title.toggleAttribute('hidden', !on);
+      title.style.opacity = on ? String(Math.min(1, opacity)) : '0';
     },
   };
 }

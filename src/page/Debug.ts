@@ -48,6 +48,8 @@ export interface WorldDebug {
     muted: boolean;
     volume: number;
   };
+  /** The opening: how far up its title card is, and whether it has handed the flight over. */
+  readonly opening: { card: number; done: boolean };
   /** The page continued a remembered flight. */
   readonly resumed: boolean;
   snapshot(): ResumeState;
