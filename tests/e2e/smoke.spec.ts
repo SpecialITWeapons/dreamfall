@@ -153,6 +153,10 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
 test('the day turns: the sky is bright at noon and dark at midnight, and the sun draws over the sea', async ({
   page,
 }) => {
+  // The first capture compiles the scene a second time for its own target, ten
+  // seconds on a runner with no GPU, on top of a start that is slower there
+  // too. Ninety seconds is what this ran out of on CI, twice.
+  test.slow();
   const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
@@ -463,6 +467,9 @@ test('the right button steers, the left button orbits, the wheel zooms, and the 
 });
 
 test('the flight resumes on the same seed from the remembered place and time of day', async ({ page }) => {
+  // Three page starts with a reload among them, and two hundred steps that each
+  // render: more than ninety seconds on a software rasteriser having a bad day.
+  test.slow();
   await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const before = await page.evaluate(() => {
@@ -571,6 +578,14 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
     });
   const wind = await page.evaluate(() => window.__world!.wind);
   expect(wind.speed).toBeGreaterThanOrEqual(10);
+  // The galaxy's atlas is baked in a worker and lands when it lands -- measured
+  // here, between the first capture and the second. The day opens at dawn, where
+  // the night sky is still worth 0.0005 of the picture, and that was the flake:
+  // two captures with nothing arriving between them are identical to the bit.
+  // Waiting for the atlas, and stepping once so it reaches the GPU, is what
+  // makes the pair below a pair.
+  await expect.poll(() => page.evaluate(() => window.__world!.galaxy.baked), { timeout: 120_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.step(0.05));
   const phase = await page.evaluate(() => window.__world!.dayPhase);
   const a = await sky();
   const again = await sky();
@@ -1201,11 +1216,8 @@ test('the village draws: the road and the houses compile', async ({ page }) => {
     w.state.vy = 0;
     w.state.heading = Math.atan2(s.x - x, s.z - z);
     w.step(0.05);
-    const before = w.memory();
     const shot = await w.capture(128, 72);
     return {
-      before,
-      after: w.memory(),
       buildings: w.scenery!.buildings,
       pixels: shot ? shot.data.length : 0,
       finite: shot ? shot.data.every(Number.isFinite) : false,
@@ -1214,11 +1226,13 @@ test('the village draws: the road and the houses compile', async ({ page }) => {
   expect(drawn.buildings).toBeGreaterThan(20);
   expect(drawn.pixels).toBe(128 * 72 * 4);
   expect(drawn.finite).toBe(true);
-  // The renderer counts the geometry it has actually drawn, and the loop has
-  // been stopped since before the village came into reach, so this rise is the
-  // ribbon of road and the houses reaching the GPU in that one frame.
-  expect(drawn.after.geometries).toBeGreaterThan(drawn.before.geometries);
-  // Nothing in the console is what proves their materials compiled.
+  // Nothing in the console is what proves their materials compiled, and it is
+  // the whole of the proof: the geometry counter cannot say anything here. It
+  // was read before and after this capture until CI read the same 51 twice --
+  // a step renders, so the houses reached the GPU back in `overVillage`'s poll,
+  // and at 2.2 km from the start they were inside the ring on the very first
+  // frame. What this frame buys is the capture's own target, which compiles
+  // every material in the scene a second time for that configuration.
   expect(errors).toEqual([]);
 });
 
