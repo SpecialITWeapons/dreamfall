@@ -137,21 +137,28 @@ const POSES = {
   /**
    * Nose up and slow, which in this world is one state and not two: a climb is
    * paid for in airspeed, so `speed 30` and `pitch +0.56` arrive together and
-   * the same shape answers both. The arms sweep **back** along the hips and the
-   * knees stay folded -- the chest leads and the rest of the figure trails it,
-   * the way a bird pulling up out of a dive does.
+   * the same shape answers both. Everything trails: the arms lie **down the
+   * flanks** and the legs sweep back behind them, the chest leading and the
+   * rest of the figure following it, the way a bird pulling up out of a dive
+   * does.
    *
-   * The first draft of this reached the arms forward and high, which is what a
-   * jumper's flare looks like and is not what this is. In a photograph it read
-   * as a figure being lifted by the wrists. What tells the climb from the track
-   * is the legs: both sweep the arms back, and only the track straightens out.
+   * Two drafts were thrown away here, both from photographs. The first reached
+   * the arms forward and high, which is a jumper's flare and read as a figure
+   * being lifted by the wrists. The second swept them back but over the back --
+   * `+y` is the back in this frame -- so the arms lifted away from the body
+   * like folding wings, and the knees stayed at 94% of a full fold while the
+   * rest of the figure trailed. Both are what an arm does when someone is
+   * *holding* it up; neither is what the air does to one.
+   *
+   * What tells the climb from the track is how much: the track is a ruler, the
+   * climb keeps the arms a little off the flank and a bend in the knee.
    */
   climb: {
-    upper: (side) => dir(side * 0.48, -0.22, -0.85),
-    fore: (side) => dir(side * 0.16, 0.24, -0.96),
-    thigh: (side) => dir(side * 0.34, -0.1, -0.93),
-    shin: (side) => dir(side * 0.14, 0.94, -0.3),
-    foot: (side) => dir(side * 0.05, 0.6, -0.8),
+    upper: (side) => dir(side * 0.3, -0.08, -0.95),
+    fore: (side) => dir(side * 0.14, -0.06, -0.99),
+    thigh: (side) => dir(side * 0.26, -0.06, -0.96),
+    shin: (side) => dir(side * 0.11, 0.34, -0.93),
+    foot: (side) => dir(side * 0.05, 0.26, -0.96),
   },
   /**
    * A turn, which is the only shape the two sides of the body disagree about:
@@ -467,7 +474,7 @@ export function createProceduralHuman(
         new Vector3(0, 0, -0.02),
         new Vector3(0, 0.02, 0.2),
         new Vector3(0, 0.02, 0.32),
-        new Vector3(0, 0.05, 0.375),
+        new Vector3(0, 0.065, 0.385),
       ],
       // Widest across the shoulders, a waist under it, and the hips wider than
       // the waist -- which is the way round a person is. Two photographs paid
@@ -557,32 +564,47 @@ export function createProceduralHuman(
    */
   const skull: Chain = {
     bones: ['neck', 'neck', 'neck'],
-    // On the neck's line, continuing up: the back of the skull overlaps the
-    // neck's open end, so the two surfaces meet inside the body rather than at
-    // a seam. It used to run flat along the spine from 0.30 to 0.58 and measured
-    // 25 x 24 x 42 cm -- a head as long as a forearm, which made the figure five
-    // heads tall where a person is seven and a half. A helmet is about
-    // 17 x 24 x 26.
-    joints: [new Vector3(0, 0.055, 0.325), new Vector3(0, 0.1, 0.4), new Vector3(0, 0.125, 0.475)],
+    // Forward of the shoulders and above the back, on the neck's own line: the
+    // skull's back end overlaps the neck's open end, so the two surfaces meet
+    // inside the body rather than at a seam, and nothing of the head is left
+    // standing in the shoulders. It used to start at z 0.325 -- level with the
+    // shoulder joints -- and the crown of it came through the upper back as a
+    // pale wedge, which is the hole in the back the owner drew a circle round.
+    //
+    // It used to measure 25 x 24 x 42 cm as well: a head as long as a forearm,
+    // on a figure five heads tall where a person is seven and a half. A helmet
+    // is about 18 x 18 x 25, and it is nearly as round as it is long -- the
+    // profile below holds its width almost to the brow and then falls away at
+    // the jaw, because a shell that tapers evenly from the crown is a bullet.
+    joints: [new Vector3(0, 0.105, 0.4), new Vector3(0, 0.14, 0.465), new Vector3(0, 0.15, 0.53)],
     profile: ramp([
-      [0, 0.052],
-      [0.3, 0.082],
-      [0.55, 0.085],
-      [0.8, 0.076],
-      [1, 0.042],
+      [0, 0.062],
+      [0.22, 0.085],
+      [0.5, 0.089],
+      [0.75, 0.084],
+      [1, 0.05],
     ]),
-    // A band is only a band if a ring lands in it. At three rings a segment the
-    // head's fall at 0, 0.107, 0.321, 0.428, 0.571, 0.857 and 1 -- and the
-    // goggles, written as 0.58 to 0.8, caught none of them: the figure flew
-    // about in a plain cream egg and nobody could see why. Four rings put two
-    // in the visor, and the stops are written against the rings rather than
-    // against a picture of a head.
+    // The shell is the band and it goes the whole way round, because a helmet
+    // does. What does not is the visor: it is a `patch` over the front and
+    // underside, where a face looks from -- `-v` on this chain, which is why
+    // the sine is the test. As a band it was an opaque belt round the head at
+    // every bearing, and the eye reads a dark stripe across a pale oval as a
+    // face: the figure appeared to turn its head to follow the camera, 300
+    // degrees of it, round to its own back.
+    //
+    // The band's one stop past 0.95 is the jaw, and it exists for the end cap:
+    // a cap is a single vertex on the axis and has no angle, so a patch cannot
+    // reach it.
     swatch: bands([
-      [0.46, 'helmet'],
-      [0.8, 'goggles'],
+      [0.95, 'helmet'],
       [1, 'skin'],
     ]),
-    sides: 10,
+    patch: (t, around) => {
+      if (Math.sin(around) >= -0.3) return null;
+      if (t > 0.42 && t < 0.86) return 'goggles';
+      return t >= 0.86 ? 'skin' : null;
+    },
+    sides: 12,
     rings: 4,
     capStart: true,
     capEnd: true,

@@ -35,6 +35,18 @@ export interface Chain {
   profile: (t: number) => number;
   /** Which swatch the surface takes at this distance along it. */
   swatch: (t: number) => string;
+  /**
+   * A swatch for one *place* on the surface rather than one band around it:
+   * the distance along the chain and the angle around the ring, in radians
+   * from the first across-axis. Returning null leaves the band's own colour.
+   *
+   * A band cannot paint a visor. It paints a stripe the whole way round the
+   * head, and a dark stripe across a pale oval is a face from every angle at
+   * once -- so the figure appeared to turn its head to follow the camera, all
+   * the way round to its own back. Nothing was turning. A patch is what a
+   * visor, a badge or a flash down one sleeve actually is.
+   */
+  patch?: (t: number, around: number) => string | null;
   /** Vertices around the tube. */
   sides?: number;
   /** Rings per segment, not counting the one shared with the next segment. */
@@ -189,7 +201,7 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
       normal.set([outward.x, outward.y, outward.z], i * 3);
       skinIndex.set([first, second, 0, 0], i * 4);
       skinWeight.set([1 - sample.weight, sample.weight, 0, 0], i * 4);
-      swatch[i] = name;
+      swatch[i] = chain.patch?.(sample.t, a) ?? name;
       shade[i] = dark;
     }
   }
