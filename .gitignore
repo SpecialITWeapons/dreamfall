@@ -10,3 +10,6 @@ test-results/
 
 # the agent tooling's own directory: worktrees, scratch, local state
 .claude/
+
+# Baked by tools/figure/bake.py; committed only once the page loads it.
+tools/figure/figure.glb

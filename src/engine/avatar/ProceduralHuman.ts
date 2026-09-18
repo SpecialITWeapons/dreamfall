@@ -44,6 +44,43 @@ export interface ProceduralHuman extends Avatar {
   readonly triangles: number;
   readonly outfit: Outfit;
   readonly pattern: Pattern;
+  /**
+   * The figure as data: where its bones rest and how thick it is along each
+   * chain, in the pose it is standing in. This is what the geometry is made of
+   * and nothing else, which is what lets something outside the engine build the
+   * same body -- `tools/figure` bakes one continuous surface out of it in
+   * Blender, where a shoulder is a junction of the skin rather than a tube
+   * pushed into a slab. Handing over a *copy* of these numbers instead would
+   * give two figures that agree until the first time one of them is edited.
+   */
+  describe(): FigureDescription;
+}
+
+/** One chain of the figure, sampled: a point every so often with the half-width there. */
+export interface ChainDescription {
+  /** The bone each joint hangs on, root first. */
+  bones: string[];
+  /** The cross-section's shape, as `Skin.ts` means it: 1 is a circle. */
+  flatten: number;
+  capStart: boolean;
+  capEnd: boolean;
+  samples: Array<{
+    /** How far along the chain, 0..1. */
+    t: number;
+    /** Where, in the figure's frame, m. */
+    at: [number, number, number];
+    /** Half-width across the chain there, before `flatten`, m. */
+    radius: number;
+    /** Which swatch the surface takes there. */
+    swatch: string;
+    /** Which bone of `bones` this point sits on. */
+    bone: number;
+  }>;
+}
+
+export interface FigureDescription {
+  bones: Array<{ name: string; parent: string | null; rest: [number, number, number] }>;
+  chains: ChainDescription[];
 }
 
 type Swatch = Exclude<keyof Outfit, 'id'>;
@@ -665,10 +702,61 @@ export function createProceduralHuman(
   let time = 0;
   let view: FlightPose['view'] | null = null;
   const eye = new Vector3(0, 0.075, 0.5);
+  /**
+   * Walk a chain at a fixed step and write down what it looks like there. The
+   * profile is a function, so it cannot be handed over; what can is its answer
+   * at enough places to rebuild the shape, which is what this is.
+   */
+  const describeChain = (chain: Chain): ChainDescription => {
+    const lengths = chain.joints.slice(1).map((p, i) => p.distanceTo(chain.joints[i]!));
+    const total = lengths.reduce((a, b) => a + b, 0) || 1;
+    const steps = 10 * lengths.length;
+    const samples: ChainDescription['samples'] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      let walked = t * total,
+        bone = 0;
+      while (bone < lengths.length - 1 && walked > lengths[bone]!) walked -= lengths[bone++]!;
+      const at = new Vector3().lerpVectors(
+        chain.joints[bone]!,
+        chain.joints[bone + 1]!,
+        Math.min(1, walked / (lengths[bone] || 1)),
+      );
+      samples.push({
+        t,
+        at: [at.x, at.y, at.z],
+        radius: chain.profile(t),
+        swatch: chain.swatch(t),
+        bone,
+      });
+    }
+    return {
+      bones: chain.bones,
+      flatten: chain.flatten ?? 1,
+      capStart: chain.capStart ?? false,
+      capEnd: chain.capEnd ?? false,
+      samples,
+    };
+  };
+
   return {
     object,
     eye,
     bounds: HUMAN_BOUNDS,
+    describe() {
+      object.updateMatrixWorld(true);
+      return {
+        bones: bones.map((bone) => {
+          const at = bone.getWorldPosition(new Vector3());
+          return {
+            name: bone.name,
+            parent: bone.parent instanceof Bone ? bone.parent.name : null,
+            rest: [at.x, at.y, at.z] as [number, number, number],
+          };
+        }),
+        chains: [...parts, skull].map(describeChain),
+      };
+    },
     get triangles() {
       return triangles;
     },

@@ -16,6 +16,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "figure:dump": "vitest run --config tools/figure/vitest.config.ts",
+    "figure:bake": "python3 tools/figure/bake.py",
     "test:e2e": "vite build && playwright test",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
   },
