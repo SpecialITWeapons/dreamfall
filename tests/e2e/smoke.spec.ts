@@ -1599,7 +1599,9 @@ test('the opening plays once, and anything at all ends it', async ({ page }) => 
   // It ends itself and hands the flight back.
   const after = await run(14);
   expect(after.done).toBe(true);
-  expect(await page.evaluate(() => window.__world!.state.autopilot ?? true)).toBe(true);
+  // the real flag, off the debug surface: `state.autopilot` does not exist, and
+  // reading it gave `undefined ?? true`, which is an assertion that cannot fail
+  expect(await page.evaluate(() => window.__world!.autopilot)).toBe(true);
   // and the day is the world's own again: a rate left at three would show up
   // here as three times the phase in the same number of steps
   const before = after.phase;
