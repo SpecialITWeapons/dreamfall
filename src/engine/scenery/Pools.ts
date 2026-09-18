@@ -32,6 +32,7 @@ import {
   attribute,
   cameraPosition,
   float,
+  fract,
   length,
   mix,
   positionLocal,
@@ -145,6 +146,7 @@ interface StructurePool {
   mesh: InstancedMesh;
   /** The instance attribute the night reads: how awake each house is. */
   lit: InstancedBufferAttribute;
+  wake: InstancedBufferAttribute;
   top: number;
   radius: number;
   capacity: number;
@@ -274,13 +276,27 @@ export function createPools(deps: {
   // and two would flatten it into a shed.
   const structureKit = createStructureKit();
   const buildingMaterial = materials.prop(ringFade);
-  // What lights a village after dark: the window colour the bake painted, only
-  // where the bake said `glow`, only as awake as this instance is, and only as
-  // far as the sky is night. No light leaves the window -- one lighting model,
-  // one sun -- so this is a bright pane, not a lamp on the street.
+  // What lights a village after dark, window by window: the colour the bake
+  // painted, only where it said `glow`, and only in the panes this house has
+  // switched on. No light leaves the window -- one lighting model, one sun --
+  // so this is a bright pane, not a lamp on the street.
+  //
+  // Three numbers decide a pane, and they come from three places on purpose,
+  // because the geometry of a house is baked once and stood up hundreds of
+  // times: `pane` is the window's own, baked; `lit` is the lot's, so the house
+  // next door switches a different set; `wake` is the settlement's share, so a
+  // town at midnight is livelier than a hamlet. `fract` of the first two is a
+  // fresh roll per window per house, and a pane is lit when that roll lands
+  // under the share. The whole thing used to be one multiply by `lit`, which
+  // dimmed every window of a house together and lit every one of them.
+  const pane = attribute<'float'>('pane', 'float'),
+    phase = attribute<'float'>('lit', 'float');
+  const roll = fract(pane.add(phase));
   buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3')
     .mul(attribute<'float'>('glow', 'float'))
-    .mul(attribute<'float'>('lit', 'float'))
+    .mul(step(roll, attribute<'float'>('wake', 'float')))
+    // A lit room is not a lamp of a fixed brightness: a kitchen is not a hall.
+    .mul(float(0.7).add(fract(pane.mul(7.13).add(phase.mul(3.1))).mul(0.6)))
     .mul(uniforms.uNight);
   const structures = new Map<string, StructurePool>();
   for (const entry of library.structures ?? []) {
@@ -295,9 +311,13 @@ export function createPools(deps: {
       const lit = new InstancedBufferAttribute(new Float32Array(capacity), 1);
       lit.setUsage(DynamicDrawUsage);
       mesh.geometry.setAttribute('lit', lit);
+      const wake = new InstancedBufferAttribute(new Float32Array(capacity), 1);
+      wake.setUsage(DynamicDrawUsage);
+      mesh.geometry.setAttribute('wake', wake);
       structures.set(`${entry.id}:${floors}`, {
         mesh,
         lit,
+        wake,
         top: baked.top,
         radius: baked.radius,
         capacity,
@@ -459,6 +479,7 @@ export function createPools(deps: {
       const lx = origin.localX(building.x),
         lz = origin.localZ(building.z);
       write(record.mesh, record.count, lx, building.y, lz, building.yaw, 1, 1, 1, building.tint);
+      record.wake.setX(record.count, building.wake);
       record.lit.setX(record.count++, building.lit);
       return true;
     },
@@ -466,6 +487,7 @@ export function createPools(deps: {
       for (const record of structures.values()) {
         commit(record.mesh, record.count);
         record.lit.needsUpdate = true;
+        record.wake.needsUpdate = true;
       }
       for (const record of species.values()) {
         commit(record.wood, record.count);

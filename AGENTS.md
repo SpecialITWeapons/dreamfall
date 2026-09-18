@@ -169,7 +169,11 @@ subdirectory.
   Everything a chain looks like is its `profile` -- a half-width in metres at a
   share of its length -- and its `swatch`, and **a swatch band is only a band if
   a ring lands in it**: write the stops against the rings the chain samples at,
-  not against a picture of a body.
+  not against a picture of a body. A `swatch` is a belt round the chain and
+  nothing else, which is why a visor is a `patch` -- a colour for one place,
+  taking the angle around the ring as well: a dark belt on a pale solid of
+  revolution reads as a face from every bearing at once, and the head appears
+  to turn to follow the camera.
 - The figure's motion is **five shapes and the air**: box, delta, track, climb,
   and a turn laid over any of the others rather than instead of it. A shape is
   five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
@@ -300,6 +304,13 @@ subdirectory.
 - `cell.occupied` reads the plans' reservations and roads out of a hash grid
   filled at every rebuild, which is why the forest keeps off the square and the
   road.
+- Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
+  two heights and then slices it along the wall into panes with piers between
+  them, `slabOf` taking one slice at a time (splitting at each plane in turn
+  costs three times the triangles). Which ones are alight after dark is three
+  numbers from three places, because a house is baked once and stood up
+  hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
+  the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
 
 ## Checking
 

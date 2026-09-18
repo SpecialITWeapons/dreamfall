@@ -56,6 +56,12 @@ export const MAX_RING_TREES = 6000;
 export const POPULATE_FLOOR = 0.05;
 /** Ground above this is land, in the only sense the scenery cares about. */
 const LAND = 3;
+/**
+ * What share of a settlement's windows are lit after dark, at the two ends.
+ * Never 0 and never 1: a place with nothing lit is a ruin and a place with
+ * everything lit is an office block, and neither is a village at night.
+ */
+const WAKE: [number, number] = [0.22, 0.6];
 /** The claim index's cell, m: the obstacles' own, because the question has the same shape. */
 const CLAIM_CELL = OBSTACLE_CELL;
 const TAU = Math.PI * 2;
@@ -107,8 +113,10 @@ export interface StructureInstance {
   z: number;
   yaw: number;
   floors: number;
-  /** How awake this house is after dark, 0..1; the window band is multiplied by it. */
+  /** This house's own roll, 0..1: which of its windows are the lit ones after dark. */
   lit: number;
+  /** What share of this settlement's windows are awake at all, 0..1. */
+  wake: number;
   /** Scratch, as above. */
   tint: Color;
 }
@@ -435,6 +443,12 @@ export function createRing(deps: RingDeps): Ring {
       const plan = sites.planFor(site);
       if (!plan) continue;
       sink.site(plan);
+      // How much of this place is still up: the settlement's own number, not
+      // the lot's, so one village turns in early and the next is half awake,
+      // and neither changes its mind between two nights.
+      const wake =
+        WAKE[0] +
+        (hash2(Math.round(site.x), Math.round(site.z), seed ^ 0x77a1) / 4294967296) * (WAKE[1] - WAKE[0]);
       for (const lot of plan.lots) {
         // No distance test here on purpose. The site is what the reach decided;
         // once it is in, its lots come with it, however far the far side of the
@@ -469,6 +483,7 @@ export function createRing(deps: RingDeps): Ring {
             yaw: lot.yaw,
             floors: lot.floors,
             lit,
+            wake,
             tint,
           })
         ) {

@@ -697,3 +697,51 @@ first one: three numbers into three channels answers in one build what an hour
 of reading the shader does not. And a biome whose ground is already white makes
 the world's snow line invisible inside it -- which is the same two-lines fault
 in another disguise, and it is `frost`'s to answer for, not the snow's.
+
+## M5: okna zamiast pasów, i co kosztuje pocięcie ściany
+
+Właściciel: „domy zamiast okien również mają pasy". Miał rację co do litery:
+`kit.windows` malował **wstążkę** koloru okiennego dookoła piętra, bez jednej
+przerwy, i komentarz w pliku sam się do tego przyznawał („Windows are the part
+with a future").
+
+Pas trzeba było pociąć również wzdłuż ściany. Pierwsza wersja robiła to tak, jak
+robi to reszta kitu -- `cutAt` na każdej krawędzi szyby po kolei -- i to jest
+pułapka, bo `cutAt` rozbija każdy przecięty trójkąt na **trzy**, a przecięć jest
+dwa na szybę:
+
+| domek (2 piętra)                                | trójkąty |
+| ----------------------------------------------- | -------- |
+| pas malowany, stan wyjściowy                    | 144      |
+| cięcie płaszczyzna po płaszczyźnie              | **1304** |
+| rzadszy raster (1,15 m co 2,7 m)                | 666      |
+| krojenie komórka po komórce                     | **404**  |
+| to samo, po poprawce rozkładu (1,05 m co 2,2 m) | 564      |
+
+Dziewięciokrotny wzrost sprowadzony do 3,9×, i to jest cena okien, a nie ceny
+cięcia. Robi to `slabOf`: klipuje trójkąt do plasterka między dwiema
+płaszczyznami i zwraca wachlarz, zamiast dzielić go w miejscu i oddawać całość.
+Pas jest przepuszczany przez listę komórek (filar, szyba, filar, ...), każda
+komórka bierze swój plasterek i tyle.
+
+Przy okazji wyszedł błąd w rozkładzie: `floor((span - (PITCH - WIDTH)) / PITCH)`
+gubi ostatnią szybę na każdej ścianie -- szczyt 7,7 m dostawał dwa okna tam,
+gdzie mieszczą się trzy z metrem filara w zapasie. Poprawne jest
+`floor(span / PITCH)`, bo `n * PITCH` **już** liczy filar po obu stronach.
+
+### Losowe światła
+
+Trzy liczby z trzech różnych miejsc, bo dom jest pieczony raz i stawiany setki
+razy:
+
+- `pane` -- atrybut wierzchołka, hash z tego, która to ściana, jak wysoko i
+  która szyba wzdłuż niej. Wypieczony, więc wspólny dla wszystkich instancji.
+- `lit` -- na instancję, hash z pozycji działki. Był mnożnikiem jasności całego
+  domu, przez co każde okno w osadzie świeciło, tylko każdy dom inaczej mocno.
+- `wake` -- na instancję, hash z pozycji **osady**, 0,22 do 0,6: ile okien w tej
+  wsi w ogóle nie śpi.
+
+Okno świeci, gdy `fract(pane + lit) <= wake`. Jasność dostaje jeszcze 0,7..1,3 z
+drugiego rzutu, bo kuchnia to nie jest sień. Koszt: dwa atrybuty float na
+instancję i cztery instrukcje we fragmencie, który i tak już mnożył przez
+`uNight`.
