@@ -18,8 +18,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VANTAGES, beginPaused, settle } from '../vantages';
 
-const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 3);
-const FRAMES = Number(process.env.BENCH_FRAMES ?? 60);
+// Two rounds of twenty-four frames, because a frame here is a frame: on a
+// software rasteriser it is the better part of a second, and the first attempt
+// at a default -- three rounds of sixty -- was twenty minutes of honest
+// rasterising. On a machine with a GPU, raise them.
+const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 2);
+const FRAMES = Number(process.env.BENCH_FRAMES ?? 24);
 const SEED = Number(process.env.BENCH_SEED ?? 42);
 
 /** The fifth percentile of a window of frames: the fast end, which is the engine's own. */

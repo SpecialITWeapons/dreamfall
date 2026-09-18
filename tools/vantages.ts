@@ -76,5 +76,10 @@ export const settle = async (page: Page, vantage: Vantage) => {
       { timeout: 120_000 },
     )
     .toBe(0);
-  for (let i = 0; i < 20; i++) await page.evaluate(() => window.__world!.frame(1 / 60));
+  // Four, not twenty. Each of these is a real frame -- a separate task, so the
+  // node graph's frame id has moved and the scene is drawn again -- and a real
+  // frame on a software rasteriser is the better part of a second. The queue
+  // above is what actually settles the place; these are for the grass window's
+  // last rim.
+  for (let i = 0; i < 4; i++) await page.evaluate(() => window.__world!.frame(1 / 60));
 };

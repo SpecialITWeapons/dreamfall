@@ -8,7 +8,7 @@ Builds the page, opens it in Chromium, and holds the flyer still at each
 vantage while it times frames. Prints a table and writes `last.json`, which is
 gitignored: it is a measurement of one machine on one evening.
 
-Knobs, all environment variables: `BENCH_ROUNDS` (3), `BENCH_FRAMES` (60),
+Knobs, all environment variables: `BENCH_ROUNDS` (2), `BENCH_FRAMES` (24),
 `BENCH_SEED` (42), `BENCH_WEBGL=1` (force WebGL2, as CI runs it), and
 `BENCH_CHROME` (a browser binary to use instead of Playwright's own -- which is
 also how you bench against a particular Chrome).

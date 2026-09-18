@@ -10,8 +10,9 @@ const executablePath = process.env.BENCH_CHROME;
 
 export default defineConfig({
   testDir: '.',
-  // Five vantages, rounds of frames each, on a rasteriser with no GPU behind it.
-  timeout: 20 * 60_000,
+  // Five vantages, rounds of frames each, and every one of those frames is
+  // drawn by a rasteriser with no GPU behind it.
+  timeout: 45 * 60_000,
   retries: 0,
   reporter: 'list',
   workers: 1,
