@@ -765,16 +765,23 @@ export function createProceduralHuman(
       [1, 'goggles'],
     ]),
     patch: (t, around) => {
+      // Measured, not assumed: on this chain a bearing of 270 degrees lands at
+      // the bottom front of the head and 90 at the top back, so the sine of it
+      // is how high up the head a point sits.
       const side = Math.sin(around);
-      // The chin, the one bit of a face a full-face helmet leaves out.
-      if (side < -0.72 && t > 0.9) return 'skin';
-      // A visor is not a belt and it is not a band either: it starts at the
-      // brow on the face side and only at the very tip over the crown, so the
-      // shell sweeps back over the head the way a helmet's does. Written as a
-      // band across the middle of the head's length it left the front of the
-      // face cream -- a dark curve between two white ends, which from any
-      // distance is a smirk painted on an egg.
-      return t > 0.46 + (side + 1) * 0.22 ? 'goggles' : null;
+      // A full-face helmet is three things from the front and not two: shell
+      // over the crown, visor across the eyes, and a chin bar under it in the
+      // shell's own colour. Both edges of the visor fall away toward the ear,
+      // which is what closes it into a shape rather than a belt. The first
+      // draft had the visor run from the eyes to the jaw with the face under
+      // it, and from in front that is a slot in an egg -- what the eye sees
+      // there is mostly the *side* of the head, and one threshold cuts it at
+      // one height the whole way round.
+      const brow = 0.45 - (1 - t) * 1.6,
+        bar = -0.42 - (1 - t) * 0.6;
+      if (side < brow && side > bar) return 'goggles';
+      // and the chin itself, the one bit of a face this leaves out
+      return side < -0.88 && t > 0.94 ? 'skin' : null;
     },
     sides: 12,
     rings: 4,

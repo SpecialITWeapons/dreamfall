@@ -5241,9 +5241,9 @@
       "helmet",
       "helmet",
       "helmet",
+      "goggles",
       "helmet",
-      "helmet",
-      "helmet",
+      "goggles",
       "helmet"
      ]
     },
@@ -5266,9 +5266,9 @@
       "helmet",
       "helmet",
       "helmet",
+      "goggles",
       "helmet",
-      "helmet",
-      "helmet",
+      "goggles",
       "helmet"
      ]
     },
@@ -5365,11 +5365,11 @@
       "helmet",
       "helmet",
       "helmet",
+      "goggles",
       "helmet",
       "helmet",
       "helmet",
-      "helmet",
-      "helmet"
+      "goggles"
      ]
     },
     {
@@ -5390,11 +5390,11 @@
       "helmet",
       "helmet",
       "helmet",
+      "goggles",
       "helmet",
-      "goggles",
-      "goggles",
-      "goggles",
-      "helmet"
+      "helmet",
+      "helmet",
+      "goggles"
      ]
     },
     {
@@ -5415,11 +5415,11 @@
       "helmet",
       "helmet",
       "helmet",
+      "goggles",
       "helmet",
-      "goggles",
-      "goggles",
-      "goggles",
-      "helmet"
+      "helmet",
+      "helmet",
+      "goggles"
      ]
     },
     {
@@ -5441,9 +5441,9 @@
       "helmet",
       "helmet",
       "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
       "goggles"
      ]
     },
@@ -5466,9 +5466,9 @@
       "helmet",
       "helmet",
       "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
       "goggles"
      ]
     },
@@ -5483,17 +5483,17 @@
      "swatch": "helmet",
      "bone": 1,
      "ring": [
-      "goggles",
       "helmet",
       "helmet",
       "helmet",
       "helmet",
       "helmet",
+      "helmet",
+      "helmet",
       "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
       "goggles"
      ]
     },
@@ -5516,9 +5516,9 @@
       "helmet",
       "goggles",
       "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
       "goggles"
      ]
     },
@@ -5534,16 +5534,16 @@
      "bone": 1,
      "ring": [
       "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
+      "helmet",
+      "helmet",
+      "goggles",
       "goggles",
       "helmet",
       "helmet",
       "helmet",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
       "goggles"
      ]
     },
@@ -5559,16 +5559,16 @@
      "bone": 1,
      "ring": [
       "goggles",
+      "helmet",
+      "helmet",
+      "helmet",
+      "helmet",
+      "helmet",
+      "goggles",
       "goggles",
       "helmet",
       "helmet",
       "helmet",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
-      "goggles",
       "goggles"
      ]
     },
@@ -5616,9 +5616,9 @@
       "goggles",
       "goggles",
       "goggles",
+      "goggles",
       "skin",
-      "skin",
-      "skin",
+      "goggles",
       "goggles"
      ]
     },
@@ -5641,9 +5641,9 @@
       "goggles",
       "goggles",
       "goggles",
+      "goggles",
       "skin",
-      "skin",
-      "skin",
+      "goggles",
       "goggles"
      ]
     }
