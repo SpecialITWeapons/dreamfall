@@ -1713,11 +1713,12 @@ test('the dev panel switches a layer off and the frame loses it', async ({ page 
   };
   const diff = (x: number[] | null, y: number[] | null) =>
     x && y ? x.reduce((sum, v, i) => sum + Math.abs(v - y[i]!), 0) / x.length : NaN;
-  // One capture thrown away first. The first capture of a page compiles the
-  // whole scene a second time for the capture's own target, and taken right
-  // after the day has been moved it reads 0.07 away from every capture after
-  // it -- measured; each one after that is identical to the last bit. The
-  // baseline has to be one of those.
+  // One capture thrown away first. Taken in the same animation frame as the
+  // day was moved, it reads 0.07 away from every capture after it -- measured,
+  // and the cause is the node graph's frame id, which three advances only in
+  // the renderer's own tick: nodes that update once per id are still carrying
+  // the state from before the day moved. One animation frame later they are
+  // not, and from there the captures are identical to the last bit.
   await shot();
   const full = await shot();
   const terrain = page.locator('#dev label.layer', { hasText: 'terrain' }).locator('input');

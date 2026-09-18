@@ -17,6 +17,22 @@ export interface Loop {
   togglePause(): void;
   suspend(hidden: boolean): void;
   renderOnce(): void;
+  /**
+   * One frame, drawn **now**, on the caller's own stack. `renderOnce` asks the
+   * browser for a frame and returns before it happens, which is right for a
+   * page reacting to a click and wrong for anything about to look at what it
+   * drew: the dev panel redrawing a stopped world, a jump, a test reading a
+   * counter.
+   *
+   * One-off, not a loop. Three advances the node graph's frame id only inside
+   * the renderer's own animation tick, and the display chain's scene pass is a
+   * node that updates once per frame id: call this twice inside one animation
+   * frame and the second call redraws the chain over a scene texture nobody
+   * refilled. Measured: 3 draw calls and 3 triangles, where the frame has a
+   * million. Anything that wants a hundred real frames has to let the browser
+   * have its animation frames -- which is what the loop is.
+   */
+  renderNow(): void;
   stop(): void;
 }
 
@@ -86,6 +102,13 @@ export function createLoop(deps: LoopDeps): Loop {
       if (stopped) return;
       last = now();
       deps.setLoop(frame);
+    },
+    renderNow() {
+      if (stopped) return;
+      last = now();
+      deps.render();
+      frames++;
+      if (frames === 1) for (const cb of firstFrame) cb();
     },
     stop() {
       stopped = true;

@@ -783,9 +783,11 @@ Warstwy:
 3. Ręcznie przed wydaniem: benchmark, pełna doba, przejścia przez chmury,
    telefon.
 
-Narzędzia poza bundlem: `tools/bench.ts` (port), `tools/parity.ts` (port, z
-zapisem wzorców do plików), panel `?dev=1` (statystyki, warstwy, skok do ziarna
-i punktu, doba, koszt haków), `window.__world`.
+Narzędzia poza bundlem: `tools/bench/` (**zrobione 2026-09-18**: `npm run
+bench`, pięć stanowisk jednego ziarna, piąty percentyl okna klatek, minimum z
+rund), `tools/parity/` (**zrobione 2026-09-18**: `npm run parity:write` i `npm
+run parity`, te same pięć stanowisk jako zdjęcia), panel `?dev=1` (statystyki,
+warstwy, skok do ziarna i punktu, doba, koszt haków), `window.__world`.
 
 > **Poprawka 2026-09-18: panel jest własny i czyta `WorldDebug`.** Tweakpane
 > byłoby zależnością w `dependencies` — ładowaną tylko przez stronę, którą
@@ -796,6 +798,18 @@ i punktu, doba, koszt haków), `window.__world`.
 > liczby, której nikt nie widzi. Uwaga przy edycji: importy wartości z silnika
 > trzymać jako `import type`, bo jeden import wartości wyciąga wspólny chunk z
 > głównego pakietu i strona płaci drugie żądanie za panel, o który nie prosiła.
+>
+> **Poprawka 2026-09-18: wzorce parity nie idą do repozytorium.** Spec mówił o
+> „wzorcach PNG w `tests/references/`" i testach pikselowych w CI. Wzorzec PNG
+> jest zdjęciem jednego rasteryzatora: albo przypinamy repozytorium do tego
+> SwiftShadera, którego akurat niesie `ubuntu-latest` — i w dniu, w którym obraz
+> się zmienia, wszystkie wzorce są nieaktualne naraz i nikt nie odróżni regresji
+> od aktualizacji sterownika — albo do GPU jednego człowieka, co jest gorsze.
+> Lokalnie ten sam rasteryzator jest identyczny co do bitu sam ze sobą
+> (zmierzone: dwa zdjęcia jednej klatki różnią się o 0), a to jest dokładnie to,
+> czego potrzebuje porównanie „przed i po". Więc: wzorce w
+> `tools/parity/references/`, poza repozytorium, brane na commicie, z którym
+> porównujesz. CI zostaje przy testach, które pytają o liczby, a nie o piksele.
 >
 > **Parametry biomów na żywo odłożone.** Materiał ziemi jest komponowany raz z
 > rejestru, jedna gałąź na biom, i parametry siedzą w nim jako stałe. Na żywo
@@ -868,7 +882,11 @@ wersją.
    jedenastu warstw, skok do punktu, do osady i do ziarna, suwak doby i pomiar
    kosztu haków; przełącznik warstwy **tylko zabiera** — silnik co klatkę sam
    decyduje, co widać, więc `layers.apply()` idzie na końcu aktualizacji świata),
-   porty `bench` i `parity`, przegląd wydajności.
+   porty `bench` i `parity` (**zrobione 2026-09-18**: oba na Playwrighcie, bo
+   mierzą i fotografują klatkę prawdziwej strony, obok siebie na jednym
+   zestawie stanowisk w `tools/vantages.ts`; `npm run bench` i `npm run
+   parity`, nigdy w CI, bo współdzielony runner mierzy własną pogodę),
+   przegląd wydajności.
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,
    jeziora, pola uprawne.
 

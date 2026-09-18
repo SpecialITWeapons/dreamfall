@@ -53,7 +53,16 @@ page works under a Pages subdirectory.
   some GPU state).
 - `Renderer.init()` starts an internal animation tick that
   `setAnimationLoop(null)` does not stop, so "no loop behind the gate"
-  means no rendering and no simulation, not no callbacks.
+  means no rendering and no simulation, not no callbacks. That tick is also
+  the only place three advances the node graph's frame id, and the display
+  chain's scene pass is a node that updates once per id: **a second render
+  inside one animation frame draws the chain over a scene texture nobody
+  refilled** (measured: 3 draws and 3 triangles where the frame has a
+  million). So `loop.renderNow()` and `__world.frame(dt)` are for one-off
+  redraws -- a switch, a jump, a test about to read what it drew -- and
+  anything that wants a hundred real frames has to let the browser have its
+  animation frames, which is what the loop is and what `tools/bench` counts.
+  A capture is not affected: it renders the scene into its own target.
 - Any WebGPU `uncapturederror` is treated as a fatal device loss on
   purpose (fail loud); a shader that only warns must not ship.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
@@ -337,6 +346,22 @@ page works under a Pages subdirectory.
   numbers from three places, because a house is baked once and stood up
   hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
   the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
+
+## Measuring
+
+- `npm run bench` and `npm run parity` (`tools/bench/`, `tools/parity/`, one
+  list of vantages in `tools/vantages.ts`): what a frame costs at five
+  vantages of one seed, and what those five look like. Neither runs in CI,
+  because a shared runner measures its own weather, and parity's references
+  are gitignored, because a reference PNG is a photograph of one rasteriser.
+  Both READMEs carry the method and the reasoning; `docs/perf-notes.md`
+  carries the numbers.
+- The fifth percentile of a window of frames and the minimum across rounds:
+  both throw the machine away rather than the engine. A mean measures whatever
+  else the box was doing.
+- GPU milliseconds exist on WebGPU only. Asked for them, SwiftShader answers
+  with a number that is not a frame time -- the same 2 827.99 ms at five
+  different vantages -- so the engine does not ask, and the bench prints `--`.
 
 ## The dev panel
 

@@ -34,7 +34,7 @@ const stub = () => {
     clearance: 118.4,
     galaxy: { baked: false, bakeMs: 0 },
     state: { x: 1525.4, z: 1588.2, y: 301.7, speed: 44.5, heading: Math.PI / 2, vy: -1.5 },
-    memory: () => ({ geometries: 51, textures: 31, total: 175_520_506 }),
+    memory: () => ({ geometries: 51, textures: 31, total: 175_520_506, draws: 34, triangles: 612_345 }),
     scenery: {
       trees: 1175,
       props: 210,
@@ -65,6 +65,9 @@ const stub = () => {
       toggle: (name: string) => !on.get(name),
     },
     step: () => {
+      calls.steps++;
+    },
+    frame: () => {
       calls.steps++;
     },
     jump: (x: number, z: number, above = 120) => {
@@ -121,6 +124,7 @@ describe('dev panel', () => {
     // a refused house is a settlement quietly losing a building, so it is said
     expect(text()).toContain('43 (2 refused)');
     expect(text()).toContain('meadow 62%');
+    expect(text()).toContain('34 · 612,345');
     expect(text()).toContain('village:0,0');
   });
 

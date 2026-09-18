@@ -79,6 +79,21 @@ describe('createLoop', () => {
     expect(h.deps.update).not.toHaveBeenCalled();
     expect(h.scheduled()).toBe(false);
   });
+  it('renderNow draws on the spot, and asks the browser for nothing', () => {
+    const h = harness();
+    const loop = createLoop(h.deps);
+    h.tick(0);
+    loop.begin();
+    loop.setPaused(true);
+    const drawn = h.deps.render.mock.calls.length;
+    loop.renderNow();
+    // Drawn already, before any tick: whoever called this is about to read what
+    // it drew, and a frame that lands later is a picture of the state they left.
+    expect(h.deps.render).toHaveBeenCalledTimes(drawn + 1);
+    expect(loop.frames).toBeGreaterThan(0);
+    expect(h.scheduled()).toBe(false);
+    expect(h.deps.update).not.toHaveBeenCalled();
+  });
   it('stop is final', () => {
     const h = harness();
     const loop = createLoop(h.deps);
@@ -87,6 +102,9 @@ describe('createLoop', () => {
     expect(h.scheduled()).toBe(false);
     loop.begin();
     loop.renderOnce();
+    const drawn = h.deps.render.mock.calls.length;
+    loop.renderNow();
+    expect(h.deps.render).toHaveBeenCalledTimes(drawn);
     expect(h.scheduled()).toBe(false);
     expect(loop.running).toBe(false);
   });

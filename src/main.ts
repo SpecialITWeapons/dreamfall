@@ -103,7 +103,7 @@ const loop = createLoop({
  * jump all go through this, so none of them can advance the world in a way the
  * page itself never does.
  */
-const stepByHand = (dt: number) => {
+const stepByHand = (dt: number, drawNow = false) => {
   world.update(dt);
   // The card is the page's, not the world's, and a test stepping the world by
   // hand is still entitled to see it: without this the opening advances and the
@@ -111,7 +111,13 @@ const stepByHand = (dt: number) => {
   // real one.
   hud.setTitle(world.opening.card);
   hud.setOpening(!world.opening.done);
-  loop.renderOnce();
+  // A step asks the browser for a frame and returns; a thousand of them in a
+  // loop cost a thousand updates and whatever the browser found time to draw,
+  // which is what a test simulating twenty minutes of wind wants. `frame` is
+  // the other one: it draws before it returns, for a caller about to read what
+  // it drew.
+  if (drawNow) loop.renderNow();
+  else loop.renderOnce();
 };
 
 let ready = false;
@@ -349,7 +355,8 @@ const debug: WorldDebug = {
   seed: params.seed,
   backend: engine.backend,
   state: world.sim.state,
-  step: stepByHand,
+  step: (dt: number) => stepByHand(dt),
+  frame: (dt: number) => stepByHand(dt, true),
   setPaused(on: boolean) {
     if (loop.running && !disposed && loop.paused !== on) togglePause();
   },
@@ -360,8 +367,9 @@ const debug: WorldDebug = {
     state.y = world.heightAt(x, z) + above;
     state.vy = 0;
     // A jump crosses cells, so the window refills, the ring rebuilds and the
-    // origin may move: one step is what puts the world where the flight is.
-    stepByHand(0.05);
+    // origin may move: one frame is what puts the world where the flight is,
+    // drawn now because a jump is somebody looking.
+    stepByHand(0.05, true);
   },
   get layers() {
     return world.layers;
@@ -378,7 +386,7 @@ const debug: WorldDebug = {
     world.clock.phase = v;
     world.clock.evalPalette();
     world.update(0.000001);
-    loop.renderOnce();
+    loop.renderNow();
   },
   get origin() {
     return { x: world.origin.x, z: world.origin.z };

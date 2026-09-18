@@ -23,7 +23,14 @@ export interface WorldDebug {
   readonly seed: number;
   readonly backend: string;
   readonly state: FlightState;
+  /** Advances the world and asks the browser for a frame: cheap in a loop, and drawn whenever the browser gets to it. */
   step(dt: number): void;
+  /**
+   * The same, drawn before it returns: for a caller about to read what it drew.
+   * One-off -- two of these inside one animation frame draw the second over a
+   * stale scene (see `Loop.renderNow`).
+   */
+  frame(dt: number): void;
   begin(): void;
   dispose(): Promise<DisposeReport>;
   memory(): MemorySnapshot;
@@ -71,7 +78,7 @@ export interface WorldDebug {
   saveFlight(): void;
   /** What each step of the start cost, ms from the module's first line. */
   readonly timings: Record<string, number>;
-  /** GPU milliseconds of the last resolved frame; zero unless `?profile=1` asked for them. */
+  /** GPU milliseconds of the last resolved frame; zero unless `?profile=1` asked for them, and always zero on WebGL2. */
   readonly gpuMs: number;
   /** The registry, in the order the window's slot indices point into. */
   readonly biomes: string[];

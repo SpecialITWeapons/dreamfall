@@ -13,3 +13,10 @@ test-results/
 
 # Baked by tools/figure/bake.py; committed only once the page loads it.
 tools/figure/figure.glb
+
+# Written by `npm run bench`: a measurement of one machine on one evening.
+tools/bench/last.json
+
+# Taken by `npm run parity:write`: photographs of one rasteriser, which is
+# why they are not committed. The reason is in tools/parity/parity.config.ts.
+tools/parity/references/

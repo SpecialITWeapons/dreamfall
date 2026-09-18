@@ -117,8 +117,12 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     into.append(input);
     return input;
   };
-  /** A redraw: the panel changes the world while the loop may well be stopped. */
-  const draw = () => world.step(1e-6);
+  /**
+   * A redraw: the panel changes the world while the loop may well be stopped,
+   * and drawn on the spot rather than scheduled, because somebody just clicked
+   * a switch and is looking at the result.
+   */
+  const draw = () => world.frame(1e-6);
 
   section('page');
   reading('seed', () => String(world.seed));
@@ -131,6 +135,12 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   reading('geometries', () => String(world.memory().geometries));
   reading('textures', () => String(world.memory().textures));
   reading('gpu bytes', () => `${fixed(world.memory().total / 1e6, 1)} MB`);
+  // What the last frame actually drew, which is the question behind every layer
+  // switch below it.
+  reading('draws · triangles', () => {
+    const frame = world.memory();
+    return `${frame.draws} · ${frame.triangles.toLocaleString('en')}`;
+  });
 
   section('flight');
   reading('x  z', () => `${fixed(world.state.x)}  ${fixed(world.state.z)}`);
@@ -144,7 +154,7 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   button('autopilot', () => world.setAutopilot(!world.autopilot), flightControls);
   button('view', () => world.setView(world.view === 'tpp' ? 'fpp' : 'tpp'), flightControls);
   button('pause', () => world.setPaused(!world.paused), flightControls);
-  button('step', () => world.step(1 / 60), flightControls);
+  button('step', () => world.frame(1 / 60), flightControls);
   panel.append(flightControls);
   reading('autopilot · view · loop', () =>
     `${world.autopilot ? 'on' : 'off'} · ${world.view} · ${world.paused ? 'paused' : 'flying'}`.trim(),
