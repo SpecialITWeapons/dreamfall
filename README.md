@@ -39,7 +39,10 @@ repository.
     npm run dev          # http://localhost:5173
 
 Address parameters: `?seed=<n>` picks the world, `?webgl=1` forces WebGL2,
-`?profile=1` arms frame profiling, `?dev=1` loads the developer panel (M5).
+`?profile=1` arms frame profiling, `?dev=1` loads the developer panel -- its own
+chunk, downloaded only when asked for: readings of the page, the flight and the
+scenery, a switch per layer, a jump to a point, a settlement or another seed, the
+day on a slider, and a measurement of what the biomes' hooks cost a texel.
 `?seed=42` opens the reference world (the same terrain as fly-with-me's seed 42).
 
 ## Controls

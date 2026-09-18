@@ -177,8 +177,11 @@ export function createPools(deps: {
   const meshes: InstancedMesh[] = [];
   const materialsMade: Material[] = [];
 
-  const pool = (geometry: BufferGeometry, material: Material, capacity: number) => {
+  // `layer` is the dev panel's switch this pool answers to, and the only thing
+  // a mesh's name is used for here.
+  const pool = (geometry: BufferGeometry, material: Material, capacity: number, layer: string) => {
     const mesh = new InstancedMesh(geometry, material, capacity);
+    mesh.name = layer;
     const base = new InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     base.setUsage(DynamicDrawUsage);
     mesh.geometry.setAttribute('base', base);
@@ -202,7 +205,7 @@ export function createPools(deps: {
     const baked = bakeSpecies(entry, { leafTexture: (form) => textures.leaf(form) });
     const trunkTint = new Color(swatchColor(entry.trunk?.tint ?? 'white'));
     const bark = materials.wood(trunkTint, ringFade);
-    const wood = pool(baked.wood, bark, MAX_TREES);
+    const wood = pool(baked.wood, bark, MAX_TREES, 'trees');
     wood.castShadow = true;
     const record: SpeciesPool = {
       baked,
@@ -228,11 +231,13 @@ export function createPools(deps: {
           cardWorld.add(positionLocal.sub(cardWorld).mul(cardScale)),
         ),
         MAX_TREES,
+        'trees',
       );
       record.distant = pool(
         baked.distant,
         materials.leaf(map, distantCrown.mul(ringFade), positionLocal),
         MAX_TREES,
+        'trees',
       );
       record.crown.castShadow = true;
       // base and spin share one interleaved buffer; the plain base attribute
@@ -266,7 +271,7 @@ export function createPools(deps: {
     const problems = validateBaked(entry, geometry);
     if (problems.length > 0) throw new Error(`scenery library:\n${problems.join('\n')}`);
     const capacity = Math.min(BUDGET.propInstances, entry.budget?.instances ?? PROP_INSTANCES);
-    const mesh = pool(geometry, propMaterial, capacity);
+    const mesh = pool(geometry, propMaterial, capacity, 'props');
     mesh.castShadow = true;
     props.set(entry.id, { entry, mesh, capacity, count: 0 });
   }
@@ -306,7 +311,7 @@ export function createPools(deps: {
     for (let floors = entry.floors[0]; floors <= entry.floors[1]; floors++) {
       const baked = bakeStructure(entry, floors, structureKit);
       const capacity = BUDGET.propInstances;
-      const mesh = pool(baked.geometry, buildingMaterial, capacity);
+      const mesh = pool(baked.geometry, buildingMaterial, capacity, 'buildings');
       mesh.castShadow = true;
       const lit = new InstancedBufferAttribute(new Float32Array(capacity), 1);
       lit.setUsage(DynamicDrawUsage);

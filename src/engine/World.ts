@@ -19,6 +19,7 @@ import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './ava
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
 import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
+import { createLayers, type Hideable, type Layers } from './render/Layers';
 import { createPost, type Post } from './render/Post';
 import { createLitMaterial, createSoftShadow } from './render/SoftLighting';
 import { createGroundShade } from './scenery/GroundShade';
@@ -36,6 +37,7 @@ import { createSkyDome } from './sky/SkyDome';
 import { createSkyUniforms } from './sky/SkyUniforms';
 import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
+import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
 import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
@@ -87,6 +89,12 @@ export interface World {
   readonly heightfield: Heightfield;
   readonly atmosphere: Atmosphere;
   readonly post: Post;
+  /**
+   * What the scene is allowed to draw, by layer. The dev panel's switches, and
+   * the only honest way to ask what a layer is costing: turn it off and read
+   * the frame again.
+   */
+  readonly layers: Layers;
   readonly wind: Wind;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
@@ -94,6 +102,13 @@ export interface World {
   reducedMotion: boolean;
   /** Bakes and plants the scenery; idempotent, and already done unless deferScenery was set. */
   plant(): void;
+  /**
+   * What the registry's presence and height hooks cost a texel of the window,
+   * measured over the ground under the flyer against a sampler with no
+   * registry at all. The budget is soft and the answer is a measurement, which
+   * is the only kind there is for a function somebody wrote.
+   */
+  measureHeightHooks(samples?: number): HookCosts;
   update(dt: number): void;
   /**
    * What the opening is asking for this frame, so the page can put its title
@@ -197,6 +212,26 @@ export function createWorld(opts: WorldOptions): World {
     pattern: patternById(opts.pattern ?? 'plain'),
   });
   scene.add(avatar.object);
+  // The layer switches. The scenery's arrays are filled when it is planted --
+  // which is after this, when the page defers the bake for its own veil -- and
+  // they are the same arrays either way, so the switches are made once. Their
+  // order here is the order the dev panel lists them in.
+  const sceneryGroups: Record<string, Hideable[]> = {
+    grass: [],
+    trees: [],
+    props: [],
+    buildings: [],
+    roads: [],
+  };
+  const layers = createLayers({
+    terrain: [terrain.mesh],
+    water: [water.mesh],
+    ...sceneryGroups,
+    clouds: [clouds.mesh],
+    deck: [cloudSea.mesh],
+    sky: [skyDome.mesh],
+    figure: [avatar.object],
+  });
   const steering = createSteering(sim.flight, { view: opts.view, orbit: opts.orbit });
   /** Where the camera hung before the script borrowed it. */
   const framing = { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist };
@@ -233,6 +268,7 @@ export function createWorld(opts: WorldOptions): World {
       litMaterial,
       uniforms,
     });
+    for (const [name, objects] of Object.entries(scenery.groups)) sceneryGroups[name]?.push(...objects);
   };
 
   const follow = new Vector3();
@@ -356,6 +392,9 @@ export function createWorld(opts: WorldOptions): World {
         altitude: sample.altitude,
       }),
     );
+    // Last, after everything that decides visibility for its own reasons: a
+    // switch may only take away.
+    layers.apply();
   };
   if (!opts.deferScenery) plant();
   place(0);
@@ -427,6 +466,15 @@ export function createWorld(opts: WorldOptions): World {
       sim.step(dt);
       place(dt);
     },
+    layers,
+    measureHeightHooks: (samples) =>
+      measureHeightHooks({
+        seed: opts.seed,
+        biomes: library.biomes,
+        x: state.x,
+        z: state.z,
+        samples,
+      }),
     resize(aspect) {
       camera.aspect = safeAspect(aspect);
       camera.updateProjectionMatrix();

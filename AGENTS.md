@@ -21,8 +21,9 @@ textures, ground shade, grass), `sky/`
 display chain), `time/` (day clock). `three` is aliased to
 `three/webgpu`, pinned to 0.185.1; an
 upgrade is its own PR with a pixel comparison. `tools/` and `tests/` never
-end up in the bundle. Paths are relative, so the page works under a Pages
-subdirectory.
+end up in the bundle, and neither does `src/dev/`: the dev panel is imported
+dynamically by `?dev=1` and is a chunk of its own. Paths are relative, so the
+page works under a Pages subdirectory.
 
 ## Rules
 
@@ -34,7 +35,8 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`) import neither
+  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -57,7 +59,8 @@ subdirectory.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
 - Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
   sits outside the HUD pill on purpose, because the pill dims and "the autopilot
-  is off" must not.
+  is off" must not. The dev panel's strings are its own: that rule is about the
+  page a player reads.
 
 ## Terrain, sky and time
 
@@ -334,6 +337,26 @@ subdirectory.
   numbers from three places, because a house is baked once and stood up
   hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
   the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
+
+## The dev panel
+
+- `?dev=1` and nothing else pulls in `src/dev/Panel.ts`. It is a **view over
+  `WorldDebug`** -- the same surface the browser tests read -- so it cannot show
+  a number no test can assert, and it is written by hand rather than pulled from
+  a control library that would ship in `dependencies` for a page only whoever
+  builds this ever opens. Keep its value imports type-only: a value import from
+  the engine drags a shared chunk out of the main bundle and the page pays a
+  second request for a panel it never asked for.
+- A layer switch may only take away. The engine writes visibility every frame
+  for its own reasons (the cloud sea under the deck, the grass over its ceiling,
+  the figure in the first person), so `layers.apply()` runs last in the world's
+  update and hides what is switched off; switching one back on hands the object
+  to the engine, which is free to hide it again.
+- What a hook costs is measured, never argued about. `measureHeightHooks` times
+  the window's own `sampleWindow` against a sampler with no registry at all, and
+  each biome's share by leaving that one out -- a marginal cost, which is the
+  honest answer when three of ten biomes get to speak for a texel. The soft
+  budget (2 µs a texel) travels in the result, so a reader needs nothing else.
 
 ## Checking
 

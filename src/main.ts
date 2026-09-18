@@ -6,7 +6,8 @@ import { createEngine } from './engine/Engine';
 import type { View } from './engine/flight/Steering';
 import { createLoop } from './engine/Loop';
 import { createWorld } from './engine/World';
-import { installDebug, type DisposeReport } from './page/Debug';
+import type { DevPanel } from './dev/Panel';
+import { installDebug, type DisposeReport, type WorldDebug } from './page/Debug';
 import { createGate } from './page/Gate';
 import { createHud } from './page/Hud';
 import { browserStorage, createMemory, rememberedSeed, validateResume } from './page/Memory';
@@ -97,8 +98,26 @@ const loop = createLoop({
   render: () => engine.render(world.scene, world.camera),
 });
 
+/**
+ * One frame, driven by hand: the tests' `step`, the dev panel's redraws and the
+ * jump all go through this, so none of them can advance the world in a way the
+ * page itself never does.
+ */
+const stepByHand = (dt: number) => {
+  world.update(dt);
+  // The card is the page's, not the world's, and a test stepping the world by
+  // hand is still entitled to see it: without this the opening advances and the
+  // title never appears, which is a difference between the tested page and the
+  // real one.
+  hud.setTitle(world.opening.card);
+  hud.setOpening(!world.opening.done);
+  loop.renderOnce();
+};
+
 let ready = false;
 let disposed = false;
+/** The dev panel, when the address asked for one: it polls the world, so dispose takes it down first. */
+let devPanel: DevPanel | null = null;
 // The veil lifts only once the first frame is really on screen.
 loop.onFirstFrame(async () => {
   await engine.waitForGpu();
@@ -286,6 +305,8 @@ async function dispose(): Promise<DisposeReport> {
   if (!disposeReport) {
     saveFlight();
     disposed = true;
+    devPanel?.dispose();
+    devPanel = null;
     const before = engine.memory();
     loop.stop();
     world.dispose();
@@ -312,7 +333,7 @@ engine.onDeviceLost(() => {
   if (!disposed) window.dreamfallFailure();
 });
 
-installDebug(window, {
+const debug: WorldDebug = {
   get ready() {
     return ready;
   },
@@ -328,16 +349,24 @@ installDebug(window, {
   seed: params.seed,
   backend: engine.backend,
   state: world.sim.state,
-  step(dt) {
-    world.update(dt);
-    // The card is the page's, not the world's, and a test stepping the world by
-    // hand is still entitled to see it: without this the opening advances and
-    // the title never appears, which is a difference between the tested page
-    // and the real one.
-    hud.setTitle(world.opening.card);
-    hud.setOpening(!world.opening.done);
-    loop.renderOnce();
+  step: stepByHand,
+  setPaused(on: boolean) {
+    if (loop.running && !disposed && loop.paused !== on) togglePause();
   },
+  jump(x: number, z: number, above = 120) {
+    const { state } = world.sim;
+    state.x = x;
+    state.z = z;
+    state.y = world.heightAt(x, z) + above;
+    state.vy = 0;
+    // A jump crosses cells, so the window refills, the ring rebuilds and the
+    // origin may move: one step is what puts the world where the flight is.
+    stepByHand(0.05);
+  },
+  get layers() {
+    return world.layers;
+  },
+  measureHeightHooks: (samples) => world.measureHeightHooks(samples),
   begin,
   dispose,
   memory: () => engine.memory(),
@@ -446,4 +475,12 @@ installDebug(window, {
     move: (x, y) => steering.pointerMove(x, y),
     up: () => steering.pointerUp(),
   },
-});
+};
+installDebug(window, debug);
+
+// `?dev=1`, and only then: the panel is a separate chunk, so a page nobody
+// asked it of never downloads a line of it.
+if (params.dev) {
+  const { createDevPanel } = await import('./dev/Panel');
+  devPanel = createDevPanel(document, debug);
+}

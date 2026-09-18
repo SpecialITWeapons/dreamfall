@@ -1,4 +1,6 @@
 import type { MemorySnapshot } from '../engine/Engine';
+import type { Layers } from '../engine/render/Layers';
+import type { HookCosts } from '../engine/terrain/HookCost';
 import type { KeyAction, Orbit, View } from '../engine/flight/Steering';
 import type { Capture } from '../engine/render/Post';
 import type { SceneryStats } from '../engine/scenery/Scenery';
@@ -16,6 +18,7 @@ export interface WorldDebug {
   readonly ready: boolean;
   readonly running: boolean;
   readonly paused: boolean;
+  setPaused(on: boolean): void;
   readonly frames: number;
   readonly seed: number;
   readonly backend: string;
@@ -25,6 +28,16 @@ export interface WorldDebug {
   dispose(): Promise<DisposeReport>;
   memory(): MemorySnapshot;
   heightAt(x: number, z: number): number;
+  /** Drop the flight over a world point, `above` metres over the ground: the dev panel's jump. */
+  jump(x: number, z: number, above?: number): void;
+  /**
+   * What the scene is allowed to draw. A switch only takes away -- the engine
+   * still hides the cloud sea under the deck and the figure in the first
+   * person -- so this says what is switched on, not what is on screen.
+   */
+  readonly layers: Pick<Layers, 'names' | 'visible' | 'set' | 'toggle'>;
+  /** What the registry's hooks cost a texel of the window, measured where the flight is. */
+  measureHeightHooks(samples?: number): HookCosts;
   /** Day-clock phase; setting it re-evaluates the palette and draws one frame. */
   dayPhase: number;
   readonly origin: { x: number; z: number };

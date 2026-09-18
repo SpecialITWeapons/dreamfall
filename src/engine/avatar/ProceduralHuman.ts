@@ -12,7 +12,9 @@
 // This used to be twenty solids parented to one another, and every shoulder
 // sweep opened a seam between two of them that no pose could close; the
 // Avatar interface was written so that this swap would not touch the engine,
-// and it did not. Budget: 4 000 triangles.
+// and it did not. There is no triangle budget here any more: 4 000 was a
+// starting value nobody in this repository ever measured, and the figure is one
+// object drawn twice against a terrain of 557 568 triangles a frame.
 import {
   Bone,
   BufferAttribute,

@@ -41,6 +41,9 @@ test('the veil holds until the first frame, then Begin starts the flight', async
     .toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__world!.backend)).toBe('webgl2');
   await expect(page.locator('#hud')).not.toHaveAttribute('inert', '');
+  // The dev panel is a separate chunk behind `?dev=1`: a page that did not ask
+  // for it neither shows it nor downloads it.
+  expect(await page.locator('#dev').count()).toBe(0);
   expect(errors).toEqual([]);
 });
 
@@ -1685,5 +1688,112 @@ test('a hand on the controls ends the opening, and a remembered flight never see
   expect(await page.evaluate(() => window.__world!.resumed)).toBe(true);
   expect(await page.evaluate(() => window.__world!.opening.done)).toBe(true);
   expect(await page.evaluate(() => window.__world!.opening.card)).toBe(0);
+  expect(errors).toEqual([]);
+});
+test('the dev panel switches a layer off and the frame loses it', async ({ page }) => {
+  // Three captures, so the first compiles the scene a second time for the
+  // capture's own target: slow on a runner with no GPU, and the reason this is
+  // one test and not three.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await expect(page.locator('#dev')).toBeVisible();
+  await paused(page);
+  // Noon: the galaxy's atlas lands in the middle of a test like this one, and
+  // at dawn that is worth 0.0005 of the picture (measured in the wind test).
+  // At noon the night factor is zero and the atlas cannot change a pixel.
+  await page.evaluate(() => {
+    window.__world!.dayPhase = 0.5;
+  });
+  const shot = async () => {
+    const data = await page.evaluate(async () => {
+      const picture = await window.__world!.capture(96, 54);
+      return picture ? Array.from(picture.data) : null;
+    });
+    return data;
+  };
+  const diff = (x: number[] | null, y: number[] | null) =>
+    x && y ? x.reduce((sum, v, i) => sum + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  // One capture thrown away first. The first capture of a page compiles the
+  // whole scene a second time for the capture's own target, and taken right
+  // after the day has been moved it reads 0.07 away from every capture after
+  // it -- measured; each one after that is identical to the last bit. The
+  // baseline has to be one of those.
+  await shot();
+  const full = await shot();
+  const terrain = page.locator('#dev label.layer', { hasText: 'terrain' }).locator('input');
+  await terrain.uncheck();
+  expect(await page.evaluate(() => window.__world!.layers.visible('terrain'))).toBe(false);
+  const bare = await shot();
+  // A world with the ground switched off is a different picture by any measure;
+  // what it is not is a broken one, so the pixels are still numbers.
+  expect(diff(full, bare)).toBeGreaterThan(0.02);
+  expect(bare!.every(Number.isFinite)).toBe(true);
+  await terrain.check();
+  expect(await page.evaluate(() => window.__world!.layers.visible('terrain'))).toBe(true);
+  // And the switch gave it back: the same sun, the same place, the same frame,
+  // to within the microsecond of day each redraw costs (measured: 1.4e-5).
+  expect(diff(full, await shot())).toBeLessThan(1e-3);
+  expect(errors).toEqual([]);
+});
+
+test('the dev panel measures what the biomes cost a texel', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await paused(page);
+  await page.locator('#dev button', { hasText: 'measure hooks' }).click();
+  const costs = page.locator('#dev .wrap').last();
+  await expect(costs).toContainText(/hooks -?\d+\.\d\d µs\/texel \(budget 2\)/, { timeout: 30_000 });
+  // The measurement itself, off the same surface: one entry per biome in the
+  // registry, real time on the clock, and nothing infinite in it.
+  const measured = await page.evaluate(() => {
+    const w = window.__world!;
+    const costs = w.measureHeightHooks(512);
+    return { ...costs, biomes: w.biomes };
+  });
+  expect(measured.perBiome.map((b) => b.id)).toEqual(measured.biomes);
+  expect(measured.base).toBeGreaterThan(0);
+  expect(measured.all).toBeGreaterThan(0);
+  expect(Number.isFinite(measured.hooks)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the dev panel jumps the flight to a settlement', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await paused(page);
+  // The village of the tests above, typed into the panel's own fields.
+  const fields = page.locator('#dev .fields input[type=number]');
+  await fields.nth(0).fill(String(VILLAGE.x));
+  await fields.nth(1).fill(String(VILLAGE.z));
+  await page.locator('#dev .fields button', { hasText: 'go' }).first().click();
+  const where = await page.evaluate(() => {
+    const w = window.__world!;
+    return { x: w.state.x, z: w.state.z, clearance: w.clearance };
+  });
+  // Not to the metre: a jump ends in a step, and a step is a step -- the flight
+  // flies the 0.05 s that puts the window, the ring and the origin where it
+  // has landed. Two metres at 44 m/s is what that costs.
+  expect(Math.hypot(where.x - VILLAGE.x, where.z - VILLAGE.z)).toBeLessThan(5);
+  expect(where.clearance).toBeGreaterThan(50);
+  // And the settlement is found from there: the panel's `site` button walks the
+  // flight to the middle of the plan the ring is holding.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = window.__world!;
+          w.step(0.05);
+          return w.scenery!.buildings;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+  await page.locator('#dev .fields button', { hasText: 'site' }).click();
+  const site = await page.evaluate(() => {
+    const w = window.__world!;
+    return { id: w.siteNear(w.state.x, w.state.z)!.id, x: w.state.x, z: w.state.z };
+  });
+  expect(site.id).toBe('village:0,0');
+  expect(Math.hypot(site.x - VILLAGE.x, site.z - VILLAGE.z)).toBeLessThan(200);
   expect(errors).toEqual([]);
 });

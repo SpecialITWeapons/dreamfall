@@ -745,3 +745,42 @@ Okno świeci, gdy `fract(pane + lit) <= wake`. Jasność dostaje jeszcze 0,7..1,
 drugiego rzutu, bo kuchnia to nie jest sień. Koszt: dwa atrybuty float na
 instancję i cztery instrukcje we fragmencie, który i tak już mnożył przez
 `uNight`.
+
+## Koszt haków biomów: 0,9 µs na texel, i dwie pułapki w mierzeniu
+
+Spec daje hakowi `height` miękki budżet **2 µs na texel** i mówi, że mierzy go
+panel dev (§5.5). Od 2026-09-18 mierzy: przycisk „measure hooks” wywołuje
+`measureHeightHooks`, które chronometrażuje `sampleWindow` -- dokładnie tę
+pracę, którą okno wysokości wykonuje na texel -- przeciwko samplerowi z pustym
+rejestrem, który idzie gałęzią samych pól bazowych.
+
+Seed 42, rejestr dwunastu biomów, 8 192 texeli na przebieg, najlepszy z trzech:
+
+| miejsce           | pola bazowe | z hakami | haki     |
+| ----------------- | ----------- | -------- | -------- |
+| start (0, 0)      | 1,62 µs     | 2,46 µs  | **0,85** |
+| wieś (1525, 1588) | 1,62        | 2,50     | **0,89** |
+| miasteczko        | 1,52        | 2,54     | **1,03** |
+| las bez osad      | 1,56        | 2,66     | **1,10** |
+
+Czyli połowa budżetu, i to przy dwunastu biomach, z których trzy dostają głos na
+texel. Udziały krańcowe pojedynczych biomów (mierzone przez wyjęcie jednego z
+rejestru) siedzą w 0,0..0,4 µs, czyli w okolicach szumu -- żaden hak w tym
+rejestrze nie jest kosztowny.
+
+Dwie pułapki, obie znalezione przez to, że pierwsze liczby były bez sensu:
+
+**Kolejność próbkowania mierzy cache, nie haki.** Pierwsza wersja rozkładała
+punkty spiralą złotego kąta -- równomiernie po dysku, bez siatki, co dla szumu
+jest dobrym pomysłem. Dla `Fields.lattice` jest katastrofą: ma cztery gniazda
+pamiętanych środków, a pudło kosztuje **pięć** próbek pól bazowych (środek i
+cztery sondy na nachylenie). Okno wypełnia się wierszami i zostaje w jednej
+komórce krat przez setki texeli; spirala przeskakuje między komórkami co krok.
+Zmierzone wokół startu: **16,9 µs** na texel spiralą i **0,85 µs** tę samą
+ziemię wierszami. Pierwsza liczba była pomiarem kolejności próbkowania.
+
+**Pierwszy przebieg w procesie to pomiar interpretera.** Ta sama praca: 19,96 µs
+na texel przy pierwszym wywołaniu w procesie, 2,78 przy drugim. Rozgrzewka idzie
+teraz przed jakimkolwiek chronometrażem (dwa przebiegi po 2 048 texeli, pełnym
+rejestrem i pustym), każda konfiguracja ma własną rozgrzewkę 256 texeli, a z
+trzech przebiegów zostaje najszybszy.
