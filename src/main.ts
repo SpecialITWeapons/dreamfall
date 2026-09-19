@@ -230,9 +230,30 @@ wardrobe.onPick((outfitId, patternId) => {
   if (loop.running) loop.renderNow();
 });
 
+/** The pill and the flag that remembers what the pill says, written together. */
 const showAutopilot = () => {
   shownAutopilot = steering.autopilot;
   hud.setAutopilot(shownAutopilot);
+};
+
+/**
+ * The page's own end of the opening: the world lets go of the flight, the
+ * camera and the clock, and **the HUD is told in the same breath** rather than
+ * on the next frame.
+ *
+ * The watcher in the loop is not enough by itself, because a frame can be
+ * seconds away -- a shader still compiling, a throttled tab, a runner with no
+ * GPU. Measured with the CPU slowed twenty times: after Begin the loop drew
+ * five frames and then none for as long as anybody watched, and "autopilot off
+ * -- arrows fly the figure" stayed up over a flight that was flying itself.
+ * That is what the page looked like to whoever was in front of it, not a
+ * detail of a test.
+ */
+const leaveOpening = () => {
+  world.skipOpening();
+  hud.setTitle(0);
+  hud.setOpening(false);
+  showAutopilot();
 };
 hud.onAutopilot(() => {
   steering.setAutopilot(true);
@@ -251,7 +272,7 @@ canvas.addEventListener('pointerdown', (e) => {
   // do next. It goes here rather than inside `Steering`, because a click that
   // starts no drag -- the left button on a page that only orbits with it -- is
   // still somebody saying they have seen enough.
-  world.skipOpening();
+  leaveOpening();
   // a drag already owns the stick: a second button going down (e.g. the left
   // button while the right one steers) must not steal dragButton out from under
   // it, or the drag it interrupted never gets its matching pointerUp -- and with
@@ -310,7 +331,7 @@ addEventListener('keydown', (e) => {
   if (!loop.running) return;
   if (e.key.startsWith('Arrow')) e.preventDefault();
   if (loop.paused) return;
-  world.skipOpening();
+  leaveOpening();
   const action = steering.key(e.code);
   if (action === 'view') {
     hud.setView(steering.view);
@@ -325,7 +346,7 @@ motionPreference.addEventListener('change', (e) => {
   world.reducedMotion = e.matches;
   // Asking for less motion in the middle of a scripted flight is asking for
   // this one to stop.
-  if (e.matches) world.skipOpening();
+  if (e.matches) leaveOpening();
   if (e.matches && loop.running && !loop.paused) togglePause();
 });
 
@@ -462,11 +483,7 @@ const debug: WorldDebug = {
   get opening() {
     return { card: world.opening.card, done: world.opening.done };
   },
-  skipOpening() {
-    world.skipOpening();
-    hud.setTitle(0);
-    hud.setOpening(false);
-  },
+  skipOpening: leaveOpening,
   get wearing() {
     return { outfit: world.avatar.outfit.id, pattern: world.avatar.pattern.id };
   },
