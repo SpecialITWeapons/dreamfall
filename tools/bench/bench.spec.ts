@@ -26,18 +26,35 @@ const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 2);
 const FRAMES = Number(process.env.BENCH_FRAMES ?? 24);
 const SEED = Number(process.env.BENCH_SEED ?? 42);
 
-/** The fifth percentile of a window of frames: the fast end, which is the engine's own. */
-const p5 = (ms: number[]) => {
+const at = (ms: number[], share: number) => {
   const sorted = [...ms].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * 0.05)))]!;
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * share)))]!;
 };
+/**
+ * The fifth percentile: the fast end of a window of frames, and the spec's own
+ * statistic. It is the right one on a GPU, where frames are alike and the slow
+ * ones are the machine's fault. It is the wrong one here, and the bench said so
+ * itself: on a rasteriser with no GPU the intervals come out bimodal --
+ * measured at one vantage, `[3399, 3360, 6797, 11, 3454, 3352, 3367, 3425]` --
+ * because now and then the loop reports two frames inside one sampling window
+ * and the pair divides into something that never happened. The fifth percentile
+ * picks exactly those, which is how a vantage came to read 7.3 ms where every
+ * frame of it took three and a third seconds. The median is the headline; the
+ * fast end is kept beside it, because on a real GPU it is the interesting one.
+ */
+const p5 = (ms: number[]) => at(ms, 0.05);
+const median = (ms: number[]) => at(ms, 0.5);
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
 interface Reading {
   name: string;
-  /** The whole frame: the update, the submit, and the wait for the GPU to finish it. */
+  /** Median interval between two frames the page drew: what a frame costs here. */
   frameMs: number;
+  /** The fast end of the same window (see `p5`). */
+  bestMs: number;
+  /** Frames a second across the whole window, drawn frames over wall time. */
+  fps: number;
   gpuMs: number;
   draws: number;
   triangles: number;
@@ -104,10 +121,13 @@ test('what a frame costs at five vantages', async ({ page }) => {
         return { cpu, gpu };
       }, FRAMES);
       await page.evaluate(() => window.__world!.setPaused(true));
+      const spent = sample.cpu.reduce((sum, ms) => sum + ms, 0);
       const reading: Reading = {
         name: vantage.name,
-        frameMs: p5(sample.cpu),
-        gpuMs: p5(sample.gpu),
+        frameMs: median(sample.cpu),
+        bestMs: p5(sample.cpu),
+        fps: spent > 0 ? (sample.cpu.length * 1000) / spent : 0,
+        gpuMs: median(sample.gpu),
         draws: drawn.draws,
         triangles: drawn.triangles,
         trees: drawn.trees,
@@ -124,17 +144,21 @@ test('what a frame costs at five vantages', async ({ page }) => {
   const readings = VANTAGES.map((v) => best.get(v.name)!);
   const table = readings.map((r) => ({
     vantage: r.name,
-    'frame ms (p5)': round2(r.frameMs),
+    'frame ms': round2(r.frameMs),
+    fps: round2(r.fps),
+    'best ms': round2(r.bestMs),
     // WebGL2 has no timestamps worth the name, so the column says so rather
     // than printing the same stale number five times.
-    'gpu ms (p5)': r.gpuMs > 0 ? round2(r.gpuMs) : '--',
+    'gpu ms': r.gpuMs > 0 ? round2(r.gpuMs) : '--',
     draws: r.draws,
     triangles: r.triangles,
     trees: r.trees,
     buildings: r.buildings,
     grass: r.grass,
   }));
-  console.log(`\nseed ${SEED} · ${backend} · ${ROUNDS} rounds of ${FRAMES} frames`);
+  console.log(
+    `\nseed ${SEED} · ${backend} · ${ROUNDS} rounds of ${FRAMES} frames · the fastest round of each`,
+  );
   console.table(table);
   const out = {
     seed: SEED,
