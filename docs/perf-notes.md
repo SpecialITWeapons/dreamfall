@@ -784,3 +784,52 @@ na texel przy pierwszym wywołaniu w procesie, 2,78 przy drugim. Rozgrzewka idzi
 teraz przed jakimkolwiek chronometrażem (dwa przebiegi po 2 048 texeli, pełnym
 rejestrem i pustym), każda konfiguracja ma własną rozgrzewkę 256 texeli, a z
 trzech przebiegów zostaje najszybszy.
+
+## Przegląd wydajności M5: pięć stanowisk, i czego one nie mówią
+
+`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek,
+najszybsza runda z każdej. Kolumny: mediana odstępu między klatkami, klatki na
+sekundę z całego okna, najszybsza klatka okna, potem to, co klatka narysowała.
+
+| stanowisko   | ms/klatkę | fps  | najszybsza | rysowań | trójkątów | drzew | domów | kęp trawy |
+| ------------ | --------- | ---- | ---------- | ------- | --------- | ----- | ----- | --------- |
+| świt         | 3170      | 0,31 | 7,5        | 43      | 1 094 811 | 1 175 | 43    | 12 888    |
+| południe     | 3172      | 0,31 | 7,7        | 43      | 1 094 811 | 1 175 | 43    | 12 888    |
+| daleko       | 2976      | 0,34 | 7,4        | 42      | 1 177 547 | 1 175 | 43    | 0         |
+| nad pokładem | 3297      | 0,30 | 6,2        | 42      | 1 177 547 | 1 175 | 43    | 0         |
+| noc nad wsią | 4275      | 0,23 | 7,6        | 47      | 1 711 921 | 2 512 | 43    | 26 411    |
+
+**Te liczby są SwiftShadera, nie silnika.** Klatka kosztuje tu trzy i jedną
+trzecią sekundy, a własny udział CPU to `ringMs` 14,8 i `grassMs` 19,5 —
+piętnaście i dwadzieścia milisekund, czyli pół procenta klatki. Cała reszta to
+programowa rasteryzacja miliona trójkątów na maszynie bez GPU. Wniosek
+bezwzględny („tyle kosztuje klatka") nie istnieje, dopóki ktoś nie puści tego na
+sprzęcie z WebGPU, gdzie kolumna `gpu ms` przestanie być pusta. Wniosek względny
+istnieje i jest jedyny, po co to narzędzie powstało: **noc nad wsią jest o 35 %
+droższa od południa**, przy 2 512 drzewach zamiast 1 175, 26 tysiącach kęp
+trawy zamiast 13 i 1,71 mln trójkątów zamiast 1,09. Drzewa i trawa są tym, co
+się liczy; pora dnia sama z siebie nie kosztuje nic (świt i południe różnią się
+o 2 ms na 3 170).
+
+Dwie pułapki po drodze, obie warte zapamiętania, bo obie dawały liczby, w które
+łatwo było uwierzyć:
+
+**Klatki nie da się pędzić z ręki.** Pierwszy bench robił `step()` w pętli i
+mierzył 0,2 ms na klatkę przy 1,18 mln trójkątów. To nie była klatka, tylko
+pokwitowanie: `renderOnce` planuje klatkę na `requestAnimationFrame` i wraca.
+Po dołożeniu bariery GPU po każdym renderze wychodziło... to samo 0,2 ms, bo
+three podbija `frameId` grafu węzłów **wyłącznie we własnym ticku animacji**, a
+pas sceny w łańcuchu wyświetlania aktualizuje się raz na ten identyfikator: sto
+ręcznych renderów to jedna scena i dziewięćdziesiąt dziewięć przemalowań
+łańcucha, po 3 rysowania i 3 trójkąty każde. Bench liczy dziś odstępy między
+klatkami **pętli strony**.
+
+**Piąty percentyl ze speca kłamał.** Na GPU jest słuszny: klatki są do siebie
+podobne, a wolna klatka to wina maszyny. Tutaj rozkład jest dwumodalny —
+zmierzone na jednym stanowisku `[3399, 3360, 6797, 11, 3454, 3352, 3367, 3425]`
+— bo pętla czasem zgłasza dwie klatki w jednym oknie próbkowania i para dzieli
+się na liczbę, której nigdy nie było. Piąty percentyl wyławia właśnie te: czytał
+7,3 ms tam, gdzie każda klatka trwała 3,3 s, i 2 987 ms na piątym stanowisku,
+co wyglądało jak stokrotny koszt wysokości, a było jedynym stanowiskiem, na
+którym artefakt akurat nie wypadł. Sonda po wysokościach (120, 400, 800, 1200,
+1500 m) pokazuje koszt **płaski**: 3,1–3,4 s wszędzie. Nagłówkiem jest mediana.

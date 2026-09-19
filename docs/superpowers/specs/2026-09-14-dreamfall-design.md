@@ -886,7 +886,13 @@ wersją.
    mierzą i fotografują klatkę prawdziwej strony, obok siebie na jednym
    zestawie stanowisk w `tools/vantages.ts`; `npm run bench` i `npm run
    parity`, nigdy w CI, bo współdzielony runner mierzy własną pogodę),
-   przegląd wydajności.
+   przegląd wydajności (**zrobione 2026-09-19**: pięć stanowisk w
+   `docs/perf-notes.md`; noc nad wsią jest o 35 % droższa od południa i robią
+   to drzewa z trawą, a pora dnia sama z siebie nie kosztuje nic. Liczby
+   bezwzględne są SwiftShadera — udział CPU to 15 + 20 ms na klatkę trwającą
+   3,3 s — więc czekają na przebieg na sprzęcie z WebGPU; dwie pułapki po
+   drodze, obie w notatkach: klatki nie da się pędzić z ręki, a piąty percentyl
+   ze speca wyławiał artefakty próbkowania).
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,
    jeziora, pola uprawne.
 
