@@ -291,10 +291,26 @@ jest nośnikiem odcienia.
 | stanowiska jednego biomu w pierścieniu | 4 |
 | trójkąty dróg jednego stanowiska | 60 000 |
 | promień stanowiska | <= 900 m |
-| trójkąty postaci | 4 000 |
+| trójkąty postaci | zniesiony 2026-09-18 (dziś 1 960) |
 | `MAX_HEIGHT_DELTA` modyfikatora wysokości | 300 m |
 | koszt haka `ground` (miękki, mierzony narzędziem) | 1 ms GPU przy 2 MP |
 | koszt haka `height` (miękki, mierzony w panelu dev) | 2 µs na texel |
+
+> **Poprawka 2026-09-18: sufit postaci zniesiony.** Właściciel kazał go znieść i
+> miał rację: 4 000 nigdy nie było w tym repozytorium zmierzone, tylko przepisane
+> z tabeli *wartości startowych*. Teren rysuje 557 568 trójkątów na klatkę, a
+> postać jest jednym obiektem rysowanym dwa razy — dziś 1 960 trójkątów, czyli
+> trzy dziesiąte procenta klatki. Dłonie z palcami i buty z piętą są warte
+> więcej niż ta oszczędność. Zostaje podłoga (test żąda > 700), bo profil
+> zestrugany do patyka to prawdziwa usterka, a sufit nigdy jej nie łapał.
+
+> **Uzupełnienie 2026-09-18: koszt haka `height` jest mierzalny.**
+> `measureHeightHooks` (panel dev, przycisk „measure hooks”) mierzy
+> `sampleWindow` — dokładnie tę pracę, którą okno wykonuje na texel — przeciwko
+> samplerowi bez rejestru; różnica to koszt obecności i wysokości razem, bo hak
+> wysokości nie ruszy, póki obecność nie powie, czyja to ziemia. Udział jednego
+> biomu to koszt krańcowy: mierzony przez wyjęcie go z rejestru, bo na jednym
+> texelu głos mają trzy z dziesięciu.
 
 ### 5.6 Walidacja
 
@@ -631,7 +647,7 @@ export interface Avatar {
 przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty
 80°), uda odchylone do tyłu, kolana zgięte 57°, stopy na własnym zawiasie
 kostki (bez niego but jest tylko grubszą łydką); w kolorach wierzchołków,
-budżet 4 000 trójkątów mierzony walidatorem.
+bez sufitu trójkątów (poprawka w §5.5).
 
 > **Poprawka 2026-09-17: skóra na kościach zamiast brył.** Spec mówił
 > „elipsoidy i walce”, i przez cztery commity naprawcze to było dwadzieścia
@@ -665,6 +681,20 @@ włączone).
 Stroje i wzory: port mechaniki upierzeń i znaczeń. Katalog stroje × wzory,
 wzór przypisany regułą, kafelki SVG z tych samych liczb co geometria,
 „szafa” za przyciskiem w rogu po Begin, zapamiętana w ustawieniach.
+
+> **Zrobione 2026-09-19.** Sześć strojów i pięć znaczeń w
+> `avatar/Outfits.ts`. Znaczenie jest **czystą funkcją miejsca na łańcuchu** —
+> `along` i `around`, zapisywane przy każdym wierzchołku przez `Skin.ts`, bo
+> wie o nich tylko ten przebieg, który ten wierzchołek postawił — i wolno mu
+> przemalować **wyłącznie kombinezon**, wyłącznie na kolor, który ten strój już
+> ma. Inaczej katalog prędzej czy później pomaluje gogle. Kafelki SVG w panelu
+> rysuje ta sama funkcja, którą chodzi `repaint`, więc kafelek nie umie pokazać
+> znaczenia, którego postać by nie nosiła. To, co pokrywa postać, mieści się w
+> kopercie palety; gogle, buty i rękawice siedzą pod jej podłogą celowo (wizjer
+> ma czytać jako ciemny ze stu metrów) i test trzyma obie połowy. Reguła: wzoru
+> nikt nie wybrał → bierze go ziarno (`patternForSeed`), a wybrany jest
+> **czyjś** — zapisuje się jako wybór i jedzie do następnego świata, podczas gdy
+> niewybrany należy do świata.
 
 ## 10. Lot
 
@@ -735,7 +765,7 @@ TPP, widok, strój, wzór) i `dreamfall-resume` (ziarno, poza, czas, pora dnia,
 harmonogramy). Pola walidowane funkcją `finite(v, min, max)`; `?seed` zawsze
 wygrywa; adres jest przepisywany, żeby niósł ziarno; link do udostępnienia to
 origin, ścieżka i ziarno. Parametry adresu: `seed`, `webgl=1`, `profile=1`,
-`dev=1` (dynamiczny import panelu Tweakpane).
+`dev=1` (dynamiczny import panelu dev).
 
 Dostępność: `inert` przed Begin, etykiety ARIA, cele 44 px, safe-area,
 preferencja ograniczonego ruchu startuje w pauzie i wyłącza kołysanie oraz
@@ -767,9 +797,41 @@ Warstwy:
 3. Ręcznie przed wydaniem: benchmark, pełna doba, przejścia przez chmury,
    telefon.
 
-Narzędzia poza bundlem: `tools/bench.ts` (port), `tools/parity.ts` (port, z
-zapisem wzorców do plików), panel `?dev=1` (parametry biomów na żywo, skok do
-ziarna i punktu, warstwy, statystyki), `window.__world`.
+Narzędzia poza bundlem: `tools/bench/` (**zrobione 2026-09-18**: `npm run
+bench`, pięć stanowisk jednego ziarna, piąty percentyl okna klatek, minimum z
+rund), `tools/parity/` (**zrobione 2026-09-18**: `npm run parity:write` i `npm
+run parity`, te same pięć stanowisk jako zdjęcia), panel `?dev=1` (statystyki,
+warstwy, skok do ziarna i punktu, doba, koszt haków), `window.__world`.
+
+> **Poprawka 2026-09-18: panel jest własny i czyta `WorldDebug`.** Tweakpane
+> byłoby zależnością w `dependencies` — ładowaną tylko przez stronę, którą
+> otwiera wyłącznie ten, kto to buduje. Panel to 280 wierszy DOM-u w
+> `src/dev/Panel.ts`, własny chunk za `?dev=1`, i **widok na `WorldDebug`** —
+> tę samą powierzchnię, którą czytają testy przeglądarkowe. Dzięki temu panel
+> nie pokaże liczby, której nie umie sprawdzić żaden test, a test nie sprawdzi
+> liczby, której nikt nie widzi. Uwaga przy edycji: importy wartości z silnika
+> trzymać jako `import type`, bo jeden import wartości wyciąga wspólny chunk z
+> głównego pakietu i strona płaci drugie żądanie za panel, o który nie prosiła.
+>
+> **Poprawka 2026-09-18: wzorce parity nie idą do repozytorium.** Spec mówił o
+> „wzorcach PNG w `tests/references/`" i testach pikselowych w CI. Wzorzec PNG
+> jest zdjęciem jednego rasteryzatora: albo przypinamy repozytorium do tego
+> SwiftShadera, którego akurat niesie `ubuntu-latest` — i w dniu, w którym obraz
+> się zmienia, wszystkie wzorce są nieaktualne naraz i nikt nie odróżni regresji
+> od aktualizacji sterownika — albo do GPU jednego człowieka, co jest gorsze.
+> Lokalnie ten sam rasteryzator jest identyczny co do bitu sam ze sobą
+> (zmierzone: dwa zdjęcia jednej klatki różnią się o 0), a to jest dokładnie to,
+> czego potrzebuje porównanie „przed i po". Więc: wzorce w
+> `tools/parity/references/`, poza repozytorium, brane na commicie, z którym
+> porównujesz. CI zostaje przy testach, które pytają o liczby, a nie o piksele.
+>
+> **Parametry biomów na żywo odłożone.** Materiał ziemi jest komponowany raz z
+> rejestru, jedna gałąź na biom, i parametry siedzą w nim jako stałe. Na żywo
+> znaczy albo rekompilacja materiału przy każdym suwaku (a to sekundy i
+> rekompilacja *wszystkiego*, bo program węzłowy jest kluczowany na tone
+> mappingu renderera), albo uniform na każdy parametr każdego biomu — czyli
+> setki uniformów w gałęziach bramkowanych na setnej części fragmentu. Panel
+> zamiast tego mierzy to, co da się zmierzyć, i przełącza warstwy.
 
 CI/CD: `ci.yml` (PR i push: `npm ci`, `tsc --noEmit` z `checkJs`, ESLint,
 Prettier, Vitest, `vite build`, Playwright WebGL2 z artefaktami) i
@@ -813,7 +875,7 @@ wersją.
 5. **M4 Osady.** Stanowiska z planem oddzielonym od geometrii, `RoadKit`,
    `StructureKit`, generator z parametrami wioski i miasteczka, przeszkody.
    Wynik: pierwsza osada znaleziona w locie.
-6. **M5 Dopieszczenie.** Porty Drogi Mlecznej (**zrobione 2026-09-17**: pole
+6. **M5 Dopieszczenie** (**kamień zamknięty 2026-09-19**). Porty Drogi Mlecznej (**zrobione 2026-09-17**: pole
    pyłu i światło gwiazd rosną proceduralnie w `sky/GalaxyMatter.ts`, atlas
    piecze się w wątku roboczym, bo to 3,5 s, a `GALAXY_HEADING` jest odczytem z
    pieczenia, nie zgadywanką — było o trzy stopnie obok) i śniegu (**zrobione
@@ -822,8 +884,31 @@ wersją.
    zarezerwowany dla stojącej wody i nigdy nie mógł jej obsłużyć, bo jezioro
    potrzebuje wysokości lustra, a bajt na tym reliefie to cztery metry na
    krok), otwarcie z kartą
-   tytułową, szafa, haki `ambience`, panel dev, porty `bench` i `parity`,
-   przegląd wydajności.
+   tytułową (**zrobione 2026-09-18**: pięć aktów jako czysta funkcja czasu w
+   `sim/Opening.ts`, sterujące lotem tymi samymi czasownikami co strzałki, więc
+   koperta lotu obowiązuje przez całe otwarcie; świt zmierzony, nie zgadnięty --
+   słońce wychodzi zza krawędzi przy fazie 0,126), szafa (**zrobione
+   2026-09-19**: sześć strojów, pięć znaczeń, kafelki z tej samej funkcji co
+   malowanie postaci — szczegóły przy §9), haki `ambience` (**zrobione 2026-09-18**: pięć warstw
+   syntezowanych w `Ambience.ts`, mieszanych wagami trzech slotów okna
+   wysokości pod postacią; bramkowanie po słońcu i po wysokości jest decyzją
+   silnika, nie bioma -- inaczej każdy biom pisałby te same dwie reguły),
+   panel dev (**zrobione 2026-09-18**: `src/dev/Panel.ts` za `?dev=1`, własny
+   chunk i widok na `WorldDebug`; statystyki strony, lotu i scenerii, przełączniki
+   jedenastu warstw, skok do punktu, do osady i do ziarna, suwak doby i pomiar
+   kosztu haków; przełącznik warstwy **tylko zabiera** — silnik co klatkę sam
+   decyduje, co widać, więc `layers.apply()` idzie na końcu aktualizacji świata),
+   porty `bench` i `parity` (**zrobione 2026-09-18**: oba na Playwrighcie, bo
+   mierzą i fotografują klatkę prawdziwej strony, obok siebie na jednym
+   zestawie stanowisk w `tools/vantages.ts`; `npm run bench` i `npm run
+   parity`, nigdy w CI, bo współdzielony runner mierzy własną pogodę),
+   przegląd wydajności (**zrobione 2026-09-19**: pięć stanowisk w
+   `docs/perf-notes.md`; noc nad wsią jest o 35 % droższa od południa i robią
+   to drzewa z trawą, a pora dnia sama z siebie nie kosztuje nic. Liczby
+   bezwzględne są SwiftShadera — udział CPU to 15 + 20 ms na klatkę trwającą
+   3,3 s — więc czekają na przebieg na sprzęcie z WebGPU; dwie pułapki po
+   drodze, obie w notatkach: klatki nie da się pędzić z ręki, a piąty percentyl
+   ze speca wyławiał artefakty próbkowania).
 7. **M6 Później.** Edytor biomów, dynamiczne ładowanie biomów z adresu,
    jeziora, pola uprawne.
 

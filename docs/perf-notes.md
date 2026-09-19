@@ -697,3 +697,139 @@ first one: three numbers into three channels answers in one build what an hour
 of reading the shader does not. And a biome whose ground is already white makes
 the world's snow line invisible inside it -- which is the same two-lines fault
 in another disguise, and it is `frost`'s to answer for, not the snow's.
+
+## M5: okna zamiast pasów, i co kosztuje pocięcie ściany
+
+Właściciel: „domy zamiast okien również mają pasy". Miał rację co do litery:
+`kit.windows` malował **wstążkę** koloru okiennego dookoła piętra, bez jednej
+przerwy, i komentarz w pliku sam się do tego przyznawał („Windows are the part
+with a future").
+
+Pas trzeba było pociąć również wzdłuż ściany. Pierwsza wersja robiła to tak, jak
+robi to reszta kitu -- `cutAt` na każdej krawędzi szyby po kolei -- i to jest
+pułapka, bo `cutAt` rozbija każdy przecięty trójkąt na **trzy**, a przecięć jest
+dwa na szybę:
+
+| domek (2 piętra)                                | trójkąty |
+| ----------------------------------------------- | -------- |
+| pas malowany, stan wyjściowy                    | 144      |
+| cięcie płaszczyzna po płaszczyźnie              | **1304** |
+| rzadszy raster (1,15 m co 2,7 m)                | 666      |
+| krojenie komórka po komórce                     | **404**  |
+| to samo, po poprawce rozkładu (1,05 m co 2,2 m) | 564      |
+
+Dziewięciokrotny wzrost sprowadzony do 3,9×, i to jest cena okien, a nie ceny
+cięcia. Robi to `slabOf`: klipuje trójkąt do plasterka między dwiema
+płaszczyznami i zwraca wachlarz, zamiast dzielić go w miejscu i oddawać całość.
+Pas jest przepuszczany przez listę komórek (filar, szyba, filar, ...), każda
+komórka bierze swój plasterek i tyle.
+
+Przy okazji wyszedł błąd w rozkładzie: `floor((span - (PITCH - WIDTH)) / PITCH)`
+gubi ostatnią szybę na każdej ścianie -- szczyt 7,7 m dostawał dwa okna tam,
+gdzie mieszczą się trzy z metrem filara w zapasie. Poprawne jest
+`floor(span / PITCH)`, bo `n * PITCH` **już** liczy filar po obu stronach.
+
+### Losowe światła
+
+Trzy liczby z trzech różnych miejsc, bo dom jest pieczony raz i stawiany setki
+razy:
+
+- `pane` -- atrybut wierzchołka, hash z tego, która to ściana, jak wysoko i
+  która szyba wzdłuż niej. Wypieczony, więc wspólny dla wszystkich instancji.
+- `lit` -- na instancję, hash z pozycji działki. Był mnożnikiem jasności całego
+  domu, przez co każde okno w osadzie świeciło, tylko każdy dom inaczej mocno.
+- `wake` -- na instancję, hash z pozycji **osady**, 0,22 do 0,6: ile okien w tej
+  wsi w ogóle nie śpi.
+
+Okno świeci, gdy `fract(pane + lit) <= wake`. Jasność dostaje jeszcze 0,7..1,3 z
+drugiego rzutu, bo kuchnia to nie jest sień. Koszt: dwa atrybuty float na
+instancję i cztery instrukcje we fragmencie, który i tak już mnożył przez
+`uNight`.
+
+## Koszt haków biomów: 0,9 µs na texel, i dwie pułapki w mierzeniu
+
+Spec daje hakowi `height` miękki budżet **2 µs na texel** i mówi, że mierzy go
+panel dev (§5.5). Od 2026-09-18 mierzy: przycisk „measure hooks” wywołuje
+`measureHeightHooks`, które chronometrażuje `sampleWindow` -- dokładnie tę
+pracę, którą okno wysokości wykonuje na texel -- przeciwko samplerowi z pustym
+rejestrem, który idzie gałęzią samych pól bazowych.
+
+Seed 42, rejestr dwunastu biomów, 8 192 texeli na przebieg, najlepszy z trzech:
+
+| miejsce           | pola bazowe | z hakami | haki     |
+| ----------------- | ----------- | -------- | -------- |
+| start (0, 0)      | 1,62 µs     | 2,46 µs  | **0,85** |
+| wieś (1525, 1588) | 1,62        | 2,50     | **0,89** |
+| miasteczko        | 1,52        | 2,54     | **1,03** |
+| las bez osad      | 1,56        | 2,66     | **1,10** |
+
+Czyli połowa budżetu, i to przy dwunastu biomach, z których trzy dostają głos na
+texel. Udziały krańcowe pojedynczych biomów (mierzone przez wyjęcie jednego z
+rejestru) siedzą w 0,0..0,4 µs, czyli w okolicach szumu -- żaden hak w tym
+rejestrze nie jest kosztowny.
+
+Dwie pułapki, obie znalezione przez to, że pierwsze liczby były bez sensu:
+
+**Kolejność próbkowania mierzy cache, nie haki.** Pierwsza wersja rozkładała
+punkty spiralą złotego kąta -- równomiernie po dysku, bez siatki, co dla szumu
+jest dobrym pomysłem. Dla `Fields.lattice` jest katastrofą: ma cztery gniazda
+pamiętanych środków, a pudło kosztuje **pięć** próbek pól bazowych (środek i
+cztery sondy na nachylenie). Okno wypełnia się wierszami i zostaje w jednej
+komórce krat przez setki texeli; spirala przeskakuje między komórkami co krok.
+Zmierzone wokół startu: **16,9 µs** na texel spiralą i **0,85 µs** tę samą
+ziemię wierszami. Pierwsza liczba była pomiarem kolejności próbkowania.
+
+**Pierwszy przebieg w procesie to pomiar interpretera.** Ta sama praca: 19,96 µs
+na texel przy pierwszym wywołaniu w procesie, 2,78 przy drugim. Rozgrzewka idzie
+teraz przed jakimkolwiek chronometrażem (dwa przebiegi po 2 048 texeli, pełnym
+rejestrem i pustym), każda konfiguracja ma własną rozgrzewkę 256 texeli, a z
+trzech przebiegów zostaje najszybszy.
+
+## Przegląd wydajności M5: pięć stanowisk, i czego one nie mówią
+
+`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek,
+najszybsza runda z każdej. Kolumny: mediana odstępu między klatkami, klatki na
+sekundę z całego okna, najszybsza klatka okna, potem to, co klatka narysowała.
+
+| stanowisko   | ms/klatkę | fps  | najszybsza | rysowań | trójkątów | drzew | domów | kęp trawy |
+| ------------ | --------- | ---- | ---------- | ------- | --------- | ----- | ----- | --------- |
+| świt         | 3170      | 0,31 | 7,5        | 43      | 1 094 811 | 1 175 | 43    | 12 888    |
+| południe     | 3172      | 0,31 | 7,7        | 43      | 1 094 811 | 1 175 | 43    | 12 888    |
+| daleko       | 2976      | 0,34 | 7,4        | 42      | 1 177 547 | 1 175 | 43    | 0         |
+| nad pokładem | 3297      | 0,30 | 6,2        | 42      | 1 177 547 | 1 175 | 43    | 0         |
+| noc nad wsią | 4275      | 0,23 | 7,6        | 47      | 1 711 921 | 2 512 | 43    | 26 411    |
+
+**Te liczby są SwiftShadera, nie silnika.** Klatka kosztuje tu trzy i jedną
+trzecią sekundy, a własny udział CPU to `ringMs` 14,8 i `grassMs` 19,5 —
+piętnaście i dwadzieścia milisekund, czyli pół procenta klatki. Cała reszta to
+programowa rasteryzacja miliona trójkątów na maszynie bez GPU. Wniosek
+bezwzględny („tyle kosztuje klatka") nie istnieje, dopóki ktoś nie puści tego na
+sprzęcie z WebGPU, gdzie kolumna `gpu ms` przestanie być pusta. Wniosek względny
+istnieje i jest jedyny, po co to narzędzie powstało: **noc nad wsią jest o 35 %
+droższa od południa**, przy 2 512 drzewach zamiast 1 175, 26 tysiącach kęp
+trawy zamiast 13 i 1,71 mln trójkątów zamiast 1,09. Drzewa i trawa są tym, co
+się liczy; pora dnia sama z siebie nie kosztuje nic (świt i południe różnią się
+o 2 ms na 3 170).
+
+Dwie pułapki po drodze, obie warte zapamiętania, bo obie dawały liczby, w które
+łatwo było uwierzyć:
+
+**Klatki nie da się pędzić z ręki.** Pierwszy bench robił `step()` w pętli i
+mierzył 0,2 ms na klatkę przy 1,18 mln trójkątów. To nie była klatka, tylko
+pokwitowanie: `renderOnce` planuje klatkę na `requestAnimationFrame` i wraca.
+Po dołożeniu bariery GPU po każdym renderze wychodziło... to samo 0,2 ms, bo
+three podbija `frameId` grafu węzłów **wyłącznie we własnym ticku animacji**, a
+pas sceny w łańcuchu wyświetlania aktualizuje się raz na ten identyfikator: sto
+ręcznych renderów to jedna scena i dziewięćdziesiąt dziewięć przemalowań
+łańcucha, po 3 rysowania i 3 trójkąty każde. Bench liczy dziś odstępy między
+klatkami **pętli strony**.
+
+**Piąty percentyl ze speca kłamał.** Na GPU jest słuszny: klatki są do siebie
+podobne, a wolna klatka to wina maszyny. Tutaj rozkład jest dwumodalny —
+zmierzone na jednym stanowisku `[3399, 3360, 6797, 11, 3454, 3352, 3367, 3425]`
+— bo pętla czasem zgłasza dwie klatki w jednym oknie próbkowania i para dzieli
+się na liczbę, której nigdy nie było. Piąty percentyl wyławia właśnie te: czytał
+7,3 ms tam, gdzie każda klatka trwała 3,3 s, i 2 987 ms na piątym stanowisku,
+co wyglądało jak stokrotny koszt wysokości, a było jedynym stanowiskiem, na
+którym artefakt akurat nie wypadł. Sonda po wysokościach (120, 400, 800, 1200,
+1500 m) pokazuje koszt **płaski**: 3,1–3,4 s wszędzie. Nagłówkiem jest mediana.

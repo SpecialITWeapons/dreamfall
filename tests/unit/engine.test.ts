@@ -13,7 +13,12 @@ function fakeRenderer(backend: Record<string, unknown>) {
     setAnimationLoop: vi.fn(),
     dispose: vi.fn(),
     backend,
-    info: { memory: { geometries: 1, textures: 2, total: 3 } },
+    info: {
+      memory: { geometries: 1, textures: 2, total: 3 },
+      render: { drawCalls: 7, triangles: 9 },
+      autoReset: true,
+      reset: vi.fn(),
+    },
   };
   return r as unknown as WebGPURenderer & typeof r;
 }
@@ -44,16 +49,31 @@ describe('createEngine', () => {
     expect(r.resolveTimestampsAsync).not.toHaveBeenCalled();
     expect(engine.gpuMs).toBe(0);
   });
-  it('survives a backend with no timestamps to give', async () => {
+  it('asks a WebGL2 backend for no timestamps at all, whatever it would answer', async () => {
+    // It would answer. SwiftShader hands back a number that is not a frame
+    // time -- the same 2 827.99 ms at five vantages of one world, measured by
+    // the bench -- and a stale number is worse than none.
     const r = fakeRenderer({ isWebGPUBackend: false });
-    r.resolveTimestampsAsync = vi.fn(async () => {
-      throw new Error('no timestamp support');
-    });
     const engine = await createEngine(canvas, { profiling: true }, { makeRenderer: () => r, raf });
     engine.render({} as never, {} as never);
     await new Promise((done) => setTimeout(done, 0));
+    expect(r.resolveTimestampsAsync).not.toHaveBeenCalled();
     expect(engine.gpuMs).toBe(0);
   });
+
+  it("leaves the renderer's own counters alone", async () => {
+    // Resetting them by hand at the top of a frame looked like the way to count
+    // one frame rather than one pass. It stopped the display chain re-rendering
+    // the scene at all -- measured: 3 draws and 3 triangles a frame, which is
+    // the chain's own quads over a texture nobody had refilled. The counters
+    // creep instead, and `MemorySnapshot` says by how much.
+    const r = fakeRenderer({ isWebGPUBackend: true });
+    const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });
+    expect(r.info.autoReset).toBe(true);
+    engine.render({} as never, {} as never);
+    expect(r.info.reset).not.toHaveBeenCalled();
+  });
+
   it('initializes the renderer once and names the backend', async () => {
     const r = fakeRenderer({ isWebGPUBackend: true });
     const engine = await createEngine(canvas, {}, { makeRenderer: () => r, raf });
@@ -100,7 +120,8 @@ describe('createEngine', () => {
     engine.setLoop(fn);
     expect(r.setAnimationLoop).toHaveBeenLastCalledWith(fn);
     const snapshot = engine.memory();
-    expect(snapshot).toEqual({ geometries: 1, textures: 2, total: 3 });
+    // What it holds and what the last frame drew, copied out of both counters.
+    expect(snapshot).toEqual({ geometries: 1, textures: 2, total: 3, draws: 7, triangles: 9 });
     snapshot.total = 999;
     expect(r.info.memory.total).toBe(3);
     engine.dispose();

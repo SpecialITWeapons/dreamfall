@@ -7,7 +7,6 @@ import { SPEED, createFlightController } from '../../src/engine/flight/FlightCon
 import { DEFAULT_OUTFIT, DEFAULT_PATTERN, outfitById } from '../../src/engine/avatar/Outfits';
 import {
   HUMAN_BOUNDS,
-  HUMAN_TRIANGLE_BUDGET,
   POSE,
   TORSO,
   UPPER,
@@ -135,19 +134,25 @@ describe('createProceduralHuman', () => {
     for (const other of [delta, track, climb]) expect(other.reach).toBeLessThan(0);
     expect(delta.reach).toBeGreaterThan(track.reach);
     // So a climb sweeps the arms back about as far as a track does, and what
-    // tells the two apart is the legs: the climb folds its knees hardest of
-    // all four and the track does not fold them at all.
+    // tells the two apart is the legs: the track is a ruler and the climb keeps
+    // a bend in the knee. It used to fold them hardest of all four -- the
+    // owner's correction, from a photograph: in a climb *everything* trails,
+    // the legs sweep back behind the arms rather than tucking up under the
+    // figure, which is what a jumper does when someone is holding him up.
     expect(climb.armZ).toBeLessThan(-0.6);
     expect(Math.abs(climb.armZ - track.armZ)).toBeLessThan(0.25);
-    expect(climb.knee).toBeGreaterThan(track.knee + 1);
+    expect(climb.knee).toBeGreaterThan(track.knee + 0.25);
     // the arm straightens on the way into the track
     expect(box.elbow).toBeGreaterThan(delta.elbow);
     expect(delta.elbow).toBeGreaterThan(track.elbow);
     expect(track.elbow).toBeLessThan(0.3);
-    // and the knees run the whole way from folded to straight
-    expect(climb.knee).toBeGreaterThan(box.knee);
+    // and the knees run the whole way from folded to straight: the box holds
+    // them hardest, the track not at all, and the two shapes that trail sit
+    // between. Which of those two folds the more is not a fact about flying and
+    // is deliberately not pinned here.
     expect(box.knee).toBeGreaterThan(delta.knee);
     expect(delta.knee).toBeGreaterThan(track.knee);
+    expect(climb.knee).toBeLessThan(box.knee - 0.3);
     expect(track.knee).toBeLessThan(0.2);
 
     // and every one of them is the same shape twice: a pose set that drifts
@@ -182,16 +187,16 @@ describe('createProceduralHuman', () => {
     }
   });
 
-  it('stays inside the triangle budget, casts shadows, and has an eye ahead of the chest', () => {
+  it('is made of enough to be a body, casts shadows, and has an eye ahead of the chest', () => {
     const human = createProceduralHuman(lit);
-    expect(human.triangles).toBeLessThanOrEqual(HUMAN_TRIANGLE_BUDGET);
-    // Fewer than half the budget, and fewer than the twenty solids this
-    // replaced spent -- 3528 of them, on closing off shapes that then had to
-    // overlap each other to hide the seams. The floor is here so a profile
-    // sanded down to a stick fails rather than passes quietly.
+    // There is no ceiling here any more. `HUMAN_TRIANGLE_BUDGET` was 4 000, it
+    // came from the spec's table of *starting values* and no measurement in
+    // this repository ever stood behind it: the terrain draws 557 568
+    // triangles a frame and the figure is one object drawn twice, so its own
+    // count is two tenths of one per cent of the frame and the hands are worth
+    // more than the saving. The floor stays, because a profile sanded down to
+    // a stick is a real fault and this is what catches it.
     expect(human.triangles).toBeGreaterThan(700);
-    expect(human.triangles).toBeLessThan(2000);
-    expect(HUMAN_TRIANGLE_BUDGET).toBe(4000);
     expect(human.eye.z).toBeGreaterThan(0.4);
     expect(human.bounds).toEqual(HUMAN_BOUNDS);
     expect(HUMAN_BOUNDS.below).toBeGreaterThan(0);
@@ -269,10 +274,16 @@ describe('createProceduralHuman', () => {
     // hands out in front.
     expect(armIn({ pitch: -0.43 }).z).toBeLessThan(restArm.z - 0.1);
     expect(armIn({ pitch: 0.55 }).z).toBeLessThan(restArm.z - 0.1);
-    // What tells them apart is underneath: a dive opens the knees and a climb
-    // tucks them in.
+    // Underneath, both ends open the knees out of the box: a figure doing
+    // something with the air is not sitting in one. Which of the two opens them
+    // further is not pinned -- measured, they land 0.547 against 0.522, and an
+    // assertion on that is an assertion about a coin.
     expect(kneeIn({ pitch: -0.43 })).toBeLessThan(kneeIn({}));
-    expect(kneeIn({ pitch: 0.55 })).toBeGreaterThan(kneeIn({}));
+    expect(kneeIn({ pitch: 0.55 })).toBeLessThan(kneeIn({}));
+    // What does tell them apart is how far the arms are held off the body: a
+    // dive keeps them out in the air where they steer, and a climb lays them
+    // down the flanks with everything else that trails.
+    expect(Math.abs(armIn({ pitch: -0.43 }).x)).toBeGreaterThan(Math.abs(armIn({ pitch: 0.55 }).x) + 0.1);
   });
   it('takes the pose: position, then yaw, pitch and roll in YXZ order', () => {
     const human = createProceduralHuman(lit);

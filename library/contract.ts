@@ -658,15 +658,21 @@ export interface StructureKit extends PropKit {
   box(w: number, h: number, d: number, color: SceneryColor): BufferGeometry;
   roof(kind: Structure['roof'], w: number, d: number, rise: number, color: SceneryColor): BufferGeometry;
   /**
-   * A band of windows around one floor, painted the window colour and carrying
-   * a `glow` attribute of 1 -- what the night reads, multiplied by the
-   * instance's own `lit` and the sky's `uNight`.
+   * The windows of one floor: panes along every wall at that height, painted
+   * the window colour and carrying a `glow` of 1 -- what the night reads --
+   * and a `pane` of their own, a number per window that lets the night light
+   * one and leave the next dark.
    *
-   * It **cuts** the band into the geometry rather than painting whatever
-   * vertices happen to be near it: a box has no vertices where its windows go,
-   * so painting alone would either miss the band or smear it up the whole
-   * storey. Call it after merging, never before: a merge carries position,
-   * normal, colour and uv across, and would drop the glow.
+   * It **cuts** the windows into the geometry rather than painting whatever
+   * vertices happen to be near them: a box has no vertices where its windows
+   * go, so painting alone would either miss them or smear them up the whole
+   * storey. The band is cut at its two heights and then sliced along the wall's
+   * own length, into panes with piers between them and a pier in each corner.
+   * It used to stop at the two heights, which painted a belt round the whole
+   * house: from the air that reads as a stripe, not as windows.
+   *
+   * Call it after merging, never before: a merge carries position, normal,
+   * colour and uv across, and would drop the glow.
    */
   windows(geometry: BufferGeometry, y: number, height: number, color: SceneryColor): void;
 }

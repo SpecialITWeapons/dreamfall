@@ -23,4 +23,7 @@ export default defineBiome({
     props: { boulders: 0.5, cairns: 0.5 },
     grass: { tint: 'grassCool', density: 0.15 },
   },
+  // Cold and nearly empty. What lives here is not loud.
+  // Cold air over snow: the distance goes pale rather than blue.
+  ambience: { layers: { 'wind-high': 0.7, birds: 0.12 }, fogTint: 'frost', fogTintAmount: 0.24 },
 });

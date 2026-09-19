@@ -12,7 +12,9 @@
 // This used to be twenty solids parented to one another, and every shoulder
 // sweep opened a seam between two of them that no pose could close; the
 // Avatar interface was written so that this swap would not touch the engine,
-// and it did not. Budget: 4 000 triangles.
+// and it did not. There is no triangle budget here any more: 4 000 was a
+// starting value nobody in this repository ever measured, and the figure is one
+// object drawn twice against a terrain of 557 568 triangles a frame.
 import {
   Bone,
   BufferAttribute,
@@ -34,9 +36,8 @@ import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
 import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
-import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern } from './Outfits';
+import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern, type Swatch } from './Outfits';
 
-export const HUMAN_TRIANGLE_BUDGET = 4000;
 /** How far the figure hangs under its center, and how far it reaches sideways, m; the flight reads these before the figure exists. */
 export const HUMAN_BOUNDS = { below: 0.3, radius: 1.1 } as const;
 
@@ -44,9 +45,55 @@ export interface ProceduralHuman extends Avatar {
   readonly triangles: number;
   readonly outfit: Outfit;
   readonly pattern: Pattern;
+  /**
+   * The figure as data: where its bones rest and how thick it is along each
+   * chain, in the pose it is standing in. This is what the geometry is made of
+   * and nothing else, which is what lets something outside the engine build the
+   * same body -- `tools/figure` bakes one continuous surface out of it in
+   * Blender, where a shoulder is a junction of the skin rather than a tube
+   * pushed into a slab. Handing over a *copy* of these numbers instead would
+   * give two figures that agree until the first time one of them is edited.
+   */
+  describe(): FigureDescription;
 }
 
-type Swatch = Exclude<keyof Outfit, 'id'>;
+/** How many bearings a patched chain's colour is written down at, per sample. */
+export const RING_BEARINGS = 12;
+
+/** One chain of the figure, sampled: a point every so often with the half-width there. */
+export interface ChainDescription {
+  /** The bone each joint hangs on, root first. */
+  bones: string[];
+  /** The cross-section's shape, as `Skin.ts` means it: 1 is a circle. */
+  flatten: number;
+  capStart: boolean;
+  capEnd: boolean;
+  samples: Array<{
+    /** How far along the chain, 0..1. */
+    t: number;
+    /** Where, in the figure's frame, m. */
+    at: [number, number, number];
+    /** Half-width across the chain there, before `flatten`, m. */
+    radius: number;
+    /** Which swatch the surface takes there. */
+    swatch: string;
+    /** Which bone of `bones` this point sits on. */
+    bone: number;
+    /**
+     * The swatch at twelve bearings around the ring, present only where the
+     * chain wears a `patch`. A band is one colour the whole way round and
+     * `swatch` above says it; a visor is not, and a description that carried
+     * only the band would have the baker paint a helmet with no visor on it.
+     * The angles are `k / 12 * 2pi` in the same frame `Skin.ts` sweeps.
+     */
+    ring?: string[];
+  }>;
+}
+
+export interface FigureDescription {
+  bones: Array<{ name: string; parent: string | null; rest: [number, number, number] }>;
+  chains: ChainDescription[];
+}
 
 const UP = new Vector3(0, 1, 0),
   AXIS_X = new Vector3(1, 0, 0);
@@ -105,8 +152,12 @@ const POSES = {
   box: {
     upper: (side) => dir(side * 0.78, -0.08, 0.62),
     fore: (side) => dir(side * -0.46, 0.16, 0.87),
-    thigh: (side) => dir(side * 0.3, -0.06, -0.95),
-    shin: (side) => dir(side * 0.12, 0.8, -0.58),
+    // The thighs used to splay 0.30, which is 17 degrees off the body's own
+    // line: on a torso 41 cm wide that is two legs inside one silhouette, and
+    // from underneath the figure had a tail rather than knees. A box position
+    // holds the knees a good deal wider than the hips.
+    thigh: (side) => dir(side * 0.46, -0.06, -0.89),
+    shin: (side) => dir(side * 0.16, 0.84, -0.52),
     foot: (side) => dir(side * 0.05, 0.42, -0.9),
   },
   /** Halfway: arms swept back but still out, elbows still bent, knees half open. */
@@ -133,21 +184,28 @@ const POSES = {
   /**
    * Nose up and slow, which in this world is one state and not two: a climb is
    * paid for in airspeed, so `speed 30` and `pitch +0.56` arrive together and
-   * the same shape answers both. The arms sweep **back** along the hips and the
-   * knees stay folded -- the chest leads and the rest of the figure trails it,
-   * the way a bird pulling up out of a dive does.
+   * the same shape answers both. Everything trails: the arms lie **down the
+   * flanks** and the legs sweep back behind them, the chest leading and the
+   * rest of the figure following it, the way a bird pulling up out of a dive
+   * does.
    *
-   * The first draft of this reached the arms forward and high, which is what a
-   * jumper's flare looks like and is not what this is. In a photograph it read
-   * as a figure being lifted by the wrists. What tells the climb from the track
-   * is the legs: both sweep the arms back, and only the track straightens out.
+   * Two drafts were thrown away here, both from photographs. The first reached
+   * the arms forward and high, which is a jumper's flare and read as a figure
+   * being lifted by the wrists. The second swept them back but over the back --
+   * `+y` is the back in this frame -- so the arms lifted away from the body
+   * like folding wings, and the knees stayed at 94% of a full fold while the
+   * rest of the figure trailed. Both are what an arm does when someone is
+   * *holding* it up; neither is what the air does to one.
+   *
+   * What tells the climb from the track is how much: the track is a ruler, the
+   * climb keeps the arms a little off the flank and a bend in the knee.
    */
   climb: {
-    upper: (side) => dir(side * 0.48, -0.22, -0.85),
-    fore: (side) => dir(side * 0.16, 0.24, -0.96),
-    thigh: (side) => dir(side * 0.34, -0.1, -0.93),
-    shin: (side) => dir(side * 0.14, 0.94, -0.3),
-    foot: (side) => dir(side * 0.05, 0.6, -0.8),
+    upper: (side) => dir(side * 0.3, -0.08, -0.95),
+    fore: (side) => dir(side * 0.14, -0.06, -0.99),
+    thigh: (side) => dir(side * 0.26, -0.06, -0.96),
+    shin: (side) => dir(side * 0.11, 0.34, -0.93),
+    foot: (side) => dir(side * 0.05, 0.26, -0.96),
   },
   /**
    * A turn, which is the only shape the two sides of the body disagree about:
@@ -422,18 +480,31 @@ export function createProceduralHuman(
   // pose above moves the skin with it, with nothing to keep in step by hand.
   object.updateMatrixWorld(true);
   const at = (name: string) => object.getObjectByName(name)!.getWorldPosition(new Vector3());
-  /** Where the hand ends: a little past the wrist, along the forearm it hangs on. */
-  const handAt = (side: 1 | -1) => {
+  /**
+   * A frame at the wrist: along the forearm, across the palm, and the way the
+   * palm faces. A hand is the one part of this figure that has a front and a
+   * back, so it is the one part that needs to know which way is which.
+   */
+  const handFrame = (side: 1 | -1) => {
     const s = side > 0 ? 'L' : 'R';
     const wrist = at(`wrist${s}`);
-    return wrist.clone().addScaledVector(
-      wrist
-        .clone()
-        .sub(at(`elbow${s}`))
-        .normalize(),
-      0.11,
-    );
+    const along = wrist
+      .clone()
+      .sub(at(`elbow${s}`))
+      .normalize();
+    const across = new Vector3().crossVectors(UP, along).normalize().multiplyScalar(side);
+    const palm = new Vector3().crossVectors(along, across).normalize();
+    // The palm faces the ground in every shape this figure holds; which way the
+    // cross product came out is an accident of the pose, so it is checked
+    // rather than assumed.
+    if (palm.y > 0) palm.negate();
+    return { wrist, along, across, palm };
   };
+
+  /** How far the palm reaches past the wrist, and the four fingers' lengths. */
+  const PALM = 0.085,
+    FINGERS = [0.074, 0.082, 0.077, 0.063];
+
   const chain = (names: string[], rest: Omit<Chain, 'bones' | 'joints'> & { joints?: Vector3[] }): Chain => ({
     ...rest,
     bones: names,
@@ -448,83 +519,205 @@ export function createProceduralHuman(
   const parts: Chain[] = [
     // The spine, from the tail to the neck. Wider than it is thick, because a
     // chest is, and a tube that is not says "pipe" from the first glance.
-    chain(['body', 'body', 'body', 'body', 'neck'], {
+    chain(['body', 'body', 'body', 'body', 'neck', 'neck'], {
       // The spine's bones sit on top of each other -- nothing along it turns
       // yet -- so its stops are written here rather than read off the skeleton.
       // The day a back arches, these become bones and this line goes.
+      //
+      // The last segment is a neck, and it climbs. A jumper on his belly holds
+      // his chin up; without that segment the head left the shoulders along the
+      // spine's own line, and a photograph from underneath showed what that is:
+      // a ball resting on the chest, with no neck anywhere in the silhouette.
       joints: [
         new Vector3(0, -0.02, -0.5),
         new Vector3(0, -0.02, -0.32),
         new Vector3(0, 0, -0.02),
         new Vector3(0, 0.02, 0.2),
-        new Vector3(0, 0.02, 0.34),
+        new Vector3(0, 0.02, 0.32),
+        new Vector3(0, 0.065, 0.385),
       ],
-      // Widest across the chest and narrower at the belly, which is the way
-      // round a person is. The first draft peaked at 0.5 -- the middle of the
-      // back -- and the photograph showed it: a paunch with shoulders sloping
-      // away from it.
+      // Widest across the shoulders, a waist under it, and the hips wider than
+      // the waist -- which is the way round a person is. Two photographs paid
+      // for these numbers. The first draft peaked at 0.5, the middle of the
+      // back, and read as a paunch with the shoulders sloping away from it. The
+      // second peaked in the right place and was simply too big everywhere:
+      // 51 cm across the ribs and 41 at the waist, so the arms entered a slab
+      // and the thighs never came out of one. A man is about 33 cm across the
+      // chest and 27 at the waist, and `flatten` has to hold the depth up with
+      // it -- at 1.45 a chest that measured right across was 15 cm thick, which
+      // is a plank. These stops are in metres of half-width before `flatten`.
       profile: ramp([
-        [0, 0.085],
-        [0.16, 0.145],
-        [0.45, 0.138],
-        [0.74, 0.178],
-        [0.88, 0.163],
-        [1, 0.085],
+        [0, 0.072],
+        [0.2, 0.128],
+        [0.54, 0.11],
+        [0.8, 0.142],
+        [0.845, 0.148],
+        [0.93, 0.082],
+        [1, 0.055],
       ]),
       swatch: () => 'suit',
       sides: 12,
       rings: 3,
-      flatten: 1.45,
+      flatten: 1.2,
       capStart: true,
       capEnd: false,
     }),
     ...([1, -1] as const).flatMap((side) => {
       const s = side > 0 ? 'L' : 'R';
       return [
-        // The arm: a deltoid at the shoulder, a taper to the wrist, a glove.
-        chain([`shoulder${s}`, `elbow${s}`, `wrist${s}`, `wrist${s}`], {
-          // The last stop reaches past the wrist: that is the hand.
-          joints: [at(`shoulder${s}`), at(`elbow${s}`), at(`wrist${s}`), handAt(side)],
+        // The arm: a deltoid at the shoulder, a taper to the wrist, a cuff.
+        // It used to run one stop further and call that a hand, which is how a
+        // figure ends up with mittens.
+        chain([`shoulder${s}`, `elbow${s}`, `wrist${s}`], {
           profile: ramp([
             [0, 0.092],
-            [0.16, 0.064],
-            [0.45, 0.055],
-            [0.7, 0.048],
-            [0.85, 0.046],
-            [0.93, 0.056],
-            [1, 0.024],
+            [0.19, 0.064],
+            [0.53, 0.055],
+            [0.82, 0.047],
+            [1, 0.044],
           ]),
+          // The trim used to start halfway down the arm, and the outfit's trim
+          // is a tan: from underneath that reads as a bare forearm ending in a
+          // black mitten. It is a cuff now, the last three centimetres.
           swatch: bands([
-            [0.45, 'suit'],
-            [0.85, 'trim'],
-            [1, 'gloves'],
+            [0.93, 'suit'],
+            [1, 'trim'],
           ]),
           sides: 8,
           rings: 3,
           capStart: true,
-          capEnd: true,
+          capEnd: false,
         }),
-        // The leg: a thigh, a knee, a calf and a boot.
-        chain([`hip${s}`, `knee${s}`, `ankle${s}`, `toe${s}`], {
+        // The leg: a thigh, a knee and a calf. The boot is its own chain, below.
+        chain([`hip${s}`, `knee${s}`, `ankle${s}`], {
           profile: ramp([
             [0, 0.09],
-            [0.2, 0.077],
-            [0.42, 0.061],
-            [0.62, 0.052],
-            [0.82, 0.045],
-            [0.92, 0.058],
-            [1, 0.03],
+            [0.24, 0.077],
+            [0.51, 0.061],
+            [0.78, 0.05],
+            [1, 0.048],
           ]),
-          swatch: bands([
-            [0.82, 'suit'],
-            [1, 'boots'],
-          ]),
+          swatch: () => 'suit',
           sides: 8,
           rings: 3,
           flatten: 0.85,
           capStart: true,
+          // Closed, although the boot stands over it: the ankle breaks 29
+          // degrees, so the shin's opening does not face the way the boot
+          // runs, and left open it was a hole in the leg with a boot beside it.
           capEnd: true,
         }),
+      ];
+    }),
+    // The hands and the boots, which used to be the last two stops of the arm
+    // and the leg: a taper to a point, which from any distance is a mitten and
+    // a hoof. A hand is a palm and five fingers and a boot has a heel.
+    ...([1, -1] as const).flatMap((side) => {
+      const s = side > 0 ? 'L' : 'R';
+      const hand = handFrame(side);
+      const knuckles = hand.wrist.clone().addScaledVector(hand.along, PALM);
+      const bone = `wrist${s}`;
+      const finger = (root: Vector3, length: number, curl: number, width: number): Chain => ({
+        bones: [bone, bone, bone],
+        joints: [
+          root,
+          root
+            .clone()
+            .addScaledVector(hand.along, length * 0.55)
+            .addScaledVector(hand.palm, length * curl * 0.35),
+          root
+            .clone()
+            .addScaledVector(hand.along, length * 0.93)
+            .addScaledVector(hand.palm, length * curl),
+        ],
+        profile: ramp([
+          [0, width],
+          [0.5, width * 0.92],
+          [0.85, width * 0.86],
+          [1, width * 0.55],
+        ]),
+        swatch: () => 'gloves',
+        sides: 6,
+        rings: 2,
+        capStart: false,
+        capEnd: true,
+      });
+      return [
+        // The palm: wide across the hand and thin through it, which is the one
+        // place on this figure where `flatten` has to be told which way is
+        // which -- a palm whose across-axis came out edge-on is a blade.
+        chain([bone, bone], {
+          joints: [hand.wrist.clone().addScaledVector(hand.along, -0.02), knuckles],
+          profile: ramp([
+            [0, 0.04],
+            [0.5, 0.045],
+            [1, 0.042],
+          ]),
+          swatch: () => 'gloves',
+          sides: 8,
+          rings: 2,
+          flatten: 1.7,
+          across: hand.across,
+          capStart: true,
+          capEnd: false,
+        }),
+        // Four fingers, a little curled, because a hand in the air is not a
+        // hand held out flat -- and the little finger is not the middle one.
+        ...FINGERS.map((length, i) =>
+          finger(
+            knuckles
+              .clone()
+              .addScaledVector(hand.across, (i - 1.5) * 0.025)
+              .addScaledVector(hand.palm, 0.004),
+            length,
+            0.34,
+            0.0125,
+          ),
+        ),
+        // The thumb, off the inside edge and turned across the palm.
+        finger(
+          hand.wrist
+            .clone()
+            .addScaledVector(hand.along, 0.03)
+            .addScaledVector(hand.across, -0.036)
+            .addScaledVector(hand.palm, 0.006),
+          0.062,
+          0.18,
+          0.015,
+        ),
+        // The boot: a heel behind the ankle, a ball under it, a toe. It hangs
+        // on the ankle and the toe, so it turns with the ankle hinge the way
+        // the old last-two-stops-of-the-leg did.
+        (() => {
+          const ankle = at(`ankle${s}`),
+            toe = at(`toe${s}`);
+          const along = toe.clone().sub(ankle).normalize();
+          const across = new Vector3().crossVectors(UP, along).normalize().multiplyScalar(side);
+          return {
+            bones: [`ankle${s}`, `ankle${s}`, `toe${s}`, `toe${s}`],
+            joints: [
+              ankle.clone().addScaledVector(along, -0.055),
+              ankle.clone(),
+              ankle.clone().addScaledVector(along, 0.13),
+              ankle.clone().addScaledVector(along, 0.215),
+            ],
+            profile: ramp([
+              [0, 0.045],
+              [0.2, 0.06],
+              [0.45, 0.062],
+              [0.72, 0.056],
+              [0.92, 0.046],
+              [1, 0.026],
+            ]),
+            swatch: () => 'boots',
+            sides: 8,
+            rings: 3,
+            flatten: 1.12,
+            across,
+            capStart: true,
+            capEnd: true,
+          } satisfies Chain;
+        })(),
       ];
     }),
   ];
@@ -536,26 +729,61 @@ export function createProceduralHuman(
    */
   const skull: Chain = {
     bones: ['neck', 'neck', 'neck'],
-    joints: [new Vector3(0, 0.02, 0.3), new Vector3(0, 0.03, 0.42), new Vector3(0, 0.01, 0.58)],
+    // Forward of the shoulders and above the back, on the neck's own line: the
+    // skull's back end overlaps the neck's open end, so the two surfaces meet
+    // inside the body rather than at a seam, and nothing of the head is left
+    // standing in the shoulders. It used to start at z 0.325 -- level with the
+    // shoulder joints -- and the crown of it came through the upper back as a
+    // pale wedge, which is the hole in the back the owner drew a circle round.
+    //
+    // It used to measure 25 x 24 x 42 cm as well: a head as long as a forearm,
+    // on a figure five heads tall where a person is seven and a half. A helmet
+    // is about 18 x 18 x 25, and it is nearly as round as it is long -- the
+    // profile below holds its width almost to the brow and then falls away at
+    // the jaw, because a shell that tapers evenly from the crown is a bullet.
+    joints: [new Vector3(0, 0.105, 0.4), new Vector3(0, 0.14, 0.465), new Vector3(0, 0.15, 0.53)],
     profile: ramp([
-      [0, 0.075],
-      [0.3, 0.122],
-      [0.55, 0.128],
-      [0.8, 0.115],
-      [1, 0.062],
+      [0, 0.062],
+      [0.22, 0.085],
+      [0.5, 0.089],
+      [0.75, 0.084],
+      [1, 0.05],
     ]),
-    // A band is only a band if a ring lands in it. At three rings a segment the
-    // head's fall at 0, 0.107, 0.321, 0.428, 0.571, 0.857 and 1 -- and the
-    // goggles, written as 0.58 to 0.8, caught none of them: the figure flew
-    // about in a plain cream egg and nobody could see why. Four rings put two
-    // in the visor, and the stops are written against the rings rather than
-    // against a picture of a head.
+    // The shell is the band and it goes the whole way round, because a helmet
+    // does. What does not is the visor: it is a `patch` over the front and
+    // underside, where a face looks from -- `-v` on this chain, which is why
+    // the sine is the test. As a band it was an opaque belt round the head at
+    // every bearing, and the eye reads a dark stripe across a pale oval as a
+    // face: the figure appeared to turn its head to follow the camera, 300
+    // degrees of it, round to its own back.
+    //
+    // The band's one stop past 0.95 is the jaw, and it exists for the end cap:
+    // a cap is a single vertex on the axis and has no angle, so a patch cannot
+    // reach it.
     swatch: bands([
-      [0.46, 'helmet'],
-      [0.8, 'goggles'],
-      [1, 'skin'],
+      [0.88, 'helmet'],
+      [1, 'goggles'],
     ]),
-    sides: 10,
+    patch: (t, around) => {
+      // Measured, not assumed: on this chain a bearing of 270 degrees lands at
+      // the bottom front of the head and 90 at the top back, so the sine of it
+      // is how high up the head a point sits.
+      const side = Math.sin(around);
+      // A full-face helmet is three things from the front and not two: shell
+      // over the crown, visor across the eyes, and a chin bar under it in the
+      // shell's own colour. Both edges of the visor fall away toward the ear,
+      // which is what closes it into a shape rather than a belt. The first
+      // draft had the visor run from the eyes to the jaw with the face under
+      // it, and from in front that is a slot in an egg -- what the eye sees
+      // there is mostly the *side* of the head, and one threshold cuts it at
+      // one height the whole way round.
+      const brow = 0.45 - (1 - t) * 1.6,
+        bar = -0.42 - (1 - t) * 0.6;
+      if (side < brow && side > bar) return 'goggles';
+      // and the chin itself, the one bit of a face this leaves out
+      return side < -0.88 && t > 0.94 ? 'skin' : null;
+    },
+    sides: 12,
     rings: 4,
     capStart: true,
     capEnd: true,
@@ -599,7 +827,12 @@ export function createProceduralHuman(
       const attribute = meshes[i]!.geometry.getAttribute('color');
       const colors = attribute.array as Float32Array;
       for (let v = 0; v < skin.swatch.length; v++) {
-        tint.set(outfit[skin.swatch[v]! as Swatch]);
+        const worn = skin.swatch[v]! as Swatch;
+        // The marking, asked where this vertex sits on its own chain and round
+        // its own ring. It may answer with another of this outfit's swatches or
+        // with nothing, and nothing is the common answer.
+        const swatch = pattern.mark(worn, skin.along[v]!, skin.around[v]!) ?? worn;
+        tint.set(outfit[swatch]);
         const shade = skin.shade[v]!;
         colors[v * 3] = tint.r * shade;
         colors[v * 3 + 1] = tint.g * shade;
@@ -615,11 +848,70 @@ export function createProceduralHuman(
   const want: Record<Slot, number> = { box: 1, delta: 0, track: 0, climb: 0, turnIn: 0, turnOut: 0 };
   let time = 0;
   let view: FlightPose['view'] | null = null;
-  const eye = new Vector3(0, -0.03, 0.56);
+  const eye = new Vector3(0, 0.075, 0.5);
+  /**
+   * Walk a chain at a fixed step and write down what it looks like there. The
+   * profile is a function, so it cannot be handed over; what can is its answer
+   * at enough places to rebuild the shape, which is what this is.
+   */
+  const describeChain = (chain: Chain): ChainDescription => {
+    const lengths = chain.joints.slice(1).map((p, i) => p.distanceTo(chain.joints[i]!));
+    const total = lengths.reduce((a, b) => a + b, 0) || 1;
+    const steps = 10 * lengths.length;
+    const samples: ChainDescription['samples'] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      let walked = t * total,
+        bone = 0;
+      while (bone < lengths.length - 1 && walked > lengths[bone]!) walked -= lengths[bone++]!;
+      const at = new Vector3().lerpVectors(
+        chain.joints[bone]!,
+        chain.joints[bone + 1]!,
+        Math.min(1, walked / (lengths[bone] || 1)),
+      );
+      const sample: ChainDescription['samples'][number] = {
+        t,
+        at: [at.x, at.y, at.z],
+        radius: chain.profile(t),
+        swatch: chain.swatch(t),
+        bone,
+      };
+      if (chain.patch) {
+        const band = sample.swatch;
+        sample.ring = Array.from(
+          { length: RING_BEARINGS },
+          (_, k) => chain.patch!(t, (k / RING_BEARINGS) * Math.PI * 2) ?? band,
+        );
+      }
+      samples.push(sample);
+    }
+    return {
+      bones: chain.bones,
+      flatten: chain.flatten ?? 1,
+      capStart: chain.capStart ?? false,
+      capEnd: chain.capEnd ?? false,
+      samples,
+    };
+  };
+
   return {
     object,
     eye,
     bounds: HUMAN_BOUNDS,
+    describe() {
+      object.updateMatrixWorld(true);
+      return {
+        bones: bones.map((bone) => {
+          const at = bone.getWorldPosition(new Vector3());
+          return {
+            name: bone.name,
+            parent: bone.parent instanceof Bone ? bone.parent.name : null,
+            rest: [at.x, at.y, at.z] as [number, number, number],
+          };
+        }),
+        chains: [...parts, skull].map(describeChain),
+      };
+    },
     get triangles() {
       return triangles;
     },

@@ -12,11 +12,26 @@ export interface EngineDeps {
   raf?: (cb: () => void) => void;
 }
 
-/** A copy of the renderer's GPU allocation counters, safe to keep past the next frame. */
+/**
+ * A copy of the renderer's counters, safe to keep past the next frame: what it
+ * has allocated, and what it has drawn.
+ *
+ * `draws` and `triangles` are three's own, and three resets them when the scene
+ * pass starts, not when a frame does -- the display chain's own quads land
+ * after that reset and stay in the total, so the numbers creep by three a
+ * frame. Read them straight after a frame and the creep is nothing; read them
+ * after twenty and it is sixty draws that nobody drew. Measured at one vantage:
+ * 116, 119, 122 draws over three frames of the same picture. A capture resets
+ * them to zero, because it renders through its own target.
+ */
 export interface MemorySnapshot {
   geometries: number;
   textures: number;
   total: number;
+  /** Draw calls, mostly the last scene pass (see above). */
+  draws: number;
+  /** Triangles, mostly the last scene pass (see above). */
+  triangles: number;
 }
 
 /** A display chain that draws the scene in place of the renderer; the engine only calls it and disposes it. */
@@ -72,6 +87,7 @@ export async function createEngine(
   const raf = deps.raf ?? ((cb: () => void) => requestAnimationFrame(() => cb()));
   await renderer.init();
   const backend = renderer.backend as unknown as BackendLike;
+  const webgpu = backend.isWebGPUBackend === true;
   const lostListeners: Array<() => void> = [];
   let gpuMs = 0;
   let resolving = false;
@@ -101,7 +117,10 @@ export async function createEngine(
       // renderer starts warning about it: trackTimestamp without a resolve is
       // measurement nobody reads. One in flight at a time; the answer is a
       // frame or two old, which is what a frame time is for anyway.
-      if (profiling && !resolving) {
+      // WebGPU only: asked on WebGL2, SwiftShader answers with a number that is
+      // not a frame time -- measured, the same 2 827.99 ms at five vantages of
+      // one world -- and a stale number is worse than none.
+      if (profiling && webgpu && !resolving) {
         resolving = true;
         void renderer
           .resolveTimestampsAsync(TimestampQuery.RENDER)
@@ -141,7 +160,8 @@ export async function createEngine(
     },
     memory() {
       const { geometries, textures, total } = renderer.info.memory;
-      return { geometries, textures, total };
+      const { drawCalls, triangles } = renderer.info.render;
+      return { geometries, textures, total, draws: drawCalls, triangles };
     },
     dispose() {
       renderer.setAnimationLoop(null);

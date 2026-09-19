@@ -5,17 +5,21 @@
 // constants. Coordinates: the simulation lives in world space in double
 // precision; the scene is in the local frame of a floating origin, and the
 // figure and the camera get their poses converted through it.
-import { PerspectiveCamera, Scene, Vector3 } from 'three';
+import { Color, PerspectiveCamera, Scene, Vector3 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { validateLibrary, type Library } from '../../library/contract';
+import { swatchColor, validateLibrary, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
+import { layerMix } from './audio/AmbienceModel';
+import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
+import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
 import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
+import { createLayers, type Hideable, type Layers } from './render/Layers';
 import { createPost, type Post } from './render/Post';
 import { createLitMaterial, createSoftShadow } from './render/SoftLighting';
 import { createGroundShade } from './scenery/GroundShade';
@@ -33,9 +37,10 @@ import { createSkyDome } from './sky/SkyDome';
 import { createSkyUniforms } from './sky/SkyUniforms';
 import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
+import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
 import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
-import type { DayClock } from './time/DayClock';
+import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
 
 export interface WorldOptions {
@@ -64,6 +69,12 @@ export interface WorldOptions {
 export interface World {
   readonly seed: number;
   readonly library: Library;
+  /**
+   * The fog, the background and the dome's horizon, which are one colour here.
+   * Exposed so a test can read what the shader reads: the biome's haze goes on
+   * this after the atmosphere has written the palette into it.
+   */
+  readonly horizon: { r: number; g: number; b: number };
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
   readonly sim: Simulation;
@@ -78,6 +89,12 @@ export interface World {
   readonly heightfield: Heightfield;
   readonly atmosphere: Atmosphere;
   readonly post: Post;
+  /**
+   * What the scene is allowed to draw, by layer. The dev panel's switches, and
+   * the only honest way to ask what a layer is costing: turn it off and read
+   * the frame again.
+   */
+  readonly layers: Layers;
   readonly wind: Wind;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
@@ -85,7 +102,22 @@ export interface World {
   reducedMotion: boolean;
   /** Bakes and plants the scenery; idempotent, and already done unless deferScenery was set. */
   plant(): void;
+  /**
+   * What the registry's presence and height hooks cost a texel of the window,
+   * measured over the ground under the flyer against a sampler with no
+   * registry at all. The budget is soft and the answer is a measurement, which
+   * is the only kind there is for a function somebody wrote.
+   */
+  measureHeightHooks(samples?: number): HookCosts;
   update(dt: number): void;
+  /**
+   * What the opening is asking for this frame, so the page can put its title
+   * card at the opacity the script wants. `done` once the flight is the
+   * autopilot's again.
+   */
+  readonly opening: Readonly<OpeningFrame>;
+  /** Any input at all ends the opening; the flight and the camera come back at once. */
+  skipOpening(): void;
   resize(aspect: number): void;
   heightAt(x: number, z: number): number;
   /** World to local, in place. */
@@ -121,17 +153,29 @@ export function createWorld(opts: WorldOptions): World {
   // forty times dearer and is baked off the main thread, so the start pays
   // nothing for a sky nobody can see until nightfall.
   const galaxy = createMilkyWay();
+  // The opening plays for a first flight and never for a continued one: a
+  // remembered flight is somebody coming back, and thirty seconds of titles is
+  // not what they came back for. A page that asked for less motion skips it too.
+  const opening = createOpening(!resume && !(opts.reducedMotion ?? false));
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
     obstacles,
     below: HUMAN_BOUNDS.below,
     resume,
+    // High enough that the climb has a deck to go through. Nothing else about
+    // the start moves: the flight's own clearance still owns the first frame.
+    startY: opening.live ? OPENING.startY : undefined,
   });
   const { state } = sim;
   // a remembered flight never resumes inside the ground it may have been saved over
   state.y = Math.max(state.y, sim.flight.floorAt(state.x, state.z) + MIN_CLEARANCE + HUMAN_BOUNDS.below);
   const clock = sim.clock;
+  // The sun a little under the rim, so the first act has something to rise.
+  if (opening.live) {
+    clock.phase = OPENING.dawn;
+    clock.evalPalette();
+  }
   const look = clock.look;
   const uniforms = createSkyUniforms(look);
   uniforms.uWind.value.set(wind.x, wind.z);
@@ -168,7 +212,43 @@ export function createWorld(opts: WorldOptions): World {
     pattern: patternById(opts.pattern ?? 'plain'),
   });
   scene.add(avatar.object);
+  // The layer switches. The scenery's arrays are filled when it is planted --
+  // which is after this, when the page defers the bake for its own veil -- and
+  // they are the same arrays either way, so the switches are made once. Their
+  // order here is the order the dev panel lists them in.
+  const sceneryGroups: Record<string, Hideable[]> = {
+    grass: [],
+    trees: [],
+    props: [],
+    buildings: [],
+    roads: [],
+  };
+  const layers = createLayers({
+    terrain: [terrain.mesh],
+    water: [water.mesh],
+    ...sceneryGroups,
+    clouds: [clouds.mesh],
+    deck: [cloudSea.mesh],
+    sky: [skyDome.mesh],
+    figure: [avatar.object],
+  });
   const steering = createSteering(sim.flight, { view: opts.view, orbit: opts.orbit });
+  /** Where the camera hung before the script borrowed it. */
+  const framing = { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist };
+  /** Everything the opening was holding, handed back in one place. */
+  const endOpening = () => {
+    clock.rate = 1;
+    steering.orbit.yaw = framing.yaw;
+    steering.orbit.pitch = framing.pitch;
+    steering.orbit.dist = framing.dist;
+    steering.setAutopilot(true);
+  };
+  // The flight holds its course and its height while the script is level: with
+  // the autopilot on it would wander off on its own errands mid-shot, and
+  // `fly(0, 0)` is not enough to take it away, by design -- an arrow key that
+  // asks for nothing should not take the flight from anyone.
+  if (opening.live) steering.setAutopilot(false);
+
   const chase = createChaseCamera();
   const audio = createAmbience({ volume: opts.volume ?? 0.5, muted: opts.muted ?? false });
   const post = createPost(opts.renderer, scene, camera);
@@ -188,6 +268,7 @@ export function createWorld(opts: WorldOptions): World {
       litMaterial,
       uniforms,
     });
+    for (const [name, objects] of Object.entries(scenery.groups)) sceneryGroups[name]?.push(...objects);
   };
 
   const follow = new Vector3();
@@ -205,6 +286,23 @@ export function createWorld(opts: WorldOptions): World {
     view: steering.view,
   };
   const sample = { altitude: 0, vy: 0, gust: 0, rush: 1, t: 0, x: 0, z: 0 };
+  // What the country under the flyer sounds like. The slots are the height
+  // window's own -- the same three the ground shader paints with -- so the
+  // sound and the picture never disagree about which biome this is.
+  const slotIds = new Uint8Array(3),
+    slotWeights = new Float32Array(3);
+  const ambienceSpecs = library.biomes.map((biome) => biome.ambience?.layers);
+  // The haze a country puts in its own air, resolved once: a swatch name is a
+  // colour the library knows and the sky does not.
+  const hazeSpecs = library.biomes.map((biome) =>
+    biome.ambience?.fogTint === undefined
+      ? undefined
+      : {
+          color: new Color(swatchColor(biome.ambience.fogTint)),
+          amount: biome.ambience.fogTintAmount ?? 0.2,
+        },
+  );
+  const haze = new Color();
   const toLocal = (v: Vector3) => v.set(origin.localX(v.x), v.y, origin.localZ(v.z));
   const place = (dt: number) => {
     // An origin jump moves the whole scene under the scenery, whose instances
@@ -255,6 +353,23 @@ export function createWorld(opts: WorldOptions): World {
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
     atmosphere.update(camera.position.y, follow);
+    // The biome's own air, over the palette's. It goes on after the atmosphere
+    // because the atmosphere copies the palette every frame, so this is a tint
+    // and never an accumulation -- and it goes on `uHorizon`, which in this
+    // engine is the fog, the background and the dome's horizon at once.
+    heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
+    const hazed = hazeAt(
+      slotIds,
+      slotWeights,
+      hazeSpecs,
+      state.y - heightAt(state.x, state.z),
+      1 - uniforms.uNight.value,
+      haze,
+    );
+    if (hazed > 0) {
+      uniforms.uHorizon.value.lerp(haze, hazed);
+      uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
+    }
     post.setExposure(atmosphere.exposure);
     cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
     clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
@@ -265,13 +380,31 @@ export function createWorld(opts: WorldOptions): World {
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;
-    audio.update(dt, sample, heightAt);
+    audio.update(
+      dt,
+      sample,
+      heightAt,
+      layerMix({
+        ids: slotIds,
+        weights: slotWeights,
+        specs: ambienceSpecs,
+        solar: solar(clock.phase),
+        altitude: sample.altitude,
+      }),
+    );
+    // Last, after everything that decides visibility for its own reasons: a
+    // switch may only take away.
+    layers.apply();
   };
   if (!opts.deferScenery) plant();
   place(0);
   return {
     seed: opts.seed,
     library,
+    get horizon() {
+      const c = uniforms.uHorizon.value;
+      return { r: c.r, g: c.g, b: c.b };
+    },
     scene,
     camera,
     sim,
@@ -302,15 +435,46 @@ export function createWorld(opts: WorldOptions): World {
       plant();
       place(0);
     },
+    /** A key, a click, a finger: the script lets go of everything at once. */
+    skipOpening() {
+      if (!opening.live) return;
+      opening.skip();
+      endOpening();
+    },
+    get opening() {
+      return opening.frame;
+    },
     update(dt) {
       // The first frame of actual flight is where the galaxy's bake belongs:
       // the veil is up, the terrain is filled and the shaders are compiled, so
       // the core it burns for a few seconds is a core nothing else wants.
       galaxy.begin();
+      // The opening drives the flight with the verbs a pilot has and owns the
+      // camera and the pace of the day outright. It runs before the steering,
+      // so a hand on the stick is the thing that ends it rather than the thing
+      // that fights it.
+      if (opening.live) {
+        const script = opening.step(dt);
+        sim.flight.fly(script.yaw, script.climb);
+        steering.orbit.yaw = script.cameraYaw;
+        steering.orbit.pitch = script.cameraPitch;
+        steering.orbit.dist = script.cameraDist;
+        clock.rate = script.dayRate;
+        if (!opening.live) endOpening();
+      }
       steering.update(dt);
       sim.step(dt);
       place(dt);
     },
+    layers,
+    measureHeightHooks: (samples) =>
+      measureHeightHooks({
+        seed: opts.seed,
+        biomes: library.biomes,
+        x: state.x,
+        z: state.z,
+        samples,
+      }),
     resize(aspect) {
       camera.aspect = safeAspect(aspect);
       camera.updateProjectionMatrix();

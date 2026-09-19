@@ -59,6 +59,12 @@ export interface SimulationOptions {
   /** A remembered flight to continue; a fresh one starts in the morning at the origin. */
   resume?: ResumeState | null;
   random?: () => number;
+  /**
+   * Where a first flight begins, m. The opening starts under the cloud deck so
+   * that its climb has something to climb through; a continued flight ignores
+   * this, because a remembered place is a place.
+   */
+  startY?: number;
 }
 
 export function createSimulation(opts: SimulationOptions): Simulation {
@@ -88,7 +94,9 @@ export function createSimulation(opts: SimulationOptions): Simulation {
           cloudOrigin: resume.cloudOrigin,
           low: { ...resume.low },
         }
-      : undefined,
+      : opts.startY === undefined
+        ? undefined
+        : { y: opts.startY },
     random: opts.random,
   });
   const state = flight.state;

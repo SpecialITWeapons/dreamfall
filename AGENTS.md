@@ -21,8 +21,9 @@ textures, ground shade, grass), `sky/`
 display chain), `time/` (day clock). `three` is aliased to
 `three/webgpu`, pinned to 0.185.1; an
 upgrade is its own PR with a pixel comparison. `tools/` and `tests/` never
-end up in the bundle. Paths are relative, so the page works under a Pages
-subdirectory.
+end up in the bundle, and neither does `src/dev/`: the dev panel is imported
+dynamically by `?dev=1` and is a chunk of its own. Paths are relative, so the
+page works under a Pages subdirectory.
 
 ## Rules
 
@@ -34,7 +35,8 @@ subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`) import neither
+  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -51,13 +53,24 @@ subdirectory.
   some GPU state).
 - `Renderer.init()` starts an internal animation tick that
   `setAnimationLoop(null)` does not stop, so "no loop behind the gate"
-  means no rendering and no simulation, not no callbacks.
+  means no rendering and no simulation, not no callbacks. That tick is also
+  the only place three advances the node graph's frame id, and the display
+  chain's scene pass is a node that updates once per id: **a second render
+  inside one animation frame draws the chain over a scene texture nobody
+  refilled** (measured: 3 draws and 3 triangles where the frame has a
+  million). So `loop.renderNow()` and `__world.frame(dt)` are for one-off
+  redraws -- a switch, a jump, a test about to read what it drew -- and
+  anything that wants a hundred real frames has to let the browser have its
+  animation frames, which is what the loop is and what `tools/bench` counts.
+  A capture is not affected: it renders the scene into its own target.
 - Any WebGPU `uncapturederror` is treated as a fatal device loss on
   purpose (fail loud); a shader that only warns must not ship.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
 - Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
   sits outside the HUD pill on purpose, because the pill dims and "the autopilot
-  is off" must not.
+  is off" must not. The dev panel's strings are its own: that rule is about the
+  page a player reads. So are the wardrobe catalogue's names, which sit beside
+  the colours they name -- a garment's name belongs to the garment.
 
 ## Terrain, sky and time
 
@@ -169,7 +182,11 @@ subdirectory.
   Everything a chain looks like is its `profile` -- a half-width in metres at a
   share of its length -- and its `swatch`, and **a swatch band is only a band if
   a ring lands in it**: write the stops against the rings the chain samples at,
-  not against a picture of a body.
+  not against a picture of a body. A `swatch` is a belt round the chain and
+  nothing else, which is why a visor is a `patch` -- a colour for one place,
+  taking the angle around the ring as well: a dark belt on a pale solid of
+  revolution reads as a face from every bearing at once, and the head appears
+  to turn to follow the camera.
 - The figure's motion is **five shapes and the air**: box, delta, track, climb,
   and a turn laid over any of the others rather than instead of it. A shape is
   five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
@@ -187,6 +204,28 @@ subdirectory.
   sprung per joint too, so a shape arrives shoulder first and ankle last.
   `dt <= 0` means "be there now" -- position and velocity both -- which is how
   the world places the figure before the first frame.
+- The wardrobe is a catalogue and a rule. `avatar/Outfits.ts` holds the outfits
+  and the markings; a marking is a **pure function of where a vertex sits on its
+  own chain** -- `along` and `around`, written per vertex by `Skin.ts` -- and it
+  may repaint the **suit alone**, in a colour the outfit already carries. That
+  is what keeps a visor out of a catalogue's reach, and it is what lets the
+  panel's SVG tiles be drawn from the same function the repaint walks: a tile
+  cannot show a marking the figure would not wear. What covers the figure stays
+  inside the palette envelope; the goggles, boots and gloves sit under its floor
+  on purpose, and a test holds both halves. Nobody's choice means the seed's own
+  (`patternForSeed`), and a chosen marking is the person's -- saved as their
+  choice, so it travels to the next world while an unchosen one belongs to the
+  world.
+- The opening (`sim/Opening.ts`) is a pure function of how long it has been
+  running: five acts, a title card and the pace of the day. It drives the
+  flight with `fly(yaw, climb)`, which takes a **sign** as an arrow key does,
+  so the script cannot ask the figure for anything the flight would refuse a
+  person and the envelope holds through all of it. It owns the camera and the
+  clock outright and hands both back in one place. It plays for a first flight
+  only -- never for a resumed one, never under `prefers-reduced-motion` -- and
+  any input at all ends it. The flight starts under the cloud deck because the
+  climb is the act with something to see; a test holds the climb's length
+  against the flight's own climb rate.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own
@@ -194,7 +233,20 @@ subdirectory.
   tab and leaving, never before Begin.
 - Sound starts on Begin (a gesture) and never before; pause and a hidden tab
   suspend the context; `AmbienceModel` holds the arithmetic so it is tested
-  in Node.
+  in Node. A biome's `ambience.layers` are mixed by the **height window's own
+  three slots** under the flyer, so the sound and the ground never disagree
+  about which country this is; `layerMix` then gates them, because the engine
+  and not the biome decides that crickets are the night's and birds the day's,
+  that a thing standing on the ground is gone by 450 m, and that the high wind
+  only starts where they stop. Every fade in the graph runs on the **audio
+  clock**, which a runner with no output device advances at a twentieth of
+  wall time -- a test timing one against `setTimeout` is timing the runner.
+- A biome's `ambience.fogTint` is the air over it, and `sky/Haze.ts` mixes it
+  off the same three slots. It goes on **after** `atmosphere.update`, which
+  copies the palette every frame, so the tint never accumulates; it goes on
+  `uHorizon`, which here is the fog, the background and the dome's horizon at
+  once; it is capped at `MAX_HAZE` and fades out above the low air, because a
+  biome may colour a horizon and never repaint one.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.
@@ -300,6 +352,53 @@ subdirectory.
 - `cell.occupied` reads the plans' reservations and roads out of a hash grid
   filled at every rebuild, which is why the forest keeps off the square and the
   road.
+- Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
+  two heights and then slices it along the wall into panes with piers between
+  them, `slabOf` taking one slice at a time (splitting at each plane in turn
+  costs three times the triangles). Which ones are alight after dark is three
+  numbers from three places, because a house is baked once and stood up
+  hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
+  the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
+
+## Measuring
+
+- `npm run bench` and `npm run parity` (`tools/bench/`, `tools/parity/`, one
+  list of vantages in `tools/vantages.ts`): what a frame costs at five
+  vantages of one seed, and what those five look like. Neither runs in CI,
+  because a shared runner measures its own weather, and parity's references
+  are gitignored, because a reference PNG is a photograph of one rasteriser.
+  Both READMEs carry the method and the reasoning; `docs/perf-notes.md`
+  carries the numbers.
+- The median of a window of frames, and the minimum across rounds: both throw
+  the machine away rather than the engine. The spec asks for the fifth
+  percentile, which is right on a GPU and wrong on a rasteriser without one --
+  there the intervals come out bimodal, because the loop sometimes reports two
+  frames inside one sampling window, and the fast end is those artefacts rather
+  than the engine. It read 7.3 ms where every frame took 3.3 s. The fifth
+  percentile is kept beside the median for the machine that has a GPU.
+- GPU milliseconds exist on WebGPU only. Asked for them, SwiftShader answers
+  with a number that is not a frame time -- the same 2 827.99 ms at five
+  different vantages -- so the engine does not ask, and the bench prints `--`.
+
+## The dev panel
+
+- `?dev=1` and nothing else pulls in `src/dev/Panel.ts`. It is a **view over
+  `WorldDebug`** -- the same surface the browser tests read -- so it cannot show
+  a number no test can assert, and it is written by hand rather than pulled from
+  a control library that would ship in `dependencies` for a page only whoever
+  builds this ever opens. Keep its value imports type-only: a value import from
+  the engine drags a shared chunk out of the main bundle and the page pays a
+  second request for a panel it never asked for.
+- A layer switch may only take away. The engine writes visibility every frame
+  for its own reasons (the cloud sea under the deck, the grass over its ceiling,
+  the figure in the first person), so `layers.apply()` runs last in the world's
+  update and hides what is switched off; switching one back on hands the object
+  to the engine, which is free to hide it again.
+- What a hook costs is measured, never argued about. `measureHeightHooks` times
+  the window's own `sampleWindow` against a sampler with no registry at all, and
+  each biome's share by leaving that one out -- a marginal cost, which is the
+  honest answer when three of ten biomes get to speak for a texel. The soft
+  budget (2 µs a texel) travels in the result, so a reader needs nothing else.
 
 ## Checking
 

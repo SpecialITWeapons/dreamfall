@@ -32,6 +32,7 @@ test('the veil holds until the first frame, then Begin starts the flight', async
   expect(await page.evaluate(() => window.__world!.frames)).toBe(idle);
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   await expect
     .poll(() => page.evaluate(() => window.__world!.frames), { timeout: 15_000 })
     .toBeGreaterThan(idle);
@@ -40,6 +41,9 @@ test('the veil holds until the first frame, then Begin starts the flight', async
     .toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__world!.backend)).toBe('webgl2');
   await expect(page.locator('#hud')).not.toHaveAttribute('inert', '');
+  // The dev panel is a separate chunk behind `?dev=1`: a page that did not ask
+  // for it neither shows it nor downloads it.
+  expect(await page.locator('#dev').count()).toBe(0);
   expect(errors).toEqual([]);
 });
 
@@ -62,6 +66,7 @@ test('space pauses the flight and dispose releases the GPU', async ({ page }) =>
   const errors = await openWorld(page, 'seed=7&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   const baseline = await page.evaluate(() => window.__world!.memory());
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
@@ -103,6 +108,7 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
   expect(start.origin).toEqual({ x: 0, z: 0 });
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   // fly 400 simulated seconds: the clearance must hold everywhere along the way,
   // and every step must carry the figure its own airspeed forward.
   const flown = await page.evaluate(() => {
@@ -150,9 +156,14 @@ test('the world stands on the heightfield: terrain under the flyer, clearance he
 test('the day turns: the sky is bright at noon and dark at midnight, and the sun draws over the sea', async ({
   page,
 }) => {
+  // The first capture compiles the scene a second time for its own target, ten
+  // seconds on a runner with no GPU, on top of a start that is slower there
+  // too. Ninety seconds is what this ran out of on CI, twice.
+  test.slow();
   const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
   const luminance = async (phase: number) =>
@@ -188,6 +199,7 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   // The atlas is two million texels of procedural matter and takes seconds. It
   // is baked in a worker precisely so the start does not wait for it, so what
   // this asserts is that the start did not: the page was ready and flying
@@ -197,12 +209,22 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
 
-  /** Mean luminance of the sky above the horizon, at midnight, on a heading. */
+  /**
+   * Mean luminance of the sky above the horizon, at midnight, on a heading.
+   *
+   * The altitude is set and not inherited, because the flight's own is not the
+   * test's business and one value of it is a trap: the cloud deck is at 520 m,
+   * and from just under it the top third of the frame is deck rather than sky.
+   * Measured at 450 m the core, the far side and the cross bearing all read
+   * 0.039 -- the same number three times, because what was being photographed
+   * was a ceiling. At 120 m they are 0.041, 0.028 and 0.022.
+   */
   const sky = (heading: number) =>
     page.evaluate(async (h) => {
       const w = window.__world!;
       w.setAutopilot(false);
       w.state.heading = h;
+      w.state.y = Math.max(0, w.heightAt(w.state.x, w.state.z)) + 120;
       w.dayPhase = 0.0;
       const shot = await w.capture(96, 54);
       if (!shot) return null;
@@ -219,7 +241,7 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
 
   // The core is the brightest thing in a moonless sky, the far side of the
   // galaxy is a fainter band, and square to both there is only the disc's glow.
-  // Measured at 0.049, 0.028 and 0.022; the margins are wide because this is a
+  // Measured at 0.041, 0.028 and 0.022; the margins are wide because this is a
   // software rasteriser and a tone curve, not a photometer.
   const core = await sky(GALAXY_HEADING);
   const away = await sky(GALAXY_HEADING + Math.PI);
@@ -296,6 +318,7 @@ test('an overlapping button releasing first does not end the drag the other butt
   const errors = await openWorld(page, 'seed=11&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   const result = await page.evaluate(() => {
     const c = document.getElementById('c')!;
     const fire = (type: string, init: PointerEventInit) =>
@@ -324,6 +347,7 @@ test('prefers-reduced-motion starts the flight paused with the audio context sus
   const errors = await openWorld(page, 'seed=13&webgl=1');
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.skipOpening());
   expect(await page.evaluate(() => window.__world!.paused)).toBe(true);
   await expect
     .poll(() => page.evaluate(() => window.__world!.audio.state), { timeout: 5_000 })
@@ -331,10 +355,18 @@ test('prefers-reduced-motion starts the flight paused with the audio context sus
   expect(errors).toEqual([]);
 });
 
-const begun = async (page: Page, query: string) => {
+/**
+ * Begin, and skip the opening unless a test is there to watch it. Thirty
+ * seconds of scripted flight in front of a measurement is thirty seconds of
+ * something else being measured: the opening drives the stick, holds the
+ * camera and runs the day at three times its pace, and every test that flies
+ * somewhere and reads the sky was reading the opening instead.
+ */
+const begun = async (page: Page, query: string, opening = false) => {
   const errors = await openWorld(page, query);
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  if (!opening) await page.evaluate(() => window.__world!.skipOpening());
   return errors;
 };
 const paused = async (page: Page) => {
@@ -438,6 +470,9 @@ test('the right button steers, the left button orbits, the wheel zooms, and the 
 });
 
 test('the flight resumes on the same seed from the remembered place and time of day', async ({ page }) => {
+  // Three page starts with a reload among them, and two hundred steps that each
+  // render: more than ninety seconds on a software rasteriser having a bad day.
+  test.slow();
   await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const before = await page.evaluate(() => {
@@ -492,10 +527,39 @@ test('sound starts on Begin and the HUD mutes it', async ({ page }) => {
   await page.click('#muteBtn');
   await expect(page.locator('#muteBtn')).toHaveText('sound off');
   expect((await page.evaluate(() => window.__world!.audio)).muted).toBe(true);
-  if (running)
+  if (running) {
+    // Muting is a fade with a time constant of 0.3 s and, like the ramp above,
+    // it runs on the **audio clock**. Asking for a gain under 0.05 within eight
+    // of *our* seconds is asking the runner to own a sound card: CI advanced
+    // that clock 0.48 s in eight of ours, which left a gain of 0.135 on a fade
+    // that was behaving perfectly. So this reads the fade's own curve instead.
+    //
+    // The reference is taken after the click and never before it. Measured
+    // here, the audio clock jumps 7.9 s across that click -- the page stalls on
+    // a software rasteriser and the sound card does not wait for it -- so a
+    // reading from before the click predicts nothing about what follows.
+    const from = await page.evaluate(() => {
+      const a = window.__world!.audio;
+      return { gain: a.gain, clock: a.clock };
+    });
     await expect
-      .poll(() => page.evaluate(() => window.__world!.audio.gain), { timeout: 8_000 })
-      .toBeLessThan(0.05);
+      .poll(() => page.evaluate((c) => window.__world!.audio.clock - c, from.clock), {
+        timeout: 20_000,
+      })
+      .toBeGreaterThan(0.25);
+    const after = await page.evaluate(() => {
+      const a = window.__world!.audio;
+      return { gain: a.gain, clock: a.clock };
+    });
+    if (from.gain < 0.02) {
+      // the stall swallowed the whole fade; there is nothing left to watch
+      expect(after.gain).toBeLessThan(0.02);
+    } else {
+      // e^(-t/tau) from where the fade actually was, with a frame of slack
+      expect(after.gain).toBeLessThan(from.gain * Math.exp(-(after.clock - from.clock) / 0.3) + 0.02);
+      expect(after.gain).toBeLessThan(from.gain);
+    }
+  }
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).muted)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -517,6 +581,14 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
     });
   const wind = await page.evaluate(() => window.__world!.wind);
   expect(wind.speed).toBeGreaterThanOrEqual(10);
+  // The galaxy's atlas is baked in a worker and lands when it lands -- measured
+  // here, between the first capture and the second. The day opens at dawn, where
+  // the night sky is still worth 0.0005 of the picture, and that was the flake:
+  // two captures with nothing arriving between them are identical to the bit.
+  // Waiting for the atlas, and stepping once so it reaches the GPU, is what
+  // makes the pair below a pair.
+  await expect.poll(() => page.evaluate(() => window.__world!.galaxy.baked), { timeout: 120_000 }).toBe(true);
+  await page.evaluate(() => window.__world!.step(0.05));
   const phase = await page.evaluate(() => window.__world!.dayPhase);
   const a = await sky();
   const again = await sky();
@@ -609,6 +681,15 @@ test('the registry reaches the page and two climates paint different ground', as
           w.step(0.02);
         }
         pin();
+        // One animation frame before the picture, and it is not politeness.
+        // Everything above happens inside one task, and three advances the node
+        // graph's frame id only in the renderer's own animation tick -- so a
+        // capture taken here carries whatever the nodes held before `dayPhase`
+        // was written, which on the first visit is the palette the page started
+        // at. CI read 0.243 between two visits to one place for exactly that
+        // reason, the same number twice.
+        await new Promise<void>((settled) => requestAnimationFrame(() => settled()));
+        pin();
         const shot = await w.capture(96, 54);
         if (!shot) return null;
         // The mean colour of the bottom left corner: ground from this height,
@@ -626,29 +707,38 @@ test('the registry reaches the page and two climates paint different ground', as
             b += shot.data[i + 2]!;
             n++;
           }
-        return [
-          r / n,
-          g / n,
-          b / n,
-          w.state.x - x,
-          w.state.z - z,
-          w.state.y,
-          w.scenery!.trees,
-          w.scenery!.grass,
-          w.scenery!.rebuilds,
-        ];
+        return {
+          colour: [r / n, g / n, b / n],
+          drift: [w.state.x - x, w.state.z - z, w.state.y],
+          trees: w.scenery!.trees,
+          grass: w.scenery!.grass,
+          rebuilds: w.scenery!.rebuilds,
+        };
       },
       { x, z, h },
     );
   const shotA = await groundAt(STEPPE.x, STEPPE.z, a.h);
   const shotAgain = await groundAt(STEPPE.x, STEPPE.z, a.h);
   const shotB = await groundAt(WILDSONG.x, WILDSONG.z, b.h);
-  const apart = (x: number[] | null, y: number[] | null) =>
-    x && y ? x.reduce((s, v, i) => s + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  /**
+   * How far apart two pictures are, and **only** the pictures. This used to
+   * average the differences across one flat array that also carried the drift,
+   * the altitude and the scenery counters -- and `rebuilds` is a counter that
+   * grows, so two extra ring rebuilds between the first visit and the second
+   * came out as 2/9 = 0.222 against a threshold of 0.002. A photograph and a
+   * tally do not belong in one average.
+   */
+  const apart = (x: typeof shotA, y: typeof shotA) =>
+    x && y ? x.colour.reduce((s, v, i) => s + Math.abs(v - y.colour[i]!), 0) / x.colour.length : NaN;
   // The pixels come back 0..1, so these are small numbers on purpose. Measured
   // at seed 42: steppe reads (0.29, 0.31, 0.11) and wildsong (0.17, 0.28, 0.08).
   expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
+  // and the place itself is the same place twice: the same forest, the same
+  // meadow, the flight pinned where it was put
+  expect(shotAgain!.trees).toBe(shotA!.trees);
+  expect(shotAgain!.grass).toBe(shotA!.grass);
+  for (const [i, v] of shotAgain!.drift.entries()) expect(v).toBeCloseTo(shotA!.drift[i]!, 3);
   // no console errors anywhere above is the proof that ten branches of TSL compiled
   expect(errors).toEqual([]);
 });
@@ -1138,11 +1228,8 @@ test('the village draws: the road and the houses compile', async ({ page }) => {
     w.state.vy = 0;
     w.state.heading = Math.atan2(s.x - x, s.z - z);
     w.step(0.05);
-    const before = w.memory();
     const shot = await w.capture(128, 72);
     return {
-      before,
-      after: w.memory(),
       buildings: w.scenery!.buildings,
       pixels: shot ? shot.data.length : 0,
       finite: shot ? shot.data.every(Number.isFinite) : false,
@@ -1151,11 +1238,13 @@ test('the village draws: the road and the houses compile', async ({ page }) => {
   expect(drawn.buildings).toBeGreaterThan(20);
   expect(drawn.pixels).toBe(128 * 72 * 4);
   expect(drawn.finite).toBe(true);
-  // The renderer counts the geometry it has actually drawn, and the loop has
-  // been stopped since before the village came into reach, so this rise is the
-  // ribbon of road and the houses reaching the GPU in that one frame.
-  expect(drawn.after.geometries).toBeGreaterThan(drawn.before.geometries);
-  // Nothing in the console is what proves their materials compiled.
+  // Nothing in the console is what proves their materials compiled, and it is
+  // the whole of the proof: the geometry counter cannot say anything here. It
+  // was read before and after this capture until CI read the same 51 twice --
+  // a step renders, so the houses reached the GPU back in `overVillage`'s poll,
+  // and at 2.2 km from the start they were inside the ring on the very first
+  // frame. What this frame buys is the capture's own target, which compiles
+  // every material in the scene a second time for that configuration.
   expect(errors).toEqual([]);
 });
 
@@ -1424,5 +1513,342 @@ test('the town draws: its streets, its houses and its landmark compile', async (
   // same thing anyway: a frame with the town in front of the camera came back
   // whole, and nothing in the console. An `uncapturederror` is fatal here on
   // purpose, so a shader that only warned would not have got this far.
+  expect(errors).toEqual([]);
+});
+
+test('the country under the flight is heard, and only when it could be', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  // What the biomes ask for, at a height and a time of day. The mix is the
+  // engine's answer and the graph's input, so reading it here is reading the
+  // same number the gains are set from.
+  const heard = (phase: number, over: number) =>
+    page.evaluate(
+      ({ phase, over }) => {
+        const w = window.__world!;
+        w.dayPhase = phase;
+        w.state.y = Math.max(0, w.heightAt(w.state.x, w.state.z)) + over;
+        for (let i = 0; i < 4; i++) w.step(1 / 60);
+        return w.audio.layers as Record<string, number>;
+      },
+      { phase, over },
+    );
+
+  // The sun decides two of the five: a dawn chorus at midnight is wrong in a
+  // way no biome would ever ask for, and so is a cricket at noon.
+  const midnight = await heard(0, 60);
+  expect(midnight.birds).toBe(0);
+  expect(midnight.bells).toBe(0);
+  const noon = await heard(0.5, 60);
+  expect(noon.crickets).toBe(0);
+
+  // Height decides the rest. Crickets, birds and bells stand on the ground and
+  // are gone by 450 m; the high wind only starts where they stop.
+  const up = await heard(0, 1500);
+  for (const layer of ['crickets', 'birds', 'bells']) expect(up[layer]).toBe(0);
+
+  // and something is heard somewhere: ten biomes that all say nothing would
+  // pass every assertion above.
+  const readings = [midnight, noon, up, await heard(0.5, 1500)];
+  const loudest = Math.max(...readings.flatMap((r) => Object.values(r)));
+  expect(loudest).toBeGreaterThan(0);
+  expect(loudest).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
+test('a country tints its own air, and the sky over it with it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const found = await page.evaluate(
+    (tinted) => {
+      const w = window.__world!;
+      let best: { x: number; z: number; id: string } | null = null,
+        plain: { x: number; z: number; id: string } | null = null;
+      // One sweep, not one per biome: which countries seed 42 puts near the start
+      // is the terrain's business, so the test takes the best of whatever is
+      // there rather than naming a biome it may have to fly a day to reach.
+      for (let r = 400; r <= 60_000 && !(best && plain); r += 900)
+        for (let a = 0; a < 24; a++) {
+          const x = Math.sin((a / 24) * Math.PI * 2) * r,
+            z = Math.cos((a / 24) * Math.PI * 2) * r;
+          if (w.heightAt(x, z) < 5) continue;
+          const here = w.weightsAt(x, z)[0];
+          if (!here || here.weight < 0.7) continue;
+          const at = { x, z, id: here.id };
+          if (tinted.includes(here.id)) best ??= at;
+          else plain ??= at;
+        }
+      return { best, plain };
+    },
+    ['jungle', 'dunes', 'badlands', 'frostpines', 'moor'],
+  );
+  const hazy = found.best; // one of the five that tint their air
+  const plain = found.plain; // and one that tints nothing
+  expect(hazy, 'no biome that tints its air within sixty kilometres of the start').toBeTruthy();
+  expect(plain).toBeTruthy();
+
+  /**
+   * The fog, the background and the dome's horizon -- one colour in this engine
+   * -- over a place, at one hour and one height.
+   *
+   * This reads the uniform rather than photographing the sky, and it is worth
+   * saying why: the tint is capped at a third of the way and half the biomes
+   * that carry one carry something pale. Measured on pixels, frostpines against
+   * wildsong moved the sky by **half a unit in 255** -- a real effect drowned in
+   * the difference between two landscapes. The uniform is what the shader is
+   * handed, and the shader's own path from it to the sky is what the day-turns
+   * and Milky Way tests already watch.
+   */
+  const horizonOver = async (at: { x: number; z: number }) =>
+    page.evaluate((at) => {
+      const w = window.__world!;
+      w.setAutopilot(false);
+      w.state.x = at.x;
+      w.state.z = at.z;
+      w.state.y = Math.max(0, w.heightAt(at.x, at.z)) + 120;
+      w.dayPhase = 0.42;
+      for (let i = 0; i < 4; i++) w.step(1 / 60);
+      return w.horizon;
+    }, at);
+
+  const over = await horizonOver(hazy!);
+  const away = await horizonOver(plain!);
+  const tint = await page.evaluate((id) => window.__world!.hazeOf(id), hazy!.id);
+  expect(tint, `${hazy!.id} has no tint`).toBeTruthy();
+  // The two are different, and the difference points at the biome's own colour:
+  // a direction and a distance, rather than a colour the test could name, since
+  // what the cap buys is a tint and never a repaint.
+  const moved = Math.hypot(over.r - away.r, over.g - away.g, over.b - away.b);
+  const toward =
+    (over.r - away.r) * (tint!.r / 255 - away.r) +
+    (over.g - away.g) * (tint!.g / 255 - away.g) +
+    (over.b - away.b) * (tint!.b / 255 - away.b);
+  expect(moved, `${hazy!.id} against ${plain!.id}`).toBeGreaterThan(0.004);
+  expect(toward, `${hazy!.id} against ${plain!.id}`).toBeGreaterThan(0);
+  // and the plain country's air is the palette's own: nothing was added to it
+  const plainAgain = await horizonOver(plain!);
+  expect(Math.hypot(away.r - plainAgain.r, away.g - plainAgain.g, away.b - plainAgain.b)).toBeLessThan(1e-6);
+  expect(errors).toEqual([]);
+});
+
+test('the opening plays once, and anything at all ends it', async ({ page }) => {
+  const errors = await begun(page, 'seed=42&webgl=1', true);
+  /** The script's own seconds: the page runs in slow motion on a rasteriser. */
+  const run = (seconds: number) =>
+    page.evaluate((s) => {
+      for (let i = 0; i < Math.round(s * 60); i++) window.__world!.step(1 / 60);
+      const w = window.__world!;
+      return { card: w.opening.card, done: w.opening.done, y: w.state.y, phase: w.dayPhase };
+    }, seconds);
+
+  // It starts at dawn with a card over it, and under the cloud deck: the climb
+  // is the act with something to see and it needs something to climb through.
+  const early = await run(2);
+  expect(early.card).toBeGreaterThan(0.5);
+  expect(early.done).toBe(false);
+  expect(early.phase).toBeGreaterThan(0.1);
+  expect(early.phase).toBeLessThan(0.2);
+  const start = early.y;
+  expect(start).toBeLessThan(520);
+
+  // The card goes before the flight does anything worth watching, and the
+  // climb takes the figure over the deck.
+  const mid = await run(16);
+  expect(mid.card).toBe(0);
+  expect(mid.y).toBeGreaterThan(520);
+  expect(mid.done).toBe(false);
+
+  // It ends itself and hands the flight back.
+  const after = await run(14);
+  expect(after.done).toBe(true);
+  // the real flag, off the debug surface: `state.autopilot` does not exist, and
+  // reading it gave `undefined ?? true`, which is an assertion that cannot fail
+  expect(await page.evaluate(() => window.__world!.autopilot)).toBe(true);
+  // and the day is the world's own again: a rate left at three would show up
+  // here as three times the phase in the same number of steps
+  const before = after.phase;
+  const later = await run(6);
+  expect((later.phase - before) * 600).toBeGreaterThan(4);
+  expect((later.phase - before) * 600).toBeLessThan(9);
+  expect(errors).toEqual([]);
+});
+
+test('a hand on the controls ends the opening, and a remembered flight never sees it', async ({ page }) => {
+  // Two page starts with a reload between them, and each start compiles every
+  // shader in the scene: ninety seconds ran out on CI.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1', true);
+  await page.evaluate(() => {
+    for (let i = 0; i < 120; i++) window.__world!.step(1 / 60);
+  });
+  expect(await page.evaluate(() => window.__world!.opening.done)).toBe(false);
+  // One arrow key. Not a drag, not the HUD: the cheapest thing a person does.
+  await page.keyboard.press('ArrowLeft');
+  const skipped = await page.evaluate(() => {
+    const w = window.__world!;
+    return { done: w.opening.done, card: w.opening.card };
+  });
+  expect(skipped.done).toBe(true);
+  expect(skipped.card).toBe(0);
+
+  // Now leave a flight behind and come back to it. Thirty seconds of titles is
+  // not what somebody coming back came back for.
+  await page.evaluate(() => window.__world!.saveFlight());
+  await page.reload();
+  await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 90_000 });
+  await page.click('#beginBtn');
+  await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.resumed)).toBe(true);
+  expect(await page.evaluate(() => window.__world!.opening.done)).toBe(true);
+  expect(await page.evaluate(() => window.__world!.opening.card)).toBe(0);
+  expect(errors).toEqual([]);
+});
+test('the dev panel switches a layer off and the frame loses it', async ({ page }) => {
+  // Three captures, so the first compiles the scene a second time for the
+  // capture's own target: slow on a runner with no GPU, and the reason this is
+  // one test and not three.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await expect(page.locator('#dev')).toBeVisible();
+  await paused(page);
+  // Noon: the galaxy's atlas lands in the middle of a test like this one, and
+  // at dawn that is worth 0.0005 of the picture (measured in the wind test).
+  // At noon the night factor is zero and the atlas cannot change a pixel.
+  await page.evaluate(() => {
+    window.__world!.dayPhase = 0.5;
+  });
+  const shot = async () => {
+    const data = await page.evaluate(async () => {
+      const picture = await window.__world!.capture(96, 54);
+      return picture ? Array.from(picture.data) : null;
+    });
+    return data;
+  };
+  const diff = (x: number[] | null, y: number[] | null) =>
+    x && y ? x.reduce((sum, v, i) => sum + Math.abs(v - y[i]!), 0) / x.length : NaN;
+  // One capture thrown away first. Taken in the same animation frame as the
+  // day was moved, it reads 0.07 away from every capture after it -- measured,
+  // and the cause is the node graph's frame id, which three advances only in
+  // the renderer's own tick: nodes that update once per id are still carrying
+  // the state from before the day moved. One animation frame later they are
+  // not, and from there the captures are identical to the last bit.
+  await shot();
+  const full = await shot();
+  const terrain = page.locator('#dev label.layer', { hasText: 'terrain' }).locator('input');
+  await terrain.uncheck();
+  expect(await page.evaluate(() => window.__world!.layers.visible('terrain'))).toBe(false);
+  const bare = await shot();
+  // A world with the ground switched off is a different picture by any measure;
+  // what it is not is a broken one, so the pixels are still numbers.
+  expect(diff(full, bare)).toBeGreaterThan(0.02);
+  expect(bare!.every(Number.isFinite)).toBe(true);
+  await terrain.check();
+  expect(await page.evaluate(() => window.__world!.layers.visible('terrain'))).toBe(true);
+  // And the switch gave it back: the same sun, the same place, the same frame,
+  // to within the microsecond of day each redraw costs (measured: 1.4e-5).
+  expect(diff(full, await shot())).toBeLessThan(1e-3);
+  expect(errors).toEqual([]);
+});
+
+test('the dev panel measures what the biomes cost a texel', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await paused(page);
+  await page.locator('#dev button', { hasText: 'measure hooks' }).click();
+  const costs = page.locator('#dev .wrap').last();
+  await expect(costs).toContainText(/hooks -?\d+\.\d\d µs\/texel \(budget 2\)/, { timeout: 30_000 });
+  // The measurement itself, off the same surface: one entry per biome in the
+  // registry, real time on the clock, and nothing infinite in it.
+  const measured = await page.evaluate(() => {
+    const w = window.__world!;
+    const costs = w.measureHeightHooks(512);
+    return { ...costs, biomes: w.biomes };
+  });
+  expect(measured.perBiome.map((b) => b.id)).toEqual(measured.biomes);
+  expect(measured.base).toBeGreaterThan(0);
+  expect(measured.all).toBeGreaterThan(0);
+  expect(Number.isFinite(measured.hooks)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the dev panel jumps the flight to a settlement', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1&dev=1');
+  await paused(page);
+  // The village of the tests above, typed into the panel's own fields.
+  const fields = page.locator('#dev .fields input[type=number]');
+  await fields.nth(0).fill(String(VILLAGE.x));
+  await fields.nth(1).fill(String(VILLAGE.z));
+  await page.locator('#dev .fields button', { hasText: 'go' }).first().click();
+  const where = await page.evaluate(() => {
+    const w = window.__world!;
+    return { x: w.state.x, z: w.state.z, clearance: w.clearance };
+  });
+  // Not to the metre: a jump ends in a step, and a step is a step -- the flight
+  // flies the 0.05 s that puts the window, the ring and the origin where it
+  // has landed. Two metres at 44 m/s is what that costs.
+  expect(Math.hypot(where.x - VILLAGE.x, where.z - VILLAGE.z)).toBeLessThan(5);
+  expect(where.clearance).toBeGreaterThan(50);
+  // And the settlement is found from there: the panel's `site` button walks the
+  // flight to the middle of the plan the ring is holding.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = window.__world!;
+          w.step(0.05);
+          return w.scenery!.buildings;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+  await page.locator('#dev .fields button', { hasText: 'site' }).click();
+  const site = await page.evaluate(() => {
+    const w = window.__world!;
+    return { id: w.siteNear(w.state.x, w.state.z)!.id, x: w.state.x, z: w.state.z };
+  });
+  expect(site.id).toBe('village:0,0');
+  expect(Math.hypot(site.x - VILLAGE.x, site.z - VILLAGE.z)).toBeLessThan(200);
+  expect(errors).toEqual([]);
+});
+
+test('the wardrobe dresses the figure, and the world picks the marking until somebody does', async ({
+  page,
+}) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  // Nobody has chosen a marking, so this one is seed 42's own -- the rule, not
+  // a roll: the same address opens wearing the same thing every time.
+  const first = await page.evaluate(() => window.__world!.wearing);
+  expect(first.outfit).toBe('dusk');
+  expect(first.pattern.length).toBeGreaterThan(0);
+  expect(await page.locator('#wardrobe').isVisible()).toBe(false);
+
+  await page.click('#wardrobeBtn');
+  await expect(page.locator('#wardrobe')).toBeVisible();
+  await expect(page.locator('#wardrobeBtn')).toHaveAttribute('aria-expanded', 'true');
+  // One tile per outfit and one chip per marking, and the tiles are drawn from
+  // the catalogue's own colours (the unit tests hold that end of it).
+  const tiles = page.locator('#wardrobeOutfits button');
+  await expect(tiles).toHaveCount(6);
+  await expect(page.locator('#wardrobePatterns button')).toHaveCount(5);
+
+  await page.click('#wardrobeOutfits button[data-id="moss"]');
+  await page.click('#wardrobePatterns button[data-id="bands"]');
+  expect(await page.evaluate(() => window.__world!.wearing)).toEqual({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
+  // A choice is the person's, so it is remembered -- and the figure is
+  // repainted on the spot rather than on the next thing that happens to draw.
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!))).toMatchObject({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => window.__world!.wearing)).toEqual({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
   expect(errors).toEqual([]);
 });

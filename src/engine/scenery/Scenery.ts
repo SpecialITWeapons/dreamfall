@@ -8,6 +8,7 @@
 // the world can defer it and give it its own stage of the veil.
 import type { Scene } from 'three';
 import type { Library } from '../../../library/contract';
+import type { Hideable } from '../render/Layers';
 import type { LitMaterial } from '../render/SoftLighting';
 import type { Origin } from '../sim/Origin';
 import type { SkyUniforms } from '../sky/SkyUniforms';
@@ -63,6 +64,8 @@ export interface SceneryStats {
 export interface Scenery {
   update(x: number, z: number, cameraY: number, moved: boolean): void;
   readonly stats: SceneryStats;
+  /** What the layer switches hold, by switch name: the pools by their own, the ribbons and the grass whole. */
+  readonly groups: Record<string, Hideable[]>;
   /** The nearest settlement to a world point, or null; the browser test finds a village through this. */
   siteNear(x: number, z: number): { id: string; x: number; z: number; radius: number; lots: number } | null;
   /** The i-th tree of the last rebuild in both frames; the browser test checks the conversion. */
@@ -199,6 +202,13 @@ export function createScenery(deps: {
         sitesMs: Math.round(sitesMs * 100) / 100,
         bakeMs,
       };
+    },
+    groups: {
+      trees: pools.meshes.filter((mesh) => mesh.name === 'trees'),
+      props: pools.meshes.filter((mesh) => mesh.name === 'props'),
+      buildings: pools.meshes.filter((mesh) => mesh.name === 'buildings'),
+      roads: [pools.roads],
+      grass: [grass.mesh],
     },
     sample: (i) => samples[i] ?? null,
     dispose() {

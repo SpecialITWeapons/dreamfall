@@ -113,6 +113,70 @@ describe('bakeStructure', () => {
       expect(new Set([a, b, c]).size).toBe(1);
     }
   });
+  it('cuts the band into windows with wall between them, and not one belt of paint', () => {
+    // What this pins, in the owner's words: the houses had stripes instead of
+    // windows. A band painted round a whole storey is one lit run the length of
+    // the wall; windows are several, with unlit wall between them, and they
+    // stop short of both corners.
+    // A house wide enough to have something to say: the fixture above is 7 by
+    // 5.5 and its short wall fits one window, which is correct and proves
+    // nothing.
+    const { geometry } = bakeStructure(cottage({ footprint: [13, 10] }), 1, kit);
+    const p = geometry.getAttribute('position'),
+      glow = geometry.getAttribute('glow');
+    // The wall plane, taken off the windows themselves: the roof overhangs its
+    // walls by an eave, so the widest thing on the building is not a wall.
+    let far = 0;
+    for (let i = 0; i < p.count; i++) if (glow.getX(i) > 0) far = Math.max(far, Math.abs(p.getX(i)));
+    // One wall: the one facing +x. Its length is measured in z.
+    const lit: Array<[number, number]> = [];
+    let span = 0;
+    for (let i = 0; i < p.count; i += 3) {
+      const onWall = [0, 1, 2].every((k) => Math.abs(p.getX(i + k) - far) < 1e-3);
+      if (!onWall) continue;
+      const zs = [0, 1, 2].map((k) => p.getZ(i + k));
+      span = Math.max(span, Math.max(...zs) - Math.min(...zs));
+      if (glow.getX(i) > 0) lit.push([Math.min(...zs), Math.max(...zs)]);
+    }
+    expect(lit.length).toBeGreaterThan(0);
+    // Merge the lit pieces into runs: a belt is one run, windows are several.
+    lit.sort((a, b) => a[0] - b[0]);
+    const runs: Array<[number, number]> = [];
+    for (const [lo, hi] of lit) {
+      const last = runs[runs.length - 1];
+      if (last && lo <= last[1] + 1e-3) last[1] = Math.max(last[1], hi);
+      else runs.push([lo, hi]);
+    }
+    expect(runs.length).toBeGreaterThanOrEqual(3);
+    // and between them is wall, not more window
+    const wide = runs.reduce((n, [lo, hi]) => n + (hi - lo), 0);
+    expect(wide).toBeLessThan(span * 0.7);
+    expect(wide).toBeGreaterThan(span * 0.2);
+  });
+  it('gives every window a number of its own, so the night can light one and not the next', () => {
+    const { geometry } = bakeStructure(cottage(), 2, kit);
+    const glow = geometry.getAttribute('glow'),
+      pane = geometry.getAttribute('pane');
+    const rolls = new Set<number>();
+    for (let i = 0; i < glow.count; i += 3) {
+      // one number per triangle, as the glow is: a window with two of them
+      // would light up in halves
+      expect(new Set([0, 1, 2].map((k) => pane.getX(i + k))).size).toBe(1);
+      if (glow.getX(i) > 0) rolls.add(pane.getX(i));
+      else expect(pane.getX(i)).toBe(0);
+    }
+    // A cottage at two storeys has four walls of windows twice over, and they
+    // do not share a roll: this is what lets one house light its kitchen and
+    // the house next door -- the same instanced geometry -- light its landing.
+    expect(rolls.size).toBeGreaterThanOrEqual(8);
+    for (const roll of rolls) {
+      expect(roll).toBeGreaterThan(0);
+      expect(roll).toBeLessThan(1);
+    }
+    // and the same house baked twice is the same house
+    const again = bakeStructure(cottage(), 2, kit).geometry.getAttribute('pane');
+    for (let i = 0; i < pane.count; i++) expect(again.getX(i)).toBe(pane.getX(i));
+  });
   it('bakes every village recipe at both of its floor counts, inside the budget', () => {
     const structures = createLibrary().structures ?? [];
     expect(structures.length).toBeGreaterThanOrEqual(3);
@@ -239,11 +303,14 @@ describe('the landmark', () => {
     for (const floors of counts) {
       const triangles = bakeStructure(tower, floors, kit).geometry.getAttribute('position')!.count / 3;
       expect(triangles).toBeLessThan(BUDGET.propTriangles);
-      // Measured: 274 at three stages, 338 at four. A landmark is read at a
-      // kilometre, where what carries is the outline and not the detail, so the
-      // cap sits near the measurement: spending the budget here buys nothing
-      // and this says so.
-      expect(triangles).toBeLessThan(600);
+      // Measured: 718 at three stages, 922 at four. It was 274 and 338 while a
+      // floor's windows were one belt of paint round the whole storey; cutting
+      // that belt into panes is what the rest costs, and it is the cheapest cut
+      // there is -- slicing the band into its cells rather than splitting it at
+      // each of a dozen planes in turn, which came to 1076 for the same tower.
+      // A landmark is read at a kilometre, where what carries is the outline
+      // and not the detail, so the cap still sits near the measurement.
+      expect(triangles).toBeLessThan(1100);
     }
   });
 
@@ -325,11 +392,17 @@ describe('the landmark', () => {
       // within twenty degrees of vertical, and a spire is well inside that, so
       // a band left too high would cut windows into the roof.
       expect(lamp.hi).toBeLessThan(baked.top - 8);
-      // Lit the whole way round, not on one face: four sides of a square turned
-      // 45 degrees, times the band. Glow bleeding past the band would show up
-      // here as a multiple of it, and a face missed as a fraction.
+      // Lit on every face, and on none of them the whole way along: four sides
+      // of a square turned 45 degrees times the band is what a *belt* of paint
+      // would measure, and windows are a fraction of that -- panes of
+      // PANE_WIDTH every PANE_PITCH, with a pier left in each corner. Glow
+      // bleeding past the band still shows up here as a multiple, a face missed
+      // as a fraction of the fraction, and a belt coming back as the whole of
+      // it.
       const half = halfWidth(baked.geometry, lamp.lo, lamp.hi);
-      expect(lamp.area).toBeCloseTo(4 * Math.SQRT2 * half * (lamp.hi - lamp.lo), 3);
+      const belt = 4 * Math.SQRT2 * half * (lamp.hi - lamp.lo);
+      expect(lamp.area).toBeGreaterThan(belt * 0.2);
+      expect(lamp.area).toBeLessThan(belt * 0.75);
     }
   });
 });

@@ -23,4 +23,6 @@ export default defineBiome({
     props: { boulders: 0.2 },
     grass: { tint: 'grassGold', density: 0.7 },
   },
+  // A wood in late year: birds in it all day, and enough dry grass under the trees for a thin night.
+  ambience: { layers: { birds: 0.7, crickets: 0.3 } },
 });

@@ -23,4 +23,7 @@ export default defineBiome({
     props: { boulders: 0.15 },
     grass: { tint: 'white', density: 0.8 },
   },
+  // The loudest country there is, and the only one as loud at midnight as at noon.
+  // Wet heat you can see: the air over a jungle is the jungle's own green.
+  ambience: { layers: { crickets: 1, birds: 0.9 }, fogTint: 'jungle', fogTintAmount: 0.26 },
 });
