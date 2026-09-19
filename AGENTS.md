@@ -369,9 +369,13 @@ page works under a Pages subdirectory.
   are gitignored, because a reference PNG is a photograph of one rasteriser.
   Both READMEs carry the method and the reasoning; `docs/perf-notes.md`
   carries the numbers.
-- The fifth percentile of a window of frames and the minimum across rounds:
-  both throw the machine away rather than the engine. A mean measures whatever
-  else the box was doing.
+- The median of a window of frames, and the minimum across rounds: both throw
+  the machine away rather than the engine. The spec asks for the fifth
+  percentile, which is right on a GPU and wrong on a rasteriser without one --
+  there the intervals come out bimodal, because the loop sometimes reports two
+  frames inside one sampling window, and the fast end is those artefacts rather
+  than the engine. It read 7.3 ms where every frame took 3.3 s. The fifth
+  percentile is kept beside the median for the machine that has a GPU.
 - GPU milliseconds exist on WebGPU only. Asked for them, SwiftShader answers
   with a number that is not a frame time -- the same 2 827.99 ms at five
   different vantages -- so the engine does not ask, and the bench prints `--`.
