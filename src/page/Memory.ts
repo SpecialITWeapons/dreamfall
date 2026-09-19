@@ -24,6 +24,11 @@ export interface Settings {
   camera: { yaw: number; pitch: number; dist: number };
   view: View;
   outfit: string;
+  /**
+   * The marking, and empty when nobody has chosen one: then the world's own
+   * rule decides (`patternForSeed`), so a fresh seed dresses its flyer itself
+   * and a chosen marking travels with the person instead of with the world.
+   */
   pattern: string;
 }
 
@@ -33,7 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   camera: { yaw: 0, pitch: ORBIT.pitch, dist: ORBIT.dist },
   view: 'tpp',
   outfit: 'dusk',
-  pattern: 'plain',
+  pattern: '',
 };
 
 type Raw = Record<string, unknown>;

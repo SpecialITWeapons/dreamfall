@@ -1810,3 +1810,45 @@ test('the dev panel jumps the flight to a settlement', async ({ page }) => {
   expect(Math.hypot(site.x - VILLAGE.x, site.z - VILLAGE.z)).toBeLessThan(200);
   expect(errors).toEqual([]);
 });
+
+test('the wardrobe dresses the figure, and the world picks the marking until somebody does', async ({
+  page,
+}) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  // Nobody has chosen a marking, so this one is seed 42's own -- the rule, not
+  // a roll: the same address opens wearing the same thing every time.
+  const first = await page.evaluate(() => window.__world!.wearing);
+  expect(first.outfit).toBe('dusk');
+  expect(first.pattern.length).toBeGreaterThan(0);
+  expect(await page.locator('#wardrobe').isVisible()).toBe(false);
+
+  await page.click('#wardrobeBtn');
+  await expect(page.locator('#wardrobe')).toBeVisible();
+  await expect(page.locator('#wardrobeBtn')).toHaveAttribute('aria-expanded', 'true');
+  // One tile per outfit and one chip per marking, and the tiles are drawn from
+  // the catalogue's own colours (the unit tests hold that end of it).
+  const tiles = page.locator('#wardrobeOutfits button');
+  await expect(tiles).toHaveCount(6);
+  await expect(page.locator('#wardrobePatterns button')).toHaveCount(5);
+
+  await page.click('#wardrobeOutfits button[data-id="moss"]');
+  await page.click('#wardrobePatterns button[data-id="bands"]');
+  expect(await page.evaluate(() => window.__world!.wearing)).toEqual({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
+  // A choice is the person's, so it is remembered -- and the figure is
+  // repainted on the spot rather than on the next thing that happens to draw.
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!))).toMatchObject({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
+  await page.reload();
+  await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => window.__world!.wearing)).toEqual({
+    outfit: 'moss',
+    pattern: 'bands',
+  });
+  expect(errors).toEqual([]);
+});

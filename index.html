@@ -274,6 +274,67 @@
         text-decoration-color: rgba(241, 236, 227, 0.38);
         text-decoration-thickness: 1px;
       }
+      /* The wardrobe: the pill's own glass, standing over it. */
+      #wardrobe {
+        position: fixed;
+        left: max(1rem, env(safe-area-inset-left));
+        bottom: calc(max(0.7rem, env(safe-area-inset-bottom)) + 3.4rem);
+        max-width: min(24rem, calc(100vw - 2rem));
+        padding: 0.55rem 0.9rem 0.75rem;
+        border-radius: 1.1rem;
+        border: 1px solid rgba(241, 236, 227, 0.42);
+        background: rgba(14, 26, 34, 0.42);
+        backdrop-filter: blur(14px) saturate(1.15);
+        -webkit-backdrop-filter: blur(14px) saturate(1.15);
+        color: #f6f2ea;
+        font-size: 0.68rem;
+        letter-spacing: 0.16em;
+        text-transform: lowercase;
+        text-shadow: 0 1px 10px rgba(8, 18, 26, 0.55);
+        z-index: 4;
+      }
+      #wardrobe[hidden] {
+        display: none;
+      }
+      .wardrobe-title {
+        margin: 0.35rem 0 0.3rem;
+        opacity: 0.62;
+        letter-spacing: 0.22em;
+        font-size: 0.62rem;
+      }
+      .wardrobe-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+      .wardrobe-row button {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0.25rem 0.3rem 0.2rem;
+        border: 1px solid transparent;
+        border-radius: 0.7rem;
+        background: none;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        cursor: pointer;
+      }
+      .wardrobe-row button:hover,
+      .wardrobe-row button:focus-visible {
+        border-color: rgba(241, 236, 227, 0.45);
+      }
+      .wardrobe-row button[aria-pressed='true'] {
+        border-color: #f6f2ea;
+        background: rgba(246, 242, 234, 0.12);
+      }
+      .wardrobe-row span {
+        font-size: 0.58rem;
+        opacity: 0.8;
+      }
       #hud .dim {
         opacity: 0.62;
         letter-spacing: 0.2em;
@@ -419,7 +480,26 @@
       >
         view: behind
       </button>
+      <button
+        id="wardrobeBtn"
+        aria-label="Open the wardrobe"
+        title="What the figure wears"
+        aria-pressed="false"
+        aria-expanded="false"
+        aria-controls="wardrobe"
+      >
+        wardrobe
+      </button>
       <span id="backendLabel" class="dim"></span>
+    </div>
+    <!-- Outside the pill, like #manual and for the same reason: the pill dims
+         itself after a few seconds, and a panel somebody is choosing from must
+         not fade under their hand. -->
+    <div id="wardrobe" role="group" aria-label="Wardrobe" hidden>
+      <p class="wardrobe-title">suit</p>
+      <div id="wardrobeOutfits" class="wardrobe-row"></div>
+      <p class="wardrobe-title">marking</p>
+      <div id="wardrobePatterns" class="wardrobe-row"></div>
     </div>
 
     <script>

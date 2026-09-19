@@ -82,6 +82,18 @@ export interface Skin {
   swatch: string[];
   /** How dark each vertex sits against its swatch, 0..1; 1 is the swatch itself. */
   shade: Float32Array;
+  /**
+   * Where each vertex sits on its own chain, 0..1 from the first joint to the
+   * last, and where it sits around the ring, 0..2pi. The pair is what a
+   * *pattern* is painted with -- a band across a sleeve is a range of the
+   * first, a stripe down the outside of a leg is a range of the second -- and
+   * they are written here rather than worked out again later, because the only
+   * place that knows them is the sweep that put the vertex there. A cap vertex
+   * takes the ring's own `along` and an angle of zero: it is a point, and a
+   * point has no way round it.
+   */
+  along: Float32Array;
+  around: Float32Array;
 }
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -168,7 +180,9 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
     color = new Float32Array(count * 3),
     skinIndex = new Uint16Array(count * 4),
     skinWeight = new Float32Array(count * 4),
-    shade = new Float32Array(count);
+    shade = new Float32Array(count),
+    along = new Float32Array(count),
+    around = new Float32Array(count);
   const swatch: string[] = new Array<string>(count);
   const flatten = chain.flatten ?? 1;
   const frame = { u: new Vector3(), v: new Vector3() };
@@ -212,6 +226,8 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
       skinWeight.set([1 - sample.weight, sample.weight, 0, 0], i * 4);
       swatch[i] = chain.patch?.(sample.t, a) ?? name;
       shade[i] = dark;
+      along[i] = sample.t;
+      around[i] = a;
     }
   }
 
@@ -228,6 +244,8 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
     skinWeight.set([1 - sample.weight, sample.weight, 0, 0], i * 4);
     swatch[i] = chain.swatch(sample.t);
     shade[i] = 1;
+    along[i] = sample.t;
+    around[i] = 0;
   };
   if (capStart) capAt(samples[0]!, -1, (capA = rings * sides));
   if (capEnd) capAt(samples[rings - 1]!, 1, (capB = rings * sides + (capStart ? 1 : 0)));
@@ -263,7 +281,7 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
       index[w++] = base + k;
     }
   }
-  return { position, normal, color, skinIndex, skinWeight, index, swatch, shade };
+  return { position, normal, color, skinIndex, skinWeight, index, swatch, shade, along, around };
 }
 
 /** Lay several chains into one set of arrays, keeping every vertex's swatch and shade. */
@@ -279,6 +297,8 @@ export function mergeSkins(parts: Skin[]): Skin {
     index: new Uint32Array(indices),
     swatch: new Array<string>(count),
     shade: new Float32Array(count),
+    along: new Float32Array(count),
+    around: new Float32Array(count),
   };
   let v = 0,
     i = 0;
@@ -289,6 +309,8 @@ export function mergeSkins(parts: Skin[]): Skin {
     out.skinIndex.set(part.skinIndex, v * 4);
     out.skinWeight.set(part.skinWeight, v * 4);
     out.shade.set(part.shade, v);
+    out.along.set(part.along, v);
+    out.around.set(part.around, v);
     for (let k = 0; k < n; k++) out.swatch[v + k] = part.swatch[k]!;
     for (let k = 0; k < part.index.length; k++) out.index[i + k] = part.index[k]! + v;
     v += n;

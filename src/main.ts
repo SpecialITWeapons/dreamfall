@@ -5,11 +5,13 @@ import { swatchColor } from '../library/contract';
 import { createEngine } from './engine/Engine';
 import type { View } from './engine/flight/Steering';
 import { createLoop } from './engine/Loop';
+import { outfitById, patternById, patternForSeed } from './engine/avatar/Outfits';
 import { createWorld } from './engine/World';
 import type { DevPanel } from './dev/Panel';
 import { installDebug, type DisposeReport, type WorldDebug } from './page/Debug';
 import { createGate } from './page/Gate';
 import { createHud } from './page/Hud';
+import { createWardrobe } from './page/Wardrobe';
 import { browserStorage, createMemory, rememberedSeed, validateResume } from './page/Memory';
 import { addressWithSeed, resolveParams, shareAddress } from './page/Params';
 import { createVeil } from './page/Veil';
@@ -20,6 +22,14 @@ const storedFlight = memory.readResume();
 const params = resolveParams(location.search, Math.random, rememberedSeed(storedFlight));
 history.replaceState(null, '', addressWithSeed(location.href, params.seed));
 const resume = validateResume(storedFlight, params.seed);
+/**
+ * The marking: the person's if they ever opened the wardrobe, and otherwise
+ * the world's own, drawn from the seed. It is kept apart from the rest of the
+ * settings for exactly that reason -- saving the resolved one would pin the
+ * first world's marking to every world after it.
+ */
+let chosenPattern = settings.pattern;
+const pattern = chosenPattern ? patternById(chosenPattern) : patternForSeed(params.seed);
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 
 const veil = createVeil(document);
@@ -52,7 +62,7 @@ const world = createWorld({
   view: settings.view,
   orbit: settings.camera,
   outfit: settings.outfit,
-  pattern: settings.pattern,
+  pattern: pattern.id,
   volume: settings.volume,
   muted: settings.muted,
   reducedMotion: motionPreference.matches,
@@ -148,7 +158,7 @@ const saveSettings = () =>
     camera: { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist },
     view: steering.view,
     outfit: world.avatar.outfit.id,
-    pattern: world.avatar.pattern.id,
+    pattern: chosenPattern,
   });
 function saveFlight() {
   if (!loop.running || disposed) return;
@@ -203,6 +213,23 @@ const setView = (view: View) => {
 };
 hud.onView(() => setView(steering.view === 'tpp' ? 'fpp' : 'tpp'));
 /** The pill and the flag that remembers what the pill says, written together. */
+// The wardrobe: the catalogue draws its own tiles, the page only has to say
+// what is worn and hear what was picked.
+const wardrobe = createWardrobe(document);
+wardrobe.show(world.avatar.outfit.id, world.avatar.pattern.id);
+hud.onWardrobe(() => {
+  wardrobe.toggle();
+  hud.setWardrobe(wardrobe.open);
+});
+wardrobe.onPick((outfitId, patternId) => {
+  chosenPattern = patternId;
+  world.avatar.setOutfit(outfitById(outfitId), patternById(patternId));
+  saveSettings();
+  // Drawn now: the flight may well be paused, and somebody is looking at the
+  // figure they just dressed.
+  if (loop.running) loop.renderNow();
+});
+
 const showAutopilot = () => {
   shownAutopilot = steering.autopilot;
   hud.setAutopilot(shownAutopilot);
@@ -439,6 +466,9 @@ const debug: WorldDebug = {
     world.skipOpening();
     hud.setTitle(0);
     hud.setOpening(false);
+  },
+  get wearing() {
+    return { outfit: world.avatar.outfit.id, pattern: world.avatar.pattern.id };
   },
   resumed: resume !== null,
   snapshot: () => world.snapshot(),

@@ -682,6 +682,20 @@ Stroje i wzory: port mechaniki upierzeń i znaczeń. Katalog stroje × wzory,
 wzór przypisany regułą, kafelki SVG z tych samych liczb co geometria,
 „szafa” za przyciskiem w rogu po Begin, zapamiętana w ustawieniach.
 
+> **Zrobione 2026-09-19.** Sześć strojów i pięć znaczeń w
+> `avatar/Outfits.ts`. Znaczenie jest **czystą funkcją miejsca na łańcuchu** —
+> `along` i `around`, zapisywane przy każdym wierzchołku przez `Skin.ts`, bo
+> wie o nich tylko ten przebieg, który ten wierzchołek postawił — i wolno mu
+> przemalować **wyłącznie kombinezon**, wyłącznie na kolor, który ten strój już
+> ma. Inaczej katalog prędzej czy później pomaluje gogle. Kafelki SVG w panelu
+> rysuje ta sama funkcja, którą chodzi `repaint`, więc kafelek nie umie pokazać
+> znaczenia, którego postać by nie nosiła. To, co pokrywa postać, mieści się w
+> kopercie palety; gogle, buty i rękawice siedzą pod jej podłogą celowo (wizjer
+> ma czytać jako ciemny ze stu metrów) i test trzyma obie połowy. Reguła: wzoru
+> nikt nie wybrał → bierze go ziarno (`patternForSeed`), a wybrany jest
+> **czyjś** — zapisuje się jako wybór i jedzie do następnego świata, podczas gdy
+> niewybrany należy do świata.
+
 ## 10. Lot
 
 Port kontrolera ptaka ze zmianami. Stałe startowe: `SPEED 40 m/s` (do
@@ -873,7 +887,9 @@ wersją.
    tytułową (**zrobione 2026-09-18**: pięć aktów jako czysta funkcja czasu w
    `sim/Opening.ts`, sterujące lotem tymi samymi czasownikami co strzałki, więc
    koperta lotu obowiązuje przez całe otwarcie; świt zmierzony, nie zgadnięty --
-   słońce wychodzi zza krawędzi przy fazie 0,126), szafa, haki `ambience` (**zrobione 2026-09-18**: pięć warstw
+   słońce wychodzi zza krawędzi przy fazie 0,126), szafa (**zrobione
+   2026-09-19**: sześć strojów, pięć znaczeń, kafelki z tej samej funkcji co
+   malowanie postaci — szczegóły przy §9), haki `ambience` (**zrobione 2026-09-18**: pięć warstw
    syntezowanych w `Ambience.ts`, mieszanych wagami trzech slotów okna
    wysokości pod postacią; bramkowanie po słońcu i po wysokości jest decyzją
    silnika, nie bioma -- inaczej każdy biom pisałby te same dwie reguły),

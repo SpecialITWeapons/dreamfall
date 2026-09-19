@@ -36,7 +36,7 @@ import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
 import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
-import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern } from './Outfits';
+import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern, type Swatch } from './Outfits';
 
 /** How far the figure hangs under its center, and how far it reaches sideways, m; the flight reads these before the figure exists. */
 export const HUMAN_BOUNDS = { below: 0.3, radius: 1.1 } as const;
@@ -94,8 +94,6 @@ export interface FigureDescription {
   bones: Array<{ name: string; parent: string | null; rest: [number, number, number] }>;
   chains: ChainDescription[];
 }
-
-type Swatch = Exclude<keyof Outfit, 'id'>;
 
 const UP = new Vector3(0, 1, 0),
   AXIS_X = new Vector3(1, 0, 0);
@@ -829,7 +827,12 @@ export function createProceduralHuman(
       const attribute = meshes[i]!.geometry.getAttribute('color');
       const colors = attribute.array as Float32Array;
       for (let v = 0; v < skin.swatch.length; v++) {
-        tint.set(outfit[skin.swatch[v]! as Swatch]);
+        const worn = skin.swatch[v]! as Swatch;
+        // The marking, asked where this vertex sits on its own chain and round
+        // its own ring. It may answer with another of this outfit's swatches or
+        // with nothing, and nothing is the common answer.
+        const swatch = pattern.mark(worn, skin.along[v]!, skin.around[v]!) ?? worn;
+        tint.set(outfit[swatch]);
         const shade = skin.shade[v]!;
         colors[v * 3] = tint.r * shade;
         colors[v * 3 + 1] = tint.g * shade;

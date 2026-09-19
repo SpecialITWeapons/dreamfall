@@ -72,6 +72,8 @@ export interface WorldDebug {
   readonly opening: { card: number; done: boolean };
   /** End the opening now, as any input would. */
   skipOpening(): void;
+  /** What the figure has on: the outfit and the marking, by id. */
+  readonly wearing: { outfit: string; pattern: string };
   /** The page continued a remembered flight. */
   readonly resumed: boolean;
   snapshot(): ResumeState;
