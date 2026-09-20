@@ -35,7 +35,8 @@ import { SPEED } from '../flight/FlightController';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
-import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
+import { buildFlesh } from './Flesh';
+import { mergeSkins, type Chain, type Skin } from './Skin';
 import { OUTFIT, type Outfit, type Swatch } from './Outfit';
 
 /** How far the figure hangs under its center, and how far it reaches sideways, m; the flight reads these before the figure exists. */
@@ -64,8 +65,6 @@ export interface ChainDescription {
   bones: string[];
   /** The cross-section's shape, as `Skin.ts` means it: 1 is a circle. */
   flatten: number;
-  capStart: boolean;
-  capEnd: boolean;
   samples: Array<{
     /** How far along the chain, 0..1. */
     t: number;
@@ -547,7 +546,7 @@ export function createProceduralHuman(
    * whole of what the figure looks like -- the waist, the shoulder, the calf and
    * the ankle used to be four solids and are now four stops on a curve.
    */
-  const parts: Chain[] = [
+  const limbs: Chain[] = [
     // The spine, from the tail to the neck. Wider than it is thick, because a
     // chest is, and a tube that is not says "pipe" from the first glance.
     chain(['body', 'body', 'body', 'body', 'neck', 'neck'], {
@@ -587,8 +586,6 @@ export function createProceduralHuman(
         [1, 0.055],
       ]),
       swatch: () => 'suit',
-      sides: 16,
-      rings: 5,
       // A chest is flatter than the waist under it, and the hips are between:
       // the same 1.2 from tail to neck made a body of one cross-section, and
       // a body of one cross-section is a pipe however it tapers.
@@ -600,8 +597,6 @@ export function createProceduralHuman(
         [0.93, 1.15],
         [1, 1.05],
       ]),
-      capStart: true,
-      capEnd: false,
     }),
     ...([1, -1] as const).flatMap((side) => {
       const s = side > 0 ? 'L' : 'R';
@@ -618,10 +613,6 @@ export function createProceduralHuman(
             [1, 0.044],
           ]),
           swatch: () => 'suit',
-          sides: 12,
-          rings: 5,
-          capStart: true,
-          capEnd: false,
         }),
         // The leg: a thigh, a knee and a calf. The boot is its own chain, below.
         chain([`hip${s}`, `knee${s}`, `ankle${s}`], {
@@ -633,93 +624,8 @@ export function createProceduralHuman(
             [1, 0.048],
           ]),
           swatch: () => 'suit',
-          sides: 12,
-          rings: 5,
           flatten: 0.85,
-          capStart: true,
-          // Closed, although the boot stands over it: the ankle breaks 29
-          // degrees, so the shin's opening does not face the way the boot
-          // runs, and left open it was a hole in the leg with a boot beside it.
-          capEnd: true,
         }),
-      ];
-    }),
-    // The hands and the boots, which used to be the last two stops of the arm
-    // and the leg: a taper to a point, which from any distance is a mitten and
-    // a hoof. A hand is a palm and five fingers and a boot has a heel.
-    ...([1, -1] as const).flatMap((side) => {
-      const s = side > 0 ? 'L' : 'R';
-      const hand = handFrame(side);
-      const knuckles = hand.wrist.clone().addScaledVector(hand.along, PALM);
-      const bone = `wrist${s}`;
-      const finger = (root: Vector3, length: number, curl: number, width: number): Chain => ({
-        bones: [bone, bone, bone],
-        joints: [
-          root,
-          root
-            .clone()
-            .addScaledVector(hand.along, length * 0.55)
-            .addScaledVector(hand.palm, length * curl * 0.35),
-          root
-            .clone()
-            .addScaledVector(hand.along, length * 0.93)
-            .addScaledVector(hand.palm, length * curl),
-        ],
-        profile: ramp([
-          [0, width],
-          [0.5, width * 0.92],
-          [0.85, width * 0.86],
-          [1, width * 0.55],
-        ]),
-        swatch: () => 'gloves',
-        sides: 6,
-        rings: 2,
-        capStart: false,
-        capEnd: true,
-      });
-      return [
-        // The palm: wide across the hand and thin through it, which is the one
-        // place on this figure where `flatten` has to be told which way is
-        // which -- a palm whose across-axis came out edge-on is a blade.
-        chain([bone, bone], {
-          joints: [hand.wrist.clone().addScaledVector(hand.along, -0.02), knuckles],
-          profile: ramp([
-            [0, 0.04],
-            [0.5, 0.045],
-            [1, 0.042],
-          ]),
-          swatch: () => 'gloves',
-          sides: 10,
-          rings: 3,
-          flatten: 1.7,
-          across: hand.across,
-          capStart: true,
-          capEnd: false,
-        }),
-        // Four fingers, a little curled, because a hand in the air is not a
-        // hand held out flat -- and the little finger is not the middle one.
-        ...FINGERS.map((length, i) =>
-          finger(
-            knuckles
-              .clone()
-              .addScaledVector(hand.across, (i - 1.5) * 0.025)
-              .addScaledVector(hand.palm, 0.004),
-            length,
-            0.34,
-            0.0125,
-          ),
-        ),
-        // The thumb, off the inside edge and turned across the palm.
-        finger(
-          hand.wrist
-            .clone()
-            .addScaledVector(hand.along, 0.03)
-            .addScaledVector(hand.across, -0.036)
-            .addScaledVector(hand.palm, 0.006),
-          0.062,
-          0.18,
-          0.015,
-        ),
         // The boot: a heel behind the ankle, a ball under it, a toe. It hangs
         // on the ankle and the toe, so it turns with the ankle hinge the way
         // the old last-two-stops-of-the-leg did.
@@ -745,17 +651,87 @@ export function createProceduralHuman(
               [1, 0.026],
             ]),
             swatch: () => 'boots',
-            sides: 12,
-            rings: 4,
             flatten: 1.12,
             across,
-            capStart: true,
-            capEnd: true,
           } satisfies Chain;
         })(),
       ];
     }),
   ];
+  /**
+   * The hands: a palm and five fingers a side, grown as a region of their own
+   * at a finer grid than the body -- a finger is two and a half centimetres
+   * across, and the body's cells are one and a half -- and laid over the
+   * sleeve's end at the wrist, where the glove covers the join.
+   */
+  const hands: Chain[][] = ([1, -1] as const).map((side) => {
+    const s = side > 0 ? 'L' : 'R';
+    const hand = handFrame(side);
+    const knuckles = hand.wrist.clone().addScaledVector(hand.along, PALM);
+    const bone = `wrist${s}`;
+    const finger = (root: Vector3, length: number, curl: number, width: number): Chain => ({
+      bones: [bone, bone, bone],
+      joints: [
+        root,
+        root
+          .clone()
+          .addScaledVector(hand.along, length * 0.55)
+          .addScaledVector(hand.palm, length * curl * 0.35),
+        root
+          .clone()
+          .addScaledVector(hand.along, length * 0.93)
+          .addScaledVector(hand.palm, length * curl),
+      ],
+      profile: ramp([
+        [0, width],
+        [0.5, width * 0.92],
+        [0.85, width * 0.86],
+        [1, width * 0.55],
+      ]),
+      swatch: () => 'gloves',
+    });
+    return [
+      // The palm: wide across the hand and thin through it, which is the one
+      // place on this figure where `flatten` has to be told which way is
+      // which -- a palm whose across-axis came out edge-on is a blade.
+      chain([bone, bone], {
+        joints: [hand.wrist.clone().addScaledVector(hand.along, -0.02), knuckles],
+        profile: ramp([
+          [0, 0.04],
+          [0.5, 0.045],
+          [1, 0.042],
+        ]),
+        swatch: () => 'gloves',
+        flatten: 1.7,
+        across: hand.across,
+      }),
+      // Four fingers, a little curled, because a hand in the air is not a
+      // hand held out flat -- and the little finger is not the middle one.
+      ...FINGERS.map((length, i) =>
+        finger(
+          knuckles
+            .clone()
+            .addScaledVector(hand.across, (i - 1.5) * 0.025)
+            .addScaledVector(hand.palm, 0.004),
+          length,
+          0.34,
+          0.0125,
+        ),
+      ),
+      // The thumb, off the inside edge and turned across the palm.
+      finger(
+        hand.wrist
+          .clone()
+          .addScaledVector(hand.along, 0.03)
+          .addScaledVector(hand.across, -0.036)
+          .addScaledVector(hand.palm, 0.006),
+        0.062,
+        0.18,
+        0.015,
+      ),
+    ];
+  });
+  const parts: Chain[] = [...limbs, ...hands.flat()];
   /**
    * The head is its own surface on the same skeleton, and that is what lets the
    * first person hide it: with one skin there is no "hide the head", only "hide
@@ -818,10 +794,6 @@ export function createProceduralHuman(
       // and the chin itself, the one bit of a face this leaves out
       return side < -0.88 && t > 0.94 ? 'skin' : null;
     },
-    sides: 16,
-    rings: 6,
-    capStart: true,
-    capEnd: true,
   };
 
   const skeleton = new Skeleton(bones);
@@ -845,8 +817,19 @@ export function createProceduralHuman(
     mesh.bind(skeleton);
     return mesh;
   };
-  const bodySkin = mergeSkins(parts.map((c) => buildChain(c, boneIndex)));
-  const headSkin = buildChain(skull, boneIndex);
+  /**
+   * The surfaces, grown from the chains' fields: the body as one region, so
+   * the arms and the legs round into the torso instead of standing in it; each
+   * hand as a region of its own on a grid fine enough for a finger; the head
+   * on its own, because the first person hides it. The cells are what the
+   * thinnest thing in each region can afford, and the blend is how far two
+   * chains fillet into each other where they meet.
+   */
+  const bodySkin = mergeSkins([
+    buildFlesh(limbs, boneIndex, { cell: 0.02, blend: 0.05 }),
+    ...hands.map((hand) => buildFlesh(hand, boneIndex, { cell: 0.006, blend: 0.008 })),
+  ]);
+  const headSkin = buildFlesh([skull], boneIndex, { cell: 0.007, blend: 0.01 });
   const skins = [bodySkin, headSkin];
   const meshes = [skinned(bodySkin, 'skin'), skinned(headSkin, 'skull')];
   const triangles = skins.reduce((n, skin) => n + skin.index.length / 3, 0);
@@ -861,8 +844,9 @@ export function createProceduralHuman(
   for (const [i, skin] of skins.entries()) {
     const attribute = meshes[i]!.geometry.getAttribute('color');
     const colors = attribute.array as Float32Array;
+    const tint = new Color();
     for (let v = 0; v < skin.swatch.length; v++) {
-      const tint = tints[skin.swatch[v]! as Swatch]!;
+      tint.copy(tints[skin.swatch[v]! as Swatch]!).lerp(tints[skin.swatch2[v]! as Swatch]!, skin.mix[v]!);
       const shade = skin.shade[v]!;
       colors[v * 3] = tint.r * shade;
       colors[v * 3 + 1] = tint.g * shade;
@@ -918,8 +902,6 @@ export function createProceduralHuman(
       // the baker takes one number; a body whose section changes along it is
       // described at its middle, and the samples' radii carry the rest
       flatten: typeof chain.flatten === 'function' ? chain.flatten(0.5) : (chain.flatten ?? 1),
-      capStart: chain.capStart ?? false,
-      capEnd: chain.capEnd ?? false,
       samples,
     };
   };
