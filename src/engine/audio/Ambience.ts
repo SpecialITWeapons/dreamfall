@@ -128,6 +128,20 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
     available = typeof globalThis.AudioContext === 'function' || opts.createContext !== undefined;
   /** The last mix handed over, kept so a test can ask what the world sounds like. */
   let heard: Readonly<Record<Layer, number>> = EMPTY_LAYERS;
+  /**
+   * The last target each parameter was given. A target is an event on the
+   * audio thread's timeline, and nine of them a frame at sixty frames is five
+   * hundred messages a second for parameters that move on a time constant of
+   * a second and a half: one that has not moved by a thousandth is not sent.
+   */
+  const targets = new Map<AudioParam, number>();
+  const retarget = (param: AudioParam, value: number, timeConstant: number) => {
+    if (!ctx) return;
+    const last = targets.get(param);
+    if (last !== undefined && Math.abs(last - value) < 1e-4) return;
+    targets.set(param, value);
+    param.setTargetAtTime(value, ctx.currentTime, timeConstant);
+  };
   let chimeTimer = 25,
     birdTimer = 4,
     bellTimer = 50,
@@ -396,21 +410,17 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       heard = want;
       if (!ctx || !windFilter || !windGain || !waterGain) return;
       const wind = windParams(sample);
-      windFilter.frequency.setTargetAtTime(wind.frequency, ctx.currentTime, 0.4);
-      windGain.gain.setTargetAtTime(wind.gain, ctx.currentTime, 0.5);
-      waterGain.gain.setTargetAtTime(
-        waterAmount(groundAt, sample.x, sample.z, sample.altitude) * 0.28,
-        ctx.currentTime,
-        1.2,
-      );
+      retarget(windFilter.frequency, wind.frequency, 0.4);
+      retarget(windGain.gain, wind.gain, 0.5);
+      retarget(waterGain.gain, waterAmount(groundAt, sample.x, sample.z, sample.altitude) * 0.28, 1.2);
       // What the country under the flyer is asking for. Every layer is a
       // target the graph slides toward over a second and a half: a biome
       // border crossed at fifty metres a second is a fade, not a cut.
-      if (surfGain) surfGain.gain.setTargetAtTime(want.surf * 0.3, ctx.currentTime, 1.5);
-      if (highGain) highGain.gain.setTargetAtTime(want['wind-high'] * 0.12, ctx.currentTime, 1.5);
+      if (surfGain) retarget(surfGain.gain, want.surf * 0.3, 1.5);
+      if (highGain) retarget(highGain.gain, want['wind-high'] * 0.12, 1.5);
       if (cricketGain && cricketTremolo) {
-        cricketGain.gain.setTargetAtTime(want.crickets * 0.035, ctx.currentTime, 1.5);
-        cricketTremolo.gain.setTargetAtTime(want.crickets * 0.03, ctx.currentTime, 1.5);
+        retarget(cricketGain.gain, want.crickets * 0.035, 1.5);
+        retarget(cricketTremolo.gain, want.crickets * 0.03, 1.5);
       }
       // and the two that are events rather than textures: the more of the
       // biome is under the flyer the shorter the wait, and at zero they never

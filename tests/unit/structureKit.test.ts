@@ -181,6 +181,36 @@ describe('bakeStructure', () => {
     const again = bakeStructure(cottage(), 2, kit).geometry.getAttribute('pane');
     for (let i = 0; i < pane.count; i++) expect(again.getX(i)).toBe(pane.getX(i));
   });
+  it('lays the panes inside the wall the band cuts, not the widest thing baked', () => {
+    // The tower's shaft steps inward stage by stage while its plinth stays the
+    // width it is: a pattern laid over the whole geometry's extent put the
+    // outer pane past the wall on every stage above the first, and the corner
+    // sliced it. Every pane here is as wide as every other, which a pane cut by
+    // a corner is not.
+    // (The shaft only: the lantern over it stands at forty-five degrees, and
+    // the kit cuts along x and z, so its panes are parallelograms of their own.)
+    const { geometry } = bakeStructure(tower, tower.floors[1], kit);
+    const shaftTop = tower.floors[1] * (tower.floorHeight ?? 0);
+    const position = geometry.getAttribute('position'),
+      glow = geometry.getAttribute('glow'),
+      pane = geometry.getAttribute('pane');
+    const widths = new Map<number, { x: [number, number]; z: [number, number] }>();
+    for (let i = 0; i < glow.count; i += 3) {
+      if (glow.getX(i) <= 0 || position.getY(i) >= shaftTop) continue;
+      const box = widths.get(pane.getX(i)) ?? { x: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+      for (let k = 0; k < 3; k++) {
+        box.x = [Math.min(box.x[0], position.getX(i + k)), Math.max(box.x[1], position.getX(i + k))];
+        box.z = [Math.min(box.z[0], position.getZ(i + k)), Math.max(box.z[1], position.getZ(i + k))];
+      }
+      widths.set(pane.getX(i), box);
+    }
+    expect(widths.size).toBeGreaterThan(8);
+    // a pane on a wall along x is thin in z and wide in x, and the other way
+    // about; the wide side is the pane's width and every pane has the same one
+    const wide = [...widths.values()].map(({ x, z }) => Math.max(x[1] - x[0], z[1] - z[0]));
+    const width = Math.max(...wide);
+    for (const w of wide) expect(w).toBeCloseTo(width, 3);
+  });
   it('bakes every village recipe at both of its floor counts, inside the budget', () => {
     const structures = createLibrary().structures ?? [];
     expect(structures.length).toBeGreaterThanOrEqual(3);

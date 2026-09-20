@@ -311,22 +311,40 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
     GLOW = offsetOf('glow'),
     PANE = offsetOf('pane');
 
+  const row = (i: number): number[] => {
+    const out: number[] = [];
+    for (const [, attribute] of parts)
+      for (let k = 0; k < attribute.itemSize; k++) out.push(attribute.getComponent(i, k));
+    return out;
+  };
   // Where the panes fall along each of the two horizontal axes. The pattern is
-  // laid out inside the building's own extent and centred in it, so both
-  // corners keep a pier: a pattern anchored at the origin instead cuts whatever
-  // pane the corner happens to land in, and a house with half a window at every
-  // corner is worse than a stripe.
-  const bounds = (offset: number) => {
-    const attribute = attributeOf(source, 'position'),
-      k = offset - X;
-    let lo = Infinity,
-      hi = -Infinity;
-    for (let i = 0; i < attribute.count; i++) {
-      const v = attribute.getComponent(i, k);
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
+  // laid out inside the extent of **the walls this band cuts** and centred in
+  // it, so both corners keep a pier: a pattern anchored at the origin instead
+  // cuts whatever pane the corner happens to land in, and a house with half a
+  // window at every corner is worse than a stripe. The extent is the band's
+  // own and not the whole geometry's: the eaves, the chimney and the plinth
+  // are wider than the wall, and a tower whose shaft tapers from its plinth
+  // had its outer pane sliced by the corner on every stage above it.
+  const extent = { [X]: { lo: Infinity, hi: -Infinity }, [Z]: { lo: Infinity, hi: -Infinity } } as Record<
+    number,
+    { lo: number; hi: number }
+  >;
+  for (let i = 0; i < count; i += 3) {
+    const t = [row(i), row(i + 1), row(i + 2)];
+    const low = Math.min(t[0]![Y]!, t[1]![Y]!, t[2]![Y]!),
+      high = Math.max(t[0]![Y]!, t[1]![Y]!, t[2]![Y]!);
+    if (high <= y + EPS || low >= top - EPS || !isWall(t, X)) continue;
+    for (const axis of [X, Z]) {
+      const span = extent[axis]!;
+      for (const v of t) {
+        if (v[axis]! < span.lo) span.lo = v[axis]!;
+        if (v[axis]! > span.hi) span.hi = v[axis]!;
+      }
     }
-    const span = hi - lo;
+  }
+  const bounds = (offset: number) => {
+    const { lo, hi } = extent[offset]!;
+    const span = Number.isFinite(hi - lo) ? hi - lo : 0;
     // How many fit: n panes need n pitches of wall once the pier either side of
     // them is counted, which is what `n * PITCH` already is. Asking for
     // `span - (PITCH - WIDTH)` instead loses the last window on every wall --
@@ -356,12 +374,6 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
     Array<{ lo: number; hi: number; pane: number }>
   >;
 
-  const row = (i: number): number[] => {
-    const out: number[] = [];
-    for (const [, attribute] of parts)
-      for (let k = 0; k < attribute.itemSize; k++) out.push(attribute.getComponent(i, k));
-    return out;
-  };
   const lit = new Color(swatchColor(color));
   const rows: number[][] = [];
   for (let i = 0; i < count; i += 3) {

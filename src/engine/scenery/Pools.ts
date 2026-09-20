@@ -297,12 +297,15 @@ export function createPools(deps: {
   const pane = attribute<'float'>('pane', 'float'),
     phase = attribute<'float'>('lit', 'float');
   const roll = fract(pane.add(phase));
-  buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3')
-    .mul(attribute<'float'>('glow', 'float'))
+  // Everything here is a per-vertex constant -- the pane's, the lot's and
+  // the settlement's numbers -- so it is worked out once per vertex and
+  // interpolated, not once per fragment of every window in the town.
+  const lamp = attribute<'float'>('glow', 'float')
     .mul(step(roll, attribute<'float'>('wake', 'float')))
     // A lit room is not a lamp of a fixed brightness: a kitchen is not a hall.
     .mul(float(0.7).add(fract(pane.mul(7.13).add(phase.mul(3.1))).mul(0.6)))
-    .mul(uniforms.uNight);
+    .toVertexStage();
+  buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3').mul(lamp).mul(uniforms.uNight);
   const structures = new Map<string, StructurePool>();
   for (const entry of library.structures ?? []) {
     // Every count in the range, not just its ends: a plan is free to ask for a
