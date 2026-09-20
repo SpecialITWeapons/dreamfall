@@ -36,15 +36,13 @@ import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
 import type { Avatar, FlightPose } from './Avatar';
 import { buildChain, mergeSkins, type Chain, type Skin } from './Skin';
-import { DEFAULT_OUTFIT, DEFAULT_PATTERN, type Outfit, type Pattern, type Swatch } from './Outfits';
+import { OUTFIT, type Outfit, type Swatch } from './Outfit';
 
 /** How far the figure hangs under its center, and how far it reaches sideways, m; the flight reads these before the figure exists. */
 export const HUMAN_BOUNDS = { below: 0.3, radius: 1.1 } as const;
 
 export interface ProceduralHuman extends Avatar {
   readonly triangles: number;
-  readonly outfit: Outfit;
-  readonly pattern: Pattern;
   /**
    * The figure as data: where its bones rest and how thick it is along each
    * chain, in the pose it is standing in. This is what the geometry is made of
@@ -401,10 +399,10 @@ interface Hinge {
 
 export function createProceduralHuman(
   litMaterial: LitMaterial,
-  opts: { outfit?: Outfit; pattern?: Pattern } = {},
+  /** A palette other than the figure's own: the tests', to see what a swatch covers. */
+  opts: { outfit?: Outfit } = {},
 ): ProceduralHuman {
-  let outfit = opts.outfit ?? DEFAULT_OUTFIT;
-  let pattern = opts.pattern ?? DEFAULT_PATTERN;
+  const outfit = opts.outfit ?? OUTFIT;
   const material = litMaterial(vertexColor().rgb);
   /** Every bone, in the order the skeleton keeps them; the skin indexes into this. */
   const bones: Bone[] = [];
@@ -576,13 +574,7 @@ export function createProceduralHuman(
             [0.82, 0.047],
             [1, 0.044],
           ]),
-          // The trim used to start halfway down the arm, and the outfit's trim
-          // is a tan: from underneath that reads as a bare forearm ending in a
-          // black mitten. It is a cuff now, the last three centimetres.
-          swatch: bands([
-            [0.93, 'suit'],
-            [1, 'trim'],
-          ]),
+          swatch: () => 'suit',
           sides: 8,
           rings: 3,
           capStart: true,
@@ -816,32 +808,25 @@ export function createProceduralHuman(
   const meshes = [skinned(bodySkin, 'skin'), skinned(headSkin, 'skull')];
   const triangles = skins.reduce((n, skin) => n + skin.index.length / 3, 0);
   /**
-   * Repaint: one walk of the vertices, writing the swatch each one belongs to
-   * and the shade the generator baked into it. A swatch used to be a mesh, so a
-   * repaint was seven buffers; it is a range of vertices now, and it is still
-   * one upload per surface rather than a new buffer.
+   * Paint: one walk of the vertices, writing the colour of the swatch each one
+   * belongs to and the shade the generator baked into it. Once, at build: the
+   * outfit does not change.
    */
-  const repaint = () => {
-    const tint = new Color();
-    for (const [i, skin] of skins.entries()) {
-      const attribute = meshes[i]!.geometry.getAttribute('color');
-      const colors = attribute.array as Float32Array;
-      for (let v = 0; v < skin.swatch.length; v++) {
-        const worn = skin.swatch[v]! as Swatch;
-        // The marking, asked where this vertex sits on its own chain and round
-        // its own ring. It may answer with another of this outfit's swatches or
-        // with nothing, and nothing is the common answer.
-        const swatch = pattern.mark(worn, skin.along[v]!, skin.around[v]!) ?? worn;
-        tint.set(outfit[swatch]);
-        const shade = skin.shade[v]!;
-        colors[v * 3] = tint.r * shade;
-        colors[v * 3 + 1] = tint.g * shade;
-        colors[v * 3 + 2] = tint.b * shade;
-      }
-      attribute.needsUpdate = true;
+  const tints = Object.fromEntries(
+    (Object.keys(outfit) as Swatch[]).map((swatch) => [swatch, new Color(outfit[swatch])]),
+  ) as Record<Swatch, Color>;
+  for (const [i, skin] of skins.entries()) {
+    const attribute = meshes[i]!.geometry.getAttribute('color');
+    const colors = attribute.array as Float32Array;
+    for (let v = 0; v < skin.swatch.length; v++) {
+      const tint = tints[skin.swatch[v]! as Swatch]!;
+      const shade = skin.shade[v]!;
+      colors[v * 3] = tint.r * shade;
+      colors[v * 3 + 1] = tint.g * shade;
+      colors[v * 3 + 2] = tint.b * shade;
     }
-  };
-  repaint();
+    attribute.needsUpdate = true;
+  }
 
   const qx = new Quaternion();
   /** What the shapes are being asked for this frame; one object, refilled, never allocated. */
@@ -1055,17 +1040,6 @@ export function createProceduralHuman(
         view = pose.view;
         for (const m of meshes) m.visible = view === 'tpp';
       }
-    },
-    get outfit() {
-      return outfit;
-    },
-    get pattern() {
-      return pattern;
-    },
-    setOutfit(next, nextPattern) {
-      outfit = next;
-      pattern = nextPattern;
-      repaint();
     },
     dispose() {
       for (const m of meshes) m.geometry.dispose();

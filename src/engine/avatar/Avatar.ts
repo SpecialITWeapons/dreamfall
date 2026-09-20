@@ -4,7 +4,6 @@
 // change to the engine.
 import type { Object3D, Vector3 } from 'three';
 import type { View } from '../flight/Steering';
-import type { Outfit, Pattern } from './Outfits';
 
 /** What the flight hands the figure every frame; the position is already in the local frame of the scene. */
 export interface FlightPose {
@@ -29,6 +28,5 @@ export interface Avatar {
   readonly eye: Vector3;
   /** How far the figure hangs under its center, and how far it reaches sideways, m. */
   readonly bounds: { below: number; radius: number };
-  setOutfit(outfit: Outfit, pattern: Pattern): void;
   dispose(): void;
 }

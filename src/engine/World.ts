@@ -14,7 +14,6 @@ import { emptyMix, layerMix } from './audio/AmbienceModel';
 import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
-import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
 import { MAX_STEP, MIN_CLEARANCE, SPEED } from './flight/FlightController';
@@ -59,8 +58,6 @@ export interface WorldOptions {
   deferScenery?: boolean;
   view?: View;
   orbit?: Partial<Orbit>;
-  outfit?: string;
-  pattern?: string;
   volume?: number;
   muted?: boolean;
   reducedMotion?: boolean;
@@ -207,10 +204,7 @@ export function createWorld(opts: WorldOptions): World {
   scene.add(clouds.mesh);
   const cloudSea = createCloudSea(uniforms, horizon);
   scene.add(cloudSea.mesh);
-  const avatar = createProceduralHuman(litMaterial, {
-    outfit: outfitById(opts.outfit ?? 'dusk'),
-    pattern: patternById(opts.pattern ?? 'plain'),
-  });
+  const avatar = createProceduralHuman(litMaterial);
   scene.add(avatar.object);
   // The layer switches. The scenery's arrays are filled when it is planted --
   // which is after this, when the page defers the bake for its own veil -- and

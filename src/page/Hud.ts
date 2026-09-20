@@ -17,7 +17,6 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   const manual = doc.getElementById('manual')!;
   const title = doc.getElementById('title')!;
   const view = doc.getElementById('viewBtn') as HTMLButtonElement;
-  const wardrobe = doc.getElementById('wardrobeBtn') as HTMLButtonElement;
   const backend = doc.getElementById('backendLabel')!;
   const idleMs = opts.idleMs ?? HUD_IDLE_MS;
   const pauseListeners: Array<() => void> = [];
@@ -25,7 +24,6 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   const volumeListeners: Array<(v: number) => void> = [];
   const viewListeners: Array<() => void> = [];
   const autopilotListeners: Array<() => void> = [];
-  const wardrobeListeners: Array<() => void> = [];
   pause.addEventListener('click', () => {
     for (const cb of pauseListeners) cb();
   });
@@ -41,9 +39,6 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
   });
   autopilot.addEventListener('click', () => {
     for (const cb of autopilotListeners) cb();
-  });
-  wardrobe.addEventListener('click', () => {
-    for (const cb of wardrobeListeners) cb();
   });
   // Dimming: the pill fades once the pointer has left it for a while, and comes back on touch or focus.
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,15 +124,6 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
     },
     onView(cb: () => void) {
       viewListeners.push(cb);
-    },
-    /** The wardrobe's own button: what it says, and what it tells a screen reader it opened. */
-    setWardrobe(open: boolean) {
-      wardrobe.setAttribute('aria-pressed', String(open));
-      wardrobe.setAttribute('aria-expanded', String(open));
-      wardrobe.setAttribute('aria-label', open ? 'Close the wardrobe' : 'Open the wardrobe');
-    },
-    onWardrobe(cb: () => void) {
-      wardrobeListeners.push(cb);
     },
     /**
      * The opening is playing: the controls and the manual banner step out of

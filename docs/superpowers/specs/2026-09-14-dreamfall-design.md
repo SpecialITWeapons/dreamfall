@@ -97,11 +97,11 @@ dreamfall/
       avatar/Outfits.ts         przebarwianie ról i wzory (port idei plumage)
       flight/FlightController.ts, Steering.ts, ChaseCamera.ts
       audio/Ambience.ts         synteza Web Audio + warstwy dla haków biomów
-      page/Gate.ts, Memory.ts, Hud.ts, Failure.ts, Wardrobe.ts
+      page/Gate.ts, Memory.ts, Hud.ts, Failure.ts
     library/                    JavaScript z JSDoc, typy z contract.ts przez checkJs
       contract.ts               typy, koperta, budżety, walidatory (jedyny plik TS w library/)
       standard/                 standardowe haki dla biomów z danych
-      biomes/  species/  props/  structures/  settlements/  outfits/  patterns/
+      biomes/  species/  props/  structures/  settlements/
       index.js                  rejestr
   tools/                        bench, parity, dev-panel (nigdy w bundlu produkcyjnym)
   tests/                        unit (Vitest), e2e (Playwright), references/ (PNG wzorców)
@@ -638,10 +638,12 @@ export interface Avatar {
   update(pose: FlightPose, dt: number): void;
   readonly eye: Vector3;                       // punkt oka w układzie postaci
   readonly bounds: { below: number; radius: number };
-  setOutfit(outfit: Outfit, pattern: Pattern): void;
   dispose(): void;
 }
 ```
+
+> Garderoba (stroje, znaki, panel) została usunięta 2026-09-20 na życzenie
+> właściciela: postać ma jeden kombinezon w jednym kolorze (`avatar/Outfit.ts`).
 
 `ProceduralHuman`: tułów, miednica, głowa z kaskiem i goglami, ramiona i
 przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty

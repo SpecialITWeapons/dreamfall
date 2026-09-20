@@ -12,7 +12,7 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 `ramp` through its context, which is what lets the layer painter be read by a
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
-interface, procedural human, outfits), `terrain/` (noise, base fields,
+interface, procedural human, the outfit), `terrain/` (noise, base fields,
 heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
 ring, settlement lattice, pools, tree kit, structure kit, road kit, painted
 textures, ground shade, grass), `sky/`
@@ -69,8 +69,7 @@ page works under a Pages subdirectory.
 - Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
   sits outside the HUD pill on purpose, because the pill dims and "the autopilot
   is off" must not. The dev panel's strings are its own: that rule is about the
-  page a player reads. So are the wardrobe catalogue's names, which sit beside
-  the colours they name -- a garment's name belongs to the garment.
+  page a player reads.
 
 ## Terrain, sky and time
 
@@ -204,18 +203,13 @@ page works under a Pages subdirectory.
   sprung per joint too, so a shape arrives shoulder first and ankle last.
   `dt <= 0` means "be there now" -- position and velocity both -- which is how
   the world places the figure before the first frame.
-- The wardrobe is a catalogue and a rule. `avatar/Outfits.ts` holds the outfits
-  and the markings; a marking is a **pure function of where a vertex sits on its
-  own chain** -- `along` and `around`, written per vertex by `Skin.ts` -- and it
-  may repaint the **suit alone**, in a colour the outfit already carries. That
-  is what keeps a visor out of a catalogue's reach, and it is what lets the
-  panel's SVG tiles be drawn from the same function the repaint walks: a tile
-  cannot show a marking the figure would not wear. What covers the figure stays
-  inside the palette envelope; the goggles, boots and gloves sit under its floor
-  on purpose, and a test holds both halves. Nobody's choice means the seed's own
-  (`patternForSeed`), and a chosen marking is the person's -- saved as their
-  choice, so it travels to the next world while an unchosen one belongs to the
-  world.
+- The figure wears **one suit in one colour** (`avatar/Outfit.ts`), painted
+  once at build. There was a wardrobe -- six suits, five markings, a panel --
+  and the owner removed it: a marking read as camouflage. What covers the
+  figure stays inside the palette envelope; the goggles, boots and gloves sit
+  under its floor on purpose, and a test holds both halves. `Skin.ts` still
+  writes `along` and `around` per vertex, which is what a UV map would be made
+  of.
 - The opening (`sim/Opening.ts`) is a pure function of how long it has been
   running: five acts, a title card and the pace of the day. It drives the
   flight with `fly(yaw, climb)`, which takes a **sign** as an arrow key does,
