@@ -498,13 +498,17 @@ export function bakeStructure(spec: Structure, floors: number, kit: StructureVer
   const storeys = Math.max(1, Math.round(floors));
   const own: StructureKit = { ...kit, spec, floors: storeys };
   const geometry = spec.bake ? spec.bake(own) : buildStructure(spec, storeys, own);
-  // Every building carries the attribute, windows or none, because one material
-  // reads it for all of them and a barn must not need a program of its own.
-  if (!geometry.getAttribute('glow'))
-    geometry.setAttribute(
-      'glow',
-      new Float32BufferAttribute(new Float32Array(attributeOf(geometry, 'position').count), 1),
-    );
+  // Every building carries both attributes, windows or none, because one
+  // material reads them for all of them and a barn must not need a program of
+  // its own: a node program is keyed on the geometry's attribute set, and a
+  // missing one is a warning in the console and a second compile of the
+  // material. `glow` alone was not enough once the panes arrived.
+  for (const name of ['glow', 'pane'] as const)
+    if (!geometry.getAttribute(name))
+      geometry.setAttribute(
+        name,
+        new Float32BufferAttribute(new Float32Array(attributeOf(geometry, 'position').count), 1),
+      );
   const problems = validateBaked(spec, geometry);
   if (problems.length > 0) throw new Error(`scenery library:\n${problems.join('\n')}`);
 

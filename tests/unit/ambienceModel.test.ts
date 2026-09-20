@@ -60,16 +60,25 @@ describe('chimeNote', () => {
 
 describe('layerMix', () => {
   // Two biomes: a meadow full of insects and birds, and a coast with surf.
-  const specs = [{ crickets: 1, birds: 0.8 }, { surf: 1, 'wind-high': 0.4 }, undefined];
-  const at = (over: Partial<Parameters<typeof layerMix>[0]> = {}) =>
-    layerMix({
-      ids: [0, 1, 2],
-      weights: [1, 0, 0],
-      specs,
-      solar: 0.5,
-      altitude: 0,
-      ...over,
-    });
+  const specs = [
+    { layers: { crickets: 1, birds: 0.8 } },
+    { layers: { surf: 1, 'wind-high': 0.4 } },
+    undefined,
+    // a village: what it names is its own, the rest is the country's it stands in
+    { layers: { bells: 0.5 }, inherit: true },
+  ];
+  const at = (over: Partial<Parameters<typeof layerMix>[0]> = {}, out?: Parameters<typeof layerMix>[1]) =>
+    layerMix(
+      {
+        ids: [0, 1, 2],
+        weights: [1, 0, 0],
+        specs,
+        solar: 0.5,
+        altitude: 0,
+        ...over,
+      },
+      out,
+    );
 
   it('weighs a biome by how much of it is under the flyer', () => {
     // Half meadow, half coast: half of each biome's own layers.
@@ -113,6 +122,29 @@ describe('layerMix', () => {
     // and the high wind is the one layer that grows with height
     expect(coast(0)['wind-high']).toBe(0);
     expect(coast(1200)['wind-high']).toBeGreaterThan(0.35);
+  });
+
+  it('hands an inheriting slot its weight back to the country it stands in', () => {
+    // A village taking nine tenths of the ground in a meadow: the meadow's
+    // crickets are heard whole, not at a tenth, and the bell is added at the
+    // village's own weight. Without this a settlement is a hole in the sound.
+    // (at noon, so the day's layers are the ones read: birds, surf, bells)
+    const village = at({ ids: [3, 0, 2], weights: [0.9, 0.1, 0] });
+    const meadow = at({ ids: [0, 1, 2], weights: [1, 0, 0] });
+    expect(meadow.birds).toBeCloseTo(0.8, 6);
+    expect(village.birds).toBeCloseTo(meadow.birds, 6);
+    expect(village.bells).toBeCloseTo(0.45, 6);
+    // a country beside it still shares by its own weight against the other country
+    const border = at({ ids: [3, 0, 1], weights: [0.5, 0.25, 0.25] });
+    expect(border.birds).toBeCloseTo(0.4, 6);
+    expect(border.surf).toBeCloseTo(0.5, 6);
+    // and an inheriting slot with nothing beside it is what it names, and no more
+    const alone = at({ ids: [3, 2, 2], weights: [1, 0, 0] });
+    expect(alone.birds).toBe(0);
+    expect(alone.bells).toBeCloseTo(0.5, 6);
+    // the caller may keep one record and hand it back
+    const out = at();
+    expect(at({ solar: 0 }, out)).toBe(out);
   });
 
   it('never asks for more than one of anything, however the weights land', () => {

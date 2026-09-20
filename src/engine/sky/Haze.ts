@@ -14,6 +14,12 @@ export interface HazeSpec {
   color: Color;
   /** How far toward it, before any weighing, 0..1. */
   amount: number;
+  /**
+   * This entry stands in the country beside it: its weight goes to the other
+   * slots, and its own tint, if any, is added at its own weight. A settlement
+   * says this, or its disc is a hole in the jungle's green air.
+   */
+  inherit?: boolean;
 }
 
 /** Zero at and below `from`, one at and above `to`, smooth between. */
@@ -33,10 +39,10 @@ const fade = (v: number, from: number, to: number) => {
  * of the galaxy 0.058 and 0.051 where they had been 0.049 and 0.028 -- a
  * difference washed out by a haze that should not have been there.
  *
- * @returns how far to lerp toward `out`, 0 when there is nothing to do.
  */
 export const MAX_HAZE = 0.35;
 
+/** @returns how far to lerp toward `out`, 0 when there is nothing to do. */
 export function hazeAt(
   ids: ArrayLike<number>,
   weights: ArrayLike<number>,
@@ -49,13 +55,23 @@ export function hazeAt(
   let amount = 0,
     r = 0,
     g = 0,
-    b = 0;
+    b = 0,
+    country = 0,
+    total = 0;
+  for (let i = 0; i < 3; i++) {
+    const weight = weights[i] ?? 0;
+    if (weight <= 0) continue;
+    total += weight;
+    if (!specs[ids[i] ?? -1]?.inherit) country += weight;
+  }
+  // an inheriting slot hands its weight to the slots that are a country
+  const scale = country > 0 ? Math.min(1, total) / country : 1;
   for (let i = 0; i < 3; i++) {
     const weight = weights[i] ?? 0;
     if (weight <= 0) continue;
     const spec = specs[ids[i] ?? -1];
     if (!spec || spec.amount <= 0) continue;
-    const share = weight * spec.amount;
+    const share = (spec.inherit ? weight : weight * scale) * spec.amount;
     amount += share;
     r += spec.color.r * share;
     g += spec.color.g * share;

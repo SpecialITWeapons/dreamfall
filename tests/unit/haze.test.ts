@@ -19,6 +19,17 @@ describe('hazeAt', () => {
     expect(hazeAt([2, 2, 2], [1, 0, 0], specs, 0, 1, out)).toBe(0);
   });
 
+  it('hands an inheriting slot its weight to the country it stands in', () => {
+    // A village on nine tenths of the ground in a jungle: the air is still the
+    // jungle's green, at the jungle's full amount, and not a hole in the haze.
+    const village = { color: new Color(0), amount: 0, inherit: true };
+    const withVillage = [green, ochre, undefined, village];
+    expect(hazeAt([3, 0, 2], [0.9, 0.1, 0], withVillage, 0, 1, out)).toBeCloseTo(0.3, 6);
+    expect(out.getHex()).toBe(green.color.getHex());
+    // with nothing beside it there is nothing to inherit
+    expect(hazeAt([3, 2, 2], [1, 0, 0], withVillage, 0, 1, out)).toBe(0);
+  });
+
   it('averages two tints instead of adding them up', () => {
     // Half and half: the air is the colour between, not twice as thick.
     const amount = hazeAt([0, 1, 2], [0.5, 0.5, 0], specs, 0, 1, out);

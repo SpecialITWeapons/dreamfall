@@ -100,11 +100,15 @@ describe('bakeStructure', () => {
       expect(glowingArea(bakeStructure(cottage(), floors, kit).geometry)).toBeCloseTo(one * floors, 3);
     }
   });
-  it('gives a windowless building a glow attribute of its own, all zero', () => {
+  it('gives a windowless building glow and pane attributes of its own, all zero', () => {
+    // The one material reads both for every building; a barn without either
+    // would warn in the console and compile a program of its own.
     const shed = bakeStructure(cottage({ palette: { wall: 'sandPale', roof: 'terracotta' } }), 1, kit);
-    const glow = shed.geometry.getAttribute('glow');
-    expect(glow).toBeTruthy();
-    for (let i = 0; i < glow.count; i++) expect(glow.getX(i)).toBe(0);
+    for (const name of ['glow', 'pane']) {
+      const attribute = shed.geometry.getAttribute(name);
+      expect(attribute, name).toBeTruthy();
+      for (let i = 0; i < attribute.count; i++) expect(attribute.getX(i)).toBe(0);
+    }
   });
   it('never mixes glow across one triangle, so a window has an edge', () => {
     const all = vertices(bakeStructure(cottage(), 2, kit).geometry);

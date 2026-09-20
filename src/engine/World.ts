@@ -10,7 +10,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { swatchColor, validateLibrary, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
-import { layerMix } from './audio/AmbienceModel';
+import { emptyMix, layerMix } from './audio/AmbienceModel';
 import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
@@ -291,15 +291,22 @@ export function createWorld(opts: WorldOptions): World {
   // sound and the picture never disagree about which biome this is.
   const slotIds = new Uint8Array(3),
     slotWeights = new Float32Array(3);
-  const ambienceSpecs = library.biomes.map((biome) => biome.ambience?.layers);
+  const ambienceSpecs = library.biomes.map((biome) =>
+    biome.ambience ? { layers: biome.ambience.layers, inherit: biome.ambience.inherit } : undefined,
+  );
+  const mix = emptyMix();
+  const mixInput = { ids: slotIds, weights: slotWeights, specs: ambienceSpecs, solar: 0, altitude: 0 };
   // The haze a country puts in its own air, resolved once: a swatch name is a
-  // colour the library knows and the sky does not.
+  // colour the library knows and the sky does not. An entry that inherits the
+  // country's air is kept even with no tint of its own, because the slot it
+  // holds has to hand its weight on.
   const hazeSpecs = library.biomes.map((biome) =>
-    biome.ambience?.fogTint === undefined
+    biome.ambience === undefined || (biome.ambience.fogTint === undefined && !biome.ambience.inherit)
       ? undefined
       : {
-          color: new Color(swatchColor(biome.ambience.fogTint)),
-          amount: biome.ambience.fogTintAmount ?? 0.2,
+          color: new Color(biome.ambience.fogTint === undefined ? 0 : swatchColor(biome.ambience.fogTint)),
+          amount: biome.ambience.fogTint === undefined ? 0 : (biome.ambience.fogTintAmount ?? 0.2),
+          inherit: biome.ambience.inherit,
         },
   );
   const haze = new Color();
@@ -358,14 +365,11 @@ export function createWorld(opts: WorldOptions): World {
     // and never an accumulation -- and it goes on `uHorizon`, which in this
     // engine is the fog, the background and the dome's horizon at once.
     heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
-    const hazed = hazeAt(
-      slotIds,
-      slotWeights,
-      hazeSpecs,
-      state.y - heightAt(state.x, state.z),
-      1 - uniforms.uNight.value,
-      haze,
-    );
+    // One height over the ground for the haze and the sound alike -- over the
+    // sea it is the height over the water, because that is what the air and
+    // the ear are over. Read once: it is a triangle interpolation of the window.
+    sample.altitude = state.y - Math.max(0, heightAt(state.x, state.z));
+    const hazed = hazeAt(slotIds, slotWeights, hazeSpecs, sample.altitude, 1 - uniforms.uNight.value, haze);
     if (hazed > 0) {
       uniforms.uHorizon.value.lerp(haze, hazed);
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
@@ -373,25 +377,15 @@ export function createWorld(opts: WorldOptions): World {
     post.setExposure(atmosphere.exposure);
     cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
     clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
-    sample.altitude = state.y - Math.max(0, heightAt(state.x, state.z));
     sample.vy = state.vy;
     sample.gust = state.gust;
     sample.rush = state.speed / SPEED;
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;
-    audio.update(
-      dt,
-      sample,
-      heightAt,
-      layerMix({
-        ids: slotIds,
-        weights: slotWeights,
-        specs: ambienceSpecs,
-        solar: solar(clock.phase),
-        altitude: sample.altitude,
-      }),
-    );
+    mixInput.solar = solar(clock.phase);
+    mixInput.altitude = sample.altitude;
+    audio.update(dt, sample, heightAt, layerMix(mixInput, mix));
     // Last, after everything that decides visibility for its own reasons: a
     // switch may only take away.
     layers.apply();

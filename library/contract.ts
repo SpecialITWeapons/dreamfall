@@ -526,10 +526,29 @@ export interface SitesSpec {
   build(site: Site, kit: SiteKit): void;
 }
 
+/**
+ * The sounds the engine can make for a country. It synthesises these five and
+ * no others; a biome says how much of each is its own, 0..1, and the flyer
+ * hears them weighed by which biomes are actually under it.
+ */
+export const AMBIENCE_LAYERS = ['crickets', 'birds', 'surf', 'bells', 'wind-high'] as const;
+export type AmbienceLayer = (typeof AMBIENCE_LAYERS)[number];
+
 export interface AmbienceSpec {
-  layers?: Partial<Record<'crickets' | 'birds' | 'surf' | 'bells' | 'wind-high', number>>;
+  /** How much of each layer belongs here; a layer left unsaid is none of it. */
+  layers?: Partial<Record<AmbienceLayer, number>>;
+  /** The colour of the air over this country, and how much of the horizon it may take. */
   fogTint?: SceneryColor;
   fogTintAmount?: number;
+  /**
+   * This entry stands **in** a country rather than being one: its weight under
+   * the flyer goes to the biomes beside it, and what it names here is added on
+   * top. A settlement says this, because a village in a jungle sounds like the
+   * jungle with a bell in it, and its air is the jungle's air -- without it the
+   * settlement's own weight crowds the country out of the mix, and the village
+   * is a hole in the sound and the haze exactly where the church is.
+   */
+  inherit?: boolean;
 }
 
 export interface Biome {
@@ -786,6 +805,28 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
         if (!Number.isFinite(sown.density) || (sown.density as number) < 0)
           errors.push(`${where}.populate.density: ${sown.density} is not a density`);
         if (sown.grass) colorAt(`${where}.populate.grass.tint`, sown.grass.tint);
+      }
+    }
+    if (biome?.ambience !== undefined) {
+      const air = biome.ambience;
+      if (typeof air !== 'object' || air === null) errors.push(`${where}.ambience: not a spec`);
+      else {
+        // A layer the engine cannot make is a typo that would sound like
+        // silence, and a tint outside the envelope goes on the whole sky.
+        for (const [layer, amount] of Object.entries(air.layers ?? {})) {
+          if (!(AMBIENCE_LAYERS as readonly string[]).includes(layer))
+            errors.push(`${where}.ambience.layers: unknown layer "${layer}"`);
+          if (!Number.isFinite(amount) || (amount as number) < 0 || (amount as number) > 1)
+            errors.push(`${where}.ambience.layers.${layer}: ${amount} is not a share of 0..1`);
+        }
+        if (air.fogTint !== undefined) colorAt(`${where}.ambience.fogTint`, air.fogTint);
+        if (
+          air.fogTintAmount !== undefined &&
+          !(Number.isFinite(air.fogTintAmount) && air.fogTintAmount >= 0)
+        )
+          errors.push(`${where}.ambience.fogTintAmount: ${air.fogTintAmount} is not an amount`);
+        if (air.inherit !== undefined && typeof air.inherit !== 'boolean')
+          errors.push(`${where}.ambience.inherit: not a boolean`);
       }
     }
     if (biome?.sites) {
