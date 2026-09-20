@@ -35,7 +35,7 @@ page works under a Pages subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `avatar/Skin.ts`, `avatar/Flesh.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -171,25 +171,30 @@ page works under a Pages subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
-- The figure is **one skin on sixteen bones**, not a pile of solids: `Skin.ts`
-  is pure geometry (rings swept along a chain of joints, crowded where a joint
-  bends, weighted symmetrically across it) and is tested in Node;
-  `ProceduralHuman.ts` builds the `Bone` tree and two `SkinnedMesh`es -- the
-  body and the head, separate only so the first person can hide the figure
-  without hiding it part by part. The world's material needs no change:
-  `setupPosition` adds `skinning(object)` for a skinned mesh by itself.
-  Everything a chain looks like is its `profile` -- a half-width in metres at a
-  share of its length, read through a monotone cubic so the stops are hit and
-  nothing kinks between them -- and its `swatch`, and **a swatch band is only a
-  band if a ring lands in it**: write the stops against the rings the chain
-  samples at, not against a picture of a body. A cap is a dome of `CAP_RINGS`
-  rings, never a fan to a point; a normal is tilted by the taper, or a thigh
-  shades as a cylinder; limbs take twelve sides and the torso sixteen, because
-  eight read as a stop sign from three metres. A `swatch` is a belt round the chain and
+- The figure is **one surface on sixteen bones**, grown from a distance field:
+  `Skin.ts` says what a chain is (joints, a `profile` of half-widths in metres
+  at shares of its length, read through a monotone cubic, a section `flatten`
+  that may change along it, a `swatch` and a `patch`), and `Flesh.ts` turns the
+  chains of a region into a field -- each chain a tube of its own section,
+  rounded at its ends, the chains joined by a smooth minimum over `blend`
+  metres -- and pulls the surface out of it with surface nets on a grid of
+  `cell` metres. Both are pure CPU and tested in Node. Three regions: the body
+  (torso, arms, legs, boots, 2 cm, so an arm rounds into the chest instead of
+  standing in it), each hand (6 mm, because a finger is 25 mm across) laid over
+  the sleeve's end, and the head (7 mm) on its own so the first person can hide
+  it. A vertex's bones come from the nearest chain, and from the two nearest on
+  a fillet, so the join follows both and tears from neither; its normal is the
+  field's gradient; its swatch is voted over its cell, and a patch's edge is a
+  mix of the two swatches in proportion, or the visor is a stair at the grid's
+  pitch. 33 000 triangles and about 0.4 s to grow, once, behind the veil.
+  `ProceduralHuman.ts` builds the `Bone` tree and the two `SkinnedMesh`es; the
+  world's material needs no change: `setupPosition` adds `skinning(object)`
+  for a skinned mesh by itself. A `swatch` is a belt round the chain and
   nothing else, which is why a visor is a `patch` -- a colour for one place,
   taking the angle around the ring as well: a dark belt on a pale solid of
   revolution reads as a face from every bearing at once, and the head appears
-  to turn to follow the camera.
+  to turn to follow the camera. There was a ring sweep here before the field;
+  it went because a tube pushed into another tube is a seam.
 - The figure's motion is **five shapes and the air**: box, delta, track, climb,
   and a turn laid over any of the others rather than instead of it. A shape is
   five directions a side (upper arm, forearm, thigh, shin, foot) and nothing

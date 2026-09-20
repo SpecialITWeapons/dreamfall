@@ -839,3 +839,22 @@ którym artefakt akurat nie wypadł. Sonda po wysokościach (120, 400, 800, 1200
 1500 m — z czego ostatnie to naprawdę 1356 m, bo sufit lotu jest 1400 m nad
 morzem i kontroler obcina na następnym kroku) pokazuje koszt **płaski**:
 3,1–3,4 s wszędzie. Nagłówkiem jest mediana.
+
+## The figure grown from a field
+
+`createProceduralHuman`, Node 24 in the development container, second build
+in one process (the first pays the interpreter):
+
+| figure                                      | triangles | build  |
+| ------------------------------------------- | --------- | ------ |
+| ring sweep, 8 sides (M5)                    | 1 960     | ~5 ms  |
+| ring sweep, 12/16 sides, domed caps         | 5 056     | ~8 ms  |
+| field, body 1.5 cm / hands 5 mm / head 6 mm | 51 572    | 756 ms |
+| field, body 2 cm / hands 6 mm / head 7 mm   | 32 860    | 415 ms |
+
+The field is what the body costs now: 33 000 triangles on a frame of half a
+million, and 0.4 s once at start, behind the veil, beside a scenery bake of
+two seconds. Where it goes is the grid -- 584 000 samples of the body's box
+at 1.5 cm, each asking every chain in reach -- and the escape hatch, unbuilt,
+is a worker, as the galaxy has. The finer grid buys nothing a chase camera
+at three metres can see.
