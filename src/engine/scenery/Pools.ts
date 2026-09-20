@@ -297,15 +297,18 @@ export function createPools(deps: {
   const pane = attribute<'float'>('pane', 'float'),
     phase = attribute<'float'>('lit', 'float');
   const roll = fract(pane.add(phase));
-  // Everything here is a per-vertex constant -- the pane's, the lot's and
-  // the settlement's numbers -- so it is worked out once per vertex and
-  // interpolated, not once per fragment of every window in the town.
-  const lamp = attribute<'float'>('glow', 'float')
+  // Worked out per fragment, on purpose. Everything here is a per-vertex
+  // constant and it was moved to the vertex stage once (`toVertexStage`) to
+  // save the fragments the arithmetic: on WebGL2 the houses drew as before,
+  // and on the owner's WebGPU every building in the village vanished, roads
+  // and hedges standing round nothing. A fragment's worth of two `fract`s is
+  // not what a frame costs; a material that draws on one backend is.
+  buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3')
+    .mul(attribute<'float'>('glow', 'float'))
     .mul(step(roll, attribute<'float'>('wake', 'float')))
     // A lit room is not a lamp of a fixed brightness: a kitchen is not a hall.
     .mul(float(0.7).add(fract(pane.mul(7.13).add(phase.mul(3.1))).mul(0.6)))
-    .toVertexStage();
-  buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3').mul(lamp).mul(uniforms.uNight);
+    .mul(uniforms.uNight);
   const structures = new Map<string, StructurePool>();
   for (const entry of library.structures ?? []) {
     // Every count in the range, not just its ends: a plan is free to ask for a
