@@ -89,12 +89,7 @@ let held = false;
 /**
  * What the HUD has been told about the autopilot. It is written in one place
  * -- `showAutopilot` -- with the call that tells the HUD, because a flag that
- * says "already shown" while the pill shows the opposite is worse than no flag:
- * Begin used to set the pill straight from the steering and leave this at its
- * initial `true`, so the opening's hand-back found them equal, said nothing,
- * and left "autopilot off -- arrows fly the figure" over a flight flying
- * itself. CI caught it as a race: it needs a frame between Begin and the input
- * that ends the opening, and a slow runner does not always have one.
+ * says "already shown" while the pill shows the opposite is worse than no flag.
  */
 let shownAutopilot = true;
 /** What the HUD has been told about the opening and its card, so a frame that changes nothing writes nothing. */
