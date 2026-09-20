@@ -17,7 +17,7 @@ import type { FlightPose } from './avatar/Avatar';
 import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
-import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
+import { MAX_STEP, MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
 import { createLayers, type Hideable, type Layers } from './render/Layers';
 import { createPost, type Post } from './render/Post';
@@ -233,16 +233,23 @@ export function createWorld(opts: WorldOptions): World {
     figure: [avatar.object],
   });
   const steering = createSteering(sim.flight, { view: opts.view, orbit: opts.orbit });
-  /** Where the camera hung before the script borrowed it. */
-  const framing = { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist };
+  /**
+   * The script's own camera, kept apart from the person's: the chase camera is
+   * handed this one while the opening runs and the steering's orbit is never
+   * written, so nothing that reads the steering -- the settings a wheel or a
+   * focused control saves -- can mistake the script's framing for a choice.
+   * The first draft wrote the script into `steering.orbit` and restored it at
+   * the end, and one scroll in the first half minute saved the beam as the
+   * person's camera for every world after.
+   */
+  const scriptOrbit: Orbit = { yaw: Math.PI / 2, pitch: 0.14, dist: 11 };
   /** Everything the opening was holding, handed back in one place. */
   const endOpening = () => {
     clock.rate = 1;
-    steering.orbit.yaw = framing.yaw;
-    steering.orbit.pitch = framing.pitch;
-    steering.orbit.dist = framing.dist;
     steering.setAutopilot(true);
   };
+  /** What the script last asked of the stick, so `fly` is called on a change and not a frame. */
+  const asked = { yaw: 0, climb: 0 };
   // The flight holds its course and its height while the script is level: with
   // the autopilot on it would wander off on its own errands mid-shot, and
   // `fly(0, 0)` is not enough to take it away, by design -- an arrow key that
@@ -344,7 +351,7 @@ export function createWorld(opts: WorldOptions): World {
     chase.update({
       state,
       view: steering.view,
-      orbit: steering.orbit,
+      orbit: opening.live ? scriptOrbit : steering.orbit,
       look: steering.look,
       eye: avatar.eye,
       floorAt: sim.flight.floorAt,
@@ -448,11 +455,20 @@ export function createWorld(opts: WorldOptions): World {
       // so a hand on the stick is the thing that ends it rather than the thing
       // that fights it.
       if (opening.live) {
-        const script = opening.step(dt);
-        sim.flight.fly(script.yaw, script.climb);
-        steering.orbit.yaw = script.cameraYaw;
-        steering.orbit.pitch = script.cameraPitch;
-        steering.orbit.dist = script.cameraDist;
+        // Stepped by what the flight will accept: a step the flight refuses
+        // (`MAX_STEP`) must not move the script either, or the two drift apart.
+        const script = opening.step(Number.isFinite(dt) && dt <= MAX_STEP ? dt : 0);
+        // `fly` is an arrow key: pressed on a change, not held down every frame.
+        // Called every frame, `fly(0, 0)` re-reads the held height off the
+        // present one and the hold act coasts instead of holding.
+        if (script.yaw !== asked.yaw || script.climb !== asked.climb) {
+          asked.yaw = script.yaw;
+          asked.climb = script.climb;
+          sim.flight.fly(script.yaw, script.climb);
+        }
+        scriptOrbit.yaw = script.cameraYaw;
+        scriptOrbit.pitch = script.cameraPitch;
+        scriptOrbit.dist = script.cameraDist;
         clock.rate = script.dayRate;
         if (!opening.live) endOpening();
       }

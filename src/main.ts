@@ -95,19 +95,37 @@ let lastSave = -Infinity;
  * that ends the opening, and a slow runner does not always have one.
  */
 let shownAutopilot = true;
+/** What the HUD has been told about the opening and its card, so a frame that changes nothing writes nothing. */
+let shownDone = true;
+let shownCard = 0;
+/**
+ * The HUD, brought level with the world: the card at the opacity the script
+ * asks, the controls out of the picture while the opening plays, the pill
+ * saying what the autopilot is. Every way the world moves goes through this
+ * -- the loop, a step by hand, Begin, the end of the opening -- because a
+ * page whose banner says "autopilot off" over a flight flying itself is
+ * what the last three CI reds were, each fixed in one of those places and not
+ * the others. It writes the DOM only on a change: three style writes a frame
+ * for the rest of a flight, long after the card has gone, is a cost the
+ * profile shows and the picture does not.
+ */
+const syncHud = () => {
+  const { card, done } = world.opening;
+  if (card !== shownCard) {
+    shownCard = card;
+    hud.setTitle(card);
+  }
+  if (done !== shownDone) {
+    shownDone = done;
+    hud.setOpening(!done);
+  }
+  if (steering.autopilot !== shownAutopilot) showAutopilot();
+};
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => {
     world.update(dt);
-    // The title card rides the opening's own fade; at zero the element goes
-    // away rather than sitting invisible over the canvas for the whole flight.
-    hud.setTitle(world.opening.card);
-    hud.setOpening(!world.opening.done);
-    // The opening flies with the autopilot off and hands it back at the end,
-    // and the HUD has to hear about it: without this the banner still said
-    // "autopilot off -- arrows fly the figure" over a flight flying itself, and
-    // the button offered to resume what was already resumed.
-    if (steering.autopilot !== shownAutopilot) showAutopilot();
+    syncHud();
     // a couple of times a minute while flying; never before Begin, when nothing has changed
     if (performance.now() - lastSave > 2000) saveFlight();
   },
@@ -117,16 +135,11 @@ const loop = createLoop({
 /**
  * One frame, driven by hand: the tests' `step`, the dev panel's redraws and the
  * jump all go through this, so none of them can advance the world in a way the
- * page itself never does.
+ * page itself never does -- the HUD included.
  */
 const stepByHand = (dt: number, drawNow = false) => {
   world.update(dt);
-  // The card is the page's, not the world's, and a test stepping the world by
-  // hand is still entitled to see it: without this the opening advances and the
-  // title never appears, which is a difference between the tested page and the
-  // real one.
-  hud.setTitle(world.opening.card);
-  hud.setOpening(!world.opening.done);
+  syncHud();
   // A step asks the browser for a frame and returns; a thousand of them in a
   // loop cost a thousand updates and whatever the browser found time to draw,
   // which is what a test simulating twenty minutes of wind wants. `frame` is
@@ -180,7 +193,10 @@ const begin = () => {
     audio.suspend(true);
   }
   hud.setPaused(loop.paused);
-  showAutopilot();
+  // Level with the world before the first frame of flight rather than on it:
+  // a frame can be seconds away on a slow machine, and until it came the HUD
+  // and the manual banner stood over the opening's first act.
+  syncHud();
   canvas.removeAttribute('inert');
   canvas.focus({ preventScroll: true });
 };
@@ -212,7 +228,6 @@ const setView = (view: View) => {
   if (loop.running) loop.renderOnce();
 };
 hud.onView(() => setView(steering.view === 'tpp' ? 'fpp' : 'tpp'));
-/** The pill and the flag that remembers what the pill says, written together. */
 // The wardrobe: the catalogue draws its own tiles, the page only has to say
 // what is worn and hear what was picked.
 const wardrobe = createWardrobe(document);
@@ -250,10 +265,9 @@ const showAutopilot = () => {
  * detail of a test.
  */
 const leaveOpening = () => {
+  if (world.opening.done) return;
   world.skipOpening();
-  hud.setTitle(0);
-  hud.setOpening(false);
-  showAutopilot();
+  syncHud();
 };
 hud.onAutopilot(() => {
   steering.setAutopilot(true);
@@ -311,6 +325,8 @@ canvas.addEventListener(
   (e) => {
     if (!loop.running) return;
     e.preventDefault();
+    // a wheel is a hand on the controls too, and the framing it saves has to be the person's
+    leaveOpening();
     steering.wheel(e.deltaY);
     saveSettings();
   },
@@ -325,6 +341,10 @@ addEventListener('keydown', (e) => {
     return;
   if (e.code === 'Space') {
     e.preventDefault();
+    // A pause in the middle of the opening is a pause of a flight with the
+    // controls off screen and the pill unclickable, so the opening ends first
+    // and the pause is an ordinary one, with a button to resume it.
+    if (loop.running) leaveOpening();
     togglePause();
     return;
   }
