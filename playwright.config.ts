@@ -6,12 +6,13 @@ export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 90_000,
   retries: process.env.CI ? 1 : 0,
-  // Forty-odd tests in one file ran one after another on one worker, which was
-  // forty minutes of CI on a software rasteriser. Each test opens its own page
-  // in its own context, so they share nothing but the preview server; two
-  // workers on a four-core runner is what the runner can rasterise at once.
-  fullyParallel: true,
-  workers: process.env.CI ? 2 : undefined,
+  // One worker, one after another, on purpose. Two workers on four cores were
+  // tried: 18.9 minutes instead of 23.7, and three tests timed out that pass
+  // alone -- a software rasteriser wants the whole machine, and a second one
+  // beside it turns every fifteen-second poll into a coin toss. The time the
+  // suite takes is the rasteriser's, not the runner's to parallelise away.
+  fullyParallel: false,
+  workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:4173',
