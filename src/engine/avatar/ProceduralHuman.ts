@@ -335,17 +335,50 @@ const clamp01 = (v: number, min = 0) => (v < min ? min : v > 1 ? 1 : v);
  * This is the shape of the body and it is deliberately data -- a waist, a
  * shoulder, a calf and an ankle are four numbers here, and were four solids
  * before.
+ *
+ * Read with a monotone cubic (Fritsch-Carlson) rather than straight lines:
+ * the stops are hit exactly and nothing overshoots between them, but the
+ * curve turns smoothly through each, where a line makes a kink -- and a limb
+ * read as a chain of cone frustums, one crease at every stop, from a chase
+ * camera three metres off.
  */
-const ramp =
-  (stops: Array<[number, number]>) =>
-  (t: number): number => {
-    for (let i = 1; i < stops.length; i++) {
-      const [ta, ra] = stops[i - 1]!,
-        [tb, rb] = stops[i]!;
-      if (t <= tb) return ra + ((rb - ra) * Math.min(Math.max(t - ta, 0), tb - ta)) / (tb - ta || 1);
-    }
-    return stops[stops.length - 1]![1];
+const ramp = (stops: Array<[number, number]>) => {
+  const n = stops.length;
+  if (n < 2) return () => stops[0]?.[1] ?? 0;
+  const t = stops.map((s) => s[0]),
+    r = stops.map((s) => s[1]);
+  const h: number[] = [],
+    d: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    h.push(t[i + 1]! - t[i]! || 1e-9);
+    d.push((r[i + 1]! - r[i]!) / h[i]!);
+  }
+  // Tangents: the harmonic mean of the neighbouring secants where they agree
+  // in sign, and zero where they do not, which is what keeps a waist a waist.
+  const m: number[] = new Array<number>(n).fill(0);
+  m[0] = d[0]!;
+  m[n - 1] = d[n - 2]!;
+  for (let i = 1; i < n - 1; i++) {
+    const a = d[i - 1]!,
+      b = d[i]!;
+    m[i] = a * b <= 0 ? 0 : (2 * a * b) / (a + b);
+  }
+  return (x: number): number => {
+    if (x <= t[0]!) return r[0]!;
+    if (x >= t[n - 1]!) return r[n - 1]!;
+    let i = 0;
+    while (i < n - 2 && x > t[i + 1]!) i++;
+    const s = (x - t[i]!) / h[i]!,
+      s2 = s * s,
+      s3 = s2 * s;
+    return (
+      (2 * s3 - 3 * s2 + 1) * r[i]! +
+      (s3 - 2 * s2 + s) * h[i]! * m[i]! +
+      (-2 * s3 + 3 * s2) * r[i + 1]! +
+      (s3 - s2) * h[i]! * m[i + 1]!
+    );
   };
+};
 /** A swatch by distance along a chain: the first stop whose end is past t. */
 const bands =
   (stops: Array<[number, string]>) =>
@@ -554,9 +587,19 @@ export function createProceduralHuman(
         [1, 0.055],
       ]),
       swatch: () => 'suit',
-      sides: 12,
-      rings: 3,
-      flatten: 1.2,
+      sides: 16,
+      rings: 5,
+      // A chest is flatter than the waist under it, and the hips are between:
+      // the same 1.2 from tail to neck made a body of one cross-section, and
+      // a body of one cross-section is a pipe however it tapers.
+      flatten: ramp([
+        [0, 1.15],
+        [0.2, 1.22],
+        [0.54, 1.12],
+        [0.8, 1.32],
+        [0.93, 1.15],
+        [1, 1.05],
+      ]),
       capStart: true,
       capEnd: false,
     }),
@@ -575,8 +618,8 @@ export function createProceduralHuman(
             [1, 0.044],
           ]),
           swatch: () => 'suit',
-          sides: 8,
-          rings: 3,
+          sides: 12,
+          rings: 5,
           capStart: true,
           capEnd: false,
         }),
@@ -590,8 +633,8 @@ export function createProceduralHuman(
             [1, 0.048],
           ]),
           swatch: () => 'suit',
-          sides: 8,
-          rings: 3,
+          sides: 12,
+          rings: 5,
           flatten: 0.85,
           capStart: true,
           // Closed, although the boot stands over it: the ankle breaks 29
@@ -646,8 +689,8 @@ export function createProceduralHuman(
             [1, 0.042],
           ]),
           swatch: () => 'gloves',
-          sides: 8,
-          rings: 2,
+          sides: 10,
+          rings: 3,
           flatten: 1.7,
           across: hand.across,
           capStart: true,
@@ -702,8 +745,8 @@ export function createProceduralHuman(
               [1, 0.026],
             ]),
             swatch: () => 'boots',
-            sides: 8,
-            rings: 3,
+            sides: 12,
+            rings: 4,
             flatten: 1.12,
             across,
             capStart: true,
@@ -775,8 +818,8 @@ export function createProceduralHuman(
       // and the chin itself, the one bit of a face this leaves out
       return side < -0.88 && t > 0.94 ? 'skin' : null;
     },
-    sides: 12,
-    rings: 4,
+    sides: 16,
+    rings: 6,
     capStart: true,
     capEnd: true,
   };
@@ -872,7 +915,9 @@ export function createProceduralHuman(
     }
     return {
       bones: chain.bones,
-      flatten: chain.flatten ?? 1,
+      // the baker takes one number; a body whose section changes along it is
+      // described at its middle, and the samples' radii carry the rest
+      flatten: typeof chain.flatten === 'function' ? chain.flatten(0.5) : (chain.flatten ?? 1),
       capStart: chain.capStart ?? false,
       capEnd: chain.capEnd ?? false,
       samples,

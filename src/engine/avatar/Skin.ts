@@ -22,8 +22,19 @@ export const SIDES = 8;
  * the one number to turn when an elbow looks wrong.
  */
 export const BLEND = 0.34;
-/** How dark a vertex goes in the middle of a joint's blend, 0..1: the crease a shadow map cannot draw. */
-export const CREASE = 0.22;
+/**
+ * How dark a vertex goes in the middle of a joint's blend, 0..1: the crease a
+ * shadow map cannot draw. It was 0.22, and at three metres a band that dark on
+ * every joint read as a stripe of grime rather than a fold.
+ */
+export const CREASE = 0.08;
+/**
+ * Rings in a cap between the last ring of the tube and the pole. A cap used to
+ * be the pole alone, fanned to the ring: a cone, so the crown of the head, the
+ * chin, every fingertip and the toe of a boot came to a point, with a hard
+ * crease where the fan met the tube. Three rings make it a dome.
+ */
+export const CAP_RINGS = 3;
 
 /** One limb, spine or neck: the bones it runs along and how thick it is. */
 export interface Chain {
@@ -57,9 +68,11 @@ export interface Chain {
   /**
    * The cross-section's shape: 1 is a circle, above it an ellipse wider across
    * the first axis than the second. A chest is wider than it is thick and a
-   * boot is longer than it is wide, and neither is a pipe.
+   * boot is longer than it is wide, and neither is a pipe. Given as a function
+   * of the distance along the chain, it may change on the way: a chest is
+   * flatter than the waist under it.
    */
-  flatten?: number;
+  flatten?: number | ((t: number) => number);
   /**
    * Which way the first axis points, when it matters. The across-axis is
    * otherwise seeded from x and carried along the chain, which is fine for a
@@ -174,7 +187,8 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
   const rings = samples.length;
   const capStart = chain.capStart ?? false,
     capEnd = chain.capEnd ?? false;
-  const count = rings * sides + (capStart ? 1 : 0) + (capEnd ? 1 : 0);
+  const capCount = CAP_RINGS * sides + 1;
+  const count = rings * sides + (capStart ? capCount : 0) + (capEnd ? capCount : 0);
   const position = new Float32Array(count * 3),
     normal = new Float32Array(count * 3),
     color = new Float32Array(count * 3),
@@ -184,103 +198,164 @@ export function buildChain(chain: Chain, boneIndex: (name: string) => number): S
     along = new Float32Array(count),
     around = new Float32Array(count);
   const swatch: string[] = new Array<string>(count);
-  const flatten = chain.flatten ?? 1;
+  const flattenAt = (t: number) =>
+    typeof chain.flatten === 'function' ? chain.flatten(t) : (chain.flatten ?? 1);
   const frame = { u: new Vector3(), v: new Vector3() };
   const carried = chain.across ? chain.across.clone().normalize() : new Vector3(1, 0, 0);
   const point = new Vector3(),
     outward = new Vector3();
-
-  for (let s = 0; s < rings; s++) {
-    const sample = samples[s]!;
-    across(sample.dir, carried, frame);
-    carried.copy(frame.u);
-    const radius = chain.profile(sample.t);
-    const name = chain.swatch(sample.t);
-    // The crease: darkest in the middle of a blend, gone at either edge of it.
-    const dark = 1 - CREASE * (1 - Math.abs(sample.weight * 2 - 0.5) * 2) * (sample.weight > 0 ? 1 : 0);
+  /**
+   * How fast the profile is changing here, in metres of radius per metre
+   * along the chain: what tilts a normal on a taper. Without it a thigh is
+   * shaded as a cylinder and a shoulder's swell never catches the light.
+   */
+  const slopeAt = (t: number) => {
+    const h = 1e-3;
+    const a = Math.max(0, t - h),
+      b = Math.min(1, t + h);
+    return b > a ? (chain.profile(b) - chain.profile(a)) / ((b - a) * total) : 0;
+  };
+  /**
+   * One vertex of one ring: at `phi` off the ring's plane, for a cap -- the
+   * ring itself is `phi` 0. `dir` is the chain's direction here, `sign` which
+   * way a cap bulges, `radius` the profile's, `slope` the taper's tilt.
+   */
+  const write = (
+    i: number,
+    at: Vector3,
+    dir: Vector3,
+    radius: number,
+    flatten: number,
+    slope: number,
+    phi: number,
+    sign: number,
+    sample: (typeof samples)[number],
+    dark: number,
+  ) => {
     const first = boneIndex(chain.bones[sample.bone]!),
       second = boneIndex(chain.bones[Math.min(sample.bone + 1, chain.bones.length - 1)]!);
+    const name = chain.swatch(sample.t);
+    const ring = radius * Math.cos(phi),
+      rise = radius * Math.sin(phi) * sign;
     for (let k = 0; k < sides; k++) {
       const a = (k / sides) * Math.PI * 2;
       // The offset is the ellipse itself and is not normalised: normalising it
       // is how `flatten` came to do nothing at all but shuffle the vertices
       // around a circle. The normal of an ellipse is the other way round --
       // where the surface is flat it points further out -- so it is built from
-      // the reciprocals and normalised on its own.
+      // the reciprocals, tilted along the chain by the taper and, on a cap,
+      // toward the pole, and normalised on its own.
       const cos = Math.cos(a),
         sin = Math.sin(a);
       outward
         .copy(frame.u)
         .multiplyScalar(cos * flatten)
         .addScaledVector(frame.v, sin / flatten);
-      point.copy(sample.at).addScaledVector(outward, radius);
+      point.copy(at).addScaledVector(outward, ring).addScaledVector(dir, rise);
       outward
         .copy(frame.u)
         .multiplyScalar(cos / flatten)
         .addScaledVector(frame.v, sin * flatten)
+        .normalize()
+        .multiplyScalar(Math.cos(phi))
+        .addScaledVector(dir, sign * Math.sin(phi) - slope * Math.cos(phi))
         .normalize();
-      const i = s * sides + k;
-      position.set([point.x, point.y, point.z], i * 3);
-      normal.set([outward.x, outward.y, outward.z], i * 3);
-      skinIndex.set([first, second, 0, 0], i * 4);
-      skinWeight.set([1 - sample.weight, sample.weight, 0, 0], i * 4);
-      swatch[i] = chain.patch?.(sample.t, a) ?? name;
-      shade[i] = dark;
-      along[i] = sample.t;
-      around[i] = a;
+      const v = i + k;
+      position.set([point.x, point.y, point.z], v * 3);
+      normal.set([outward.x, outward.y, outward.z], v * 3);
+      skinIndex.set([first, second, 0, 0], v * 4);
+      skinWeight.set([1 - sample.weight, sample.weight, 0, 0], v * 4);
+      swatch[v] = chain.patch?.(sample.t, a) ?? name;
+      shade[v] = dark;
+      along[v] = sample.t;
+      around[v] = a;
+    }
+  };
+
+  for (let s = 0; s < rings; s++) {
+    const sample = samples[s]!;
+    across(sample.dir, carried, frame);
+    carried.copy(frame.u);
+    // The crease: darkest in the middle of a blend, gone at either edge of it.
+    const dark = 1 - CREASE * (1 - Math.abs(sample.weight * 2 - 0.5) * 2) * (sample.weight > 0 ? 1 : 0);
+    write(
+      s * sides,
+      sample.at,
+      sample.dir,
+      chain.profile(sample.t),
+      flattenAt(sample.t),
+      slopeAt(sample.t),
+      0,
+      1,
+      sample,
+      dark,
+    );
+    // A cap is a dome over this ring: rings of the same ellipse, each smaller
+    // and further along, then the pole. The frame is this ring's, so the dome
+    // sits square on the tube it closes.
+    const cap = (s === 0 && capStart) || (s === rings - 1 && capEnd);
+    if (cap) {
+      const sign = s === 0 ? -1 : 1;
+      const base = rings * sides + (s === 0 || !capStart ? 0 : capCount);
+      const radius = chain.profile(sample.t),
+        flatten = flattenAt(sample.t);
+      for (let c = 0; c < CAP_RINGS; c++) {
+        const phi = ((c + 1) / (CAP_RINGS + 1)) * (Math.PI / 2);
+        write(base + c * sides, sample.at, sample.dir, radius, flatten, 0, phi, sign, sample, dark);
+      }
+      const pole = base + CAP_RINGS * sides;
+      point.copy(sample.at).addScaledVector(sample.dir, sign * radius);
+      position.set([point.x, point.y, point.z], pole * 3);
+      normal.set([sample.dir.x * sign, sample.dir.y * sign, sample.dir.z * sign], pole * 3);
+      const first = boneIndex(chain.bones[sample.bone]!),
+        second = boneIndex(chain.bones[Math.min(sample.bone + 1, chain.bones.length - 1)]!);
+      skinIndex.set([first, second, 0, 0], pole * 4);
+      skinWeight.set([1 - sample.weight, sample.weight, 0, 0], pole * 4);
+      swatch[pole] = chain.swatch(sample.t);
+      shade[pole] = dark;
+      along[pole] = sample.t;
+      around[pole] = 0;
     }
   }
 
-  // The caps: a single vertex at each open end, fanned to its ring.
-  let capA = -1,
-    capB = -1;
-  const capAt = (sample: (typeof samples)[number], sign: number, i: number) => {
-    point.copy(sample.at).addScaledVector(sample.dir, sign * chain.profile(sample.t));
-    position.set([point.x, point.y, point.z], i * 3);
-    normal.set([sample.dir.x * sign, sample.dir.y * sign, sample.dir.z * sign], i * 3);
-    const first = boneIndex(chain.bones[sample.bone]!),
-      second = boneIndex(chain.bones[Math.min(sample.bone + 1, chain.bones.length - 1)]!);
-    skinIndex.set([first, second, 0, 0], i * 4);
-    skinWeight.set([1 - sample.weight, sample.weight, 0, 0], i * 4);
-    swatch[i] = chain.swatch(sample.t);
-    shade[i] = 1;
-    along[i] = sample.t;
-    around[i] = 0;
-  };
-  if (capStart) capAt(samples[0]!, -1, (capA = rings * sides));
-  if (capEnd) capAt(samples[rings - 1]!, 1, (capB = rings * sides + (capStart ? 1 : 0)));
-
-  const quads = (rings - 1) * sides;
+  // The tube's quads, then each cap's: its rings stitched on from the end ring
+  // outward and the pole fanned to the last of them. A start cap runs the
+  // other way along the chain, so its winding is turned to keep facing out.
+  const quads = (rings - 1) * sides + (capStart ? CAP_RINGS * sides : 0) + (capEnd ? CAP_RINGS * sides : 0);
   const fans = (capStart ? sides : 0) + (capEnd ? sides : 0);
   const index = new Uint32Array(quads * 6 + fans * 3);
   let w = 0;
-  for (let s = 0; s < rings - 1; s++)
+  const stitch = (from: number, to: number, flip: boolean) => {
     for (let k = 0; k < sides; k++) {
-      const a = s * sides + k,
-        b = s * sides + ((k + 1) % sides),
-        c = (s + 1) * sides + k,
-        d = (s + 1) * sides + ((k + 1) % sides);
-      index[w++] = a;
-      index[w++] = c;
-      index[w++] = b;
-      index[w++] = b;
-      index[w++] = c;
-      index[w++] = d;
+      const a = from + k,
+        b = from + ((k + 1) % sides),
+        c = to + k,
+        d = to + ((k + 1) % sides);
+      if (flip) index.set([a, b, c, b, d, c], w);
+      else index.set([a, c, b, b, c, d], w);
+      w += 6;
     }
-  if (capA >= 0)
+  };
+  const fan = (pole: number, ring: number, flip: boolean) => {
     for (let k = 0; k < sides; k++) {
-      index[w++] = capA;
-      index[w++] = k;
-      index[w++] = (k + 1) % sides;
+      const a = ring + k,
+        b = ring + ((k + 1) % sides);
+      if (flip) index.set([pole, a, b], w);
+      else index.set([pole, b, a], w);
+      w += 3;
     }
-  if (capB >= 0) {
-    const base = (rings - 1) * sides;
-    for (let k = 0; k < sides; k++) {
-      index[w++] = capB;
-      index[w++] = base + ((k + 1) % sides);
-      index[w++] = base + k;
+  };
+  for (let s = 0; s < rings - 1; s++) stitch(s * sides, (s + 1) * sides, false);
+  const dome = (ring: number, base: number, flip: boolean) => {
+    let last = ring;
+    for (let c = 0; c < CAP_RINGS; c++) {
+      stitch(last, base + c * sides, flip);
+      last = base + c * sides;
     }
-  }
+    fan(base + CAP_RINGS * sides, last, flip);
+  };
+  if (capStart) dome(0, rings * sides, true);
+  if (capEnd) dome((rings - 1) * sides, rings * sides + (capStart ? capCount : 0), false);
   return { position, normal, color, skinIndex, skinWeight, index, swatch, shade, along, around };
 }
 

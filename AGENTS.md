@@ -179,9 +179,13 @@ page works under a Pages subdirectory.
   without hiding it part by part. The world's material needs no change:
   `setupPosition` adds `skinning(object)` for a skinned mesh by itself.
   Everything a chain looks like is its `profile` -- a half-width in metres at a
-  share of its length -- and its `swatch`, and **a swatch band is only a band if
-  a ring lands in it**: write the stops against the rings the chain samples at,
-  not against a picture of a body. A `swatch` is a belt round the chain and
+  share of its length, read through a monotone cubic so the stops are hit and
+  nothing kinks between them -- and its `swatch`, and **a swatch band is only a
+  band if a ring lands in it**: write the stops against the rings the chain
+  samples at, not against a picture of a body. A cap is a dome of `CAP_RINGS`
+  rings, never a fan to a point; a normal is tilted by the taper, or a thigh
+  shades as a cylinder; limbs take twelve sides and the torso sixteen, because
+  eight read as a stop sign from three metres. A `swatch` is a belt round the chain and
   nothing else, which is why a visor is a `patch` -- a colour for one place,
   taking the angle around the ring as well: a dark belt on a pale solid of
   revolution reads as a face from every bearing at once, and the head appears
