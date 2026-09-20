@@ -62,9 +62,9 @@ export interface Ambience {
   ): void;
   chime(count?: number): void;
   /** One bird: a few whistled notes. A biome's `birds` layer is how often. */
-  bird(): void;
+  bird(level?: number): void;
   /** One bell, long and low, through the chime's delay. */
-  bell(): void;
+  bell(level?: number): void;
   flutter(count?: number): void;
   toggleMute(): boolean;
   setVolume(v: number): void;
@@ -128,6 +128,20 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
     available = typeof globalThis.AudioContext === 'function' || opts.createContext !== undefined;
   /** The last mix handed over, kept so a test can ask what the world sounds like. */
   let heard: Readonly<Record<Layer, number>> = EMPTY_LAYERS;
+  /**
+   * The last target each parameter was given. A target is an event on the
+   * audio thread's timeline, and nine of them a frame at sixty frames is five
+   * hundred messages a second for parameters that move on a time constant of
+   * a second and a half: one that has not moved by a thousandth is not sent.
+   */
+  const targets = new Map<AudioParam, number>();
+  const retarget = (param: AudioParam, value: number, timeConstant: number) => {
+    if (!ctx) return;
+    const last = targets.get(param);
+    if (last !== undefined && Math.abs(last - value) < 1e-4) return;
+    targets.set(param, value);
+    param.setTargetAtTime(value, ctx.currentTime, timeConstant);
+  };
   let chimeTimer = 25,
     birdTimer = 4,
     bellTimer = 50,
@@ -218,11 +232,15 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       surfGain.gain.value = 0;
       surf.connect(surfFilter).connect(surfGain).connect(master);
       surf.start();
-      // the swell, so a coast breathes instead of hissing
+      // the swell, so a coast breathes instead of hissing: the cutoff wanders
+      // by a couple of hundred hertz either side of its 480, once every nine
+      // seconds. An AudioParam adds in its own units, so this is hertz -- the
+      // first draft wrote 0.35 here and moved the filter by a third of one,
+      // which nobody could hear.
       const swell = ctx.createOscillator();
       swell.frequency.value = 0.11;
       const swellDepth = ctx.createGain();
-      swellDepth.gain.value = 0.35;
+      swellDepth.gain.value = 220;
       swell.connect(swellDepth).connect(surfFilter.frequency);
       swell.start();
 
@@ -326,8 +344,8 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       }
     },
     /** A bird: two or three whistled notes, each one sliding up and stopping. */
-    bird() {
-      if (!ctx || !master) return;
+    bird(level = 1) {
+      if (!ctx || !master || !(level > 0)) return;
       const at = ctx.currentTime;
       const notes = 2 + Math.floor(random() * 2);
       const base = 1900 + random() * 1400;
@@ -340,7 +358,7 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
         o.frequency.exponentialRampToValueAtTime(f * (1.1 + random() * 0.35), t + 0.07);
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.05, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.05 * level, t + 0.012);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
         o.connect(g).connect(master);
         o.start(t);
@@ -352,13 +370,13 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       }
     },
     /** A bell in a village: one low strike, long, through the same delay the chimes use. */
-    bell() {
-      if (!ctx || !master || !delay) return;
+    bell(level = 1) {
+      if (!ctx || !master || !delay || !(level > 0)) return;
       const t = ctx.currentTime;
       const f = 148 + random() * 36;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.09 * level, t + 0.02);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 6);
       const o = ctx.createOscillator();
       o.type = 'sine';
@@ -386,37 +404,38 @@ export function createAmbience(opts: AmbienceOptions): Ambience {
       };
     },
     update(dt, sample, groundAt, layers) {
+      // What the country asks for is known whether or not there is anything to
+      // play it on: a runner with no output device still reads `layers`.
+      const want = layers ?? EMPTY_LAYERS;
+      heard = want;
       if (!ctx || !windFilter || !windGain || !waterGain) return;
       const wind = windParams(sample);
-      windFilter.frequency.setTargetAtTime(wind.frequency, ctx.currentTime, 0.4);
-      windGain.gain.setTargetAtTime(wind.gain, ctx.currentTime, 0.5);
-      waterGain.gain.setTargetAtTime(
-        waterAmount(groundAt, sample.x, sample.z, sample.altitude) * 0.28,
-        ctx.currentTime,
-        1.2,
-      );
+      retarget(windFilter.frequency, wind.frequency, 0.4);
+      retarget(windGain.gain, wind.gain, 0.5);
+      retarget(waterGain.gain, waterAmount(groundAt, sample.x, sample.z, sample.altitude) * 0.28, 1.2);
       // What the country under the flyer is asking for. Every layer is a
       // target the graph slides toward over a second and a half: a biome
       // border crossed at fifty metres a second is a fade, not a cut.
-      const want = layers ?? EMPTY_LAYERS;
-      heard = want;
-      if (surfGain) surfGain.gain.setTargetAtTime(want.surf * 0.3, ctx.currentTime, 1.5);
-      if (highGain) highGain.gain.setTargetAtTime(want['wind-high'] * 0.12, ctx.currentTime, 1.5);
+      if (surfGain) retarget(surfGain.gain, want.surf * 0.3, 1.5);
+      if (highGain) retarget(highGain.gain, want['wind-high'] * 0.12, 1.5);
       if (cricketGain && cricketTremolo) {
-        cricketGain.gain.setTargetAtTime(want.crickets * 0.035, ctx.currentTime, 1.5);
-        cricketTremolo.gain.setTargetAtTime(want.crickets * 0.03, ctx.currentTime, 1.5);
+        retarget(cricketGain.gain, want.crickets * 0.035, 1.5);
+        retarget(cricketTremolo.gain, want.crickets * 0.03, 1.5);
       }
       // and the two that are events rather than textures: the more of the
       // biome is under the flyer the shorter the wait, and at zero they never
-      // come round at all.
+      // come round at all. The mix is the event's loudness as well as its
+      // rate, or a bird at 440 m -- where the gate has it nearly gone -- is as
+      // loud as one on the ground, only rarer. The square root keeps a
+      // half-heard bird from being a whisper: the ear reads that as distance.
       birdTimer -= dt * want.birds;
       if (birdTimer <= 0) {
-        api.bird();
+        api.bird(Math.sqrt(want.birds));
         birdTimer = 1.6 + random() * 5;
       }
       bellTimer -= dt * want.bells;
       if (bellTimer <= 0) {
-        api.bell();
+        api.bell(Math.sqrt(want.bells));
         bellTimer = 45 + random() * 70;
       }
 

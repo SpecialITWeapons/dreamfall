@@ -2,9 +2,12 @@
 
 Measurements live here, one section per change that touched the cost.
 Method (from fly-with-me): hold the flyer at fixed vantages of one seed's
-world, read the fifth percentile of a window of frames, take the minimum
-across repeated rounds, interleave builds round by round. The tools that do
-this arrive in M5 (`tools/bench.ts`, `tools/parity.ts`).
+world, read the median of a window of frames (the fifth percentile beside
+it, which is the right statistic on a GPU and the wrong one on a rasteriser
+-- see the M5 section), take the minimum across repeated rounds, interleave
+builds round by round. The tools are `tools/bench/` and `tools/parity/`
+(`npm run bench`, `npm run parity`), one list of vantages in
+`tools/vantages.ts`.
 
 ## M1 baseline
 
@@ -787,7 +790,8 @@ trzech przebiegów zostaje najszybszy.
 
 ## Przegląd wydajności M5: pięć stanowisk, i czego one nie mówią
 
-`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek,
+`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek
+(`BENCH_FRAMES=16`; domyślne to 24),
 najszybsza runda z każdej. Kolumny: mediana odstępu między klatkami, klatki na
 sekundę z całego okna, najszybsza klatka okna, potem to, co klatka narysowała.
 
@@ -832,4 +836,25 @@ się na liczbę, której nigdy nie było. Piąty percentyl wyławia właśnie te
 7,3 ms tam, gdzie każda klatka trwała 3,3 s, i 2 987 ms na piątym stanowisku,
 co wyglądało jak stokrotny koszt wysokości, a było jedynym stanowiskiem, na
 którym artefakt akurat nie wypadł. Sonda po wysokościach (120, 400, 800, 1200,
-1500 m) pokazuje koszt **płaski**: 3,1–3,4 s wszędzie. Nagłówkiem jest mediana.
+1500 m — z czego ostatnie to naprawdę 1356 m, bo sufit lotu jest 1400 m nad
+morzem i kontroler obcina na następnym kroku) pokazuje koszt **płaski**:
+3,1–3,4 s wszędzie. Nagłówkiem jest mediana.
+
+## The figure grown from a field
+
+`createProceduralHuman`, Node 24 in the development container, second build
+in one process (the first pays the interpreter):
+
+| figure                                      | triangles | build  |
+| ------------------------------------------- | --------- | ------ |
+| ring sweep, 8 sides (M5)                    | 1 960     | ~5 ms  |
+| ring sweep, 12/16 sides, domed caps         | 5 056     | ~8 ms  |
+| field, body 1.5 cm / hands 5 mm / head 6 mm | 51 572    | 756 ms |
+| field, body 2 cm / hands 6 mm / head 7 mm   | 32 860    | 415 ms |
+
+The field is what the body costs now: 33 000 triangles on a frame of half a
+million, and 0.4 s once at start, behind the veil, beside a scenery bake of
+two seconds. Where it goes is the grid -- 584 000 samples of the body's box
+at 1.5 cm, each asking every chain in reach -- and the escape hatch, unbuilt,
+is a worker, as the galaxy has. The finer grid buys nothing a chase camera
+at three metres can see.

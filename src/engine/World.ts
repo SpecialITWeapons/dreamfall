@@ -10,14 +10,13 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { swatchColor, validateLibrary, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
-import { layerMix } from './audio/AmbienceModel';
+import { emptyMix, layerMix } from './audio/AmbienceModel';
 import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import type { FlightPose } from './avatar/Avatar';
-import { outfitById, patternById } from './avatar/Outfits';
 import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
-import { MIN_CLEARANCE, SPEED } from './flight/FlightController';
+import { MAX_STEP, MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
 import { createLayers, type Hideable, type Layers } from './render/Layers';
 import { createPost, type Post } from './render/Post';
@@ -59,8 +58,6 @@ export interface WorldOptions {
   deferScenery?: boolean;
   view?: View;
   orbit?: Partial<Orbit>;
-  outfit?: string;
-  pattern?: string;
   volume?: number;
   muted?: boolean;
   reducedMotion?: boolean;
@@ -207,10 +204,7 @@ export function createWorld(opts: WorldOptions): World {
   scene.add(clouds.mesh);
   const cloudSea = createCloudSea(uniforms, horizon);
   scene.add(cloudSea.mesh);
-  const avatar = createProceduralHuman(litMaterial, {
-    outfit: outfitById(opts.outfit ?? 'dusk'),
-    pattern: patternById(opts.pattern ?? 'plain'),
-  });
+  const avatar = createProceduralHuman(litMaterial);
   scene.add(avatar.object);
   // The layer switches. The scenery's arrays are filled when it is planted --
   // which is after this, when the page defers the bake for its own veil -- and
@@ -233,16 +227,23 @@ export function createWorld(opts: WorldOptions): World {
     figure: [avatar.object],
   });
   const steering = createSteering(sim.flight, { view: opts.view, orbit: opts.orbit });
-  /** Where the camera hung before the script borrowed it. */
-  const framing = { yaw: steering.orbit.yaw, pitch: steering.orbit.pitch, dist: steering.orbit.dist };
+  /**
+   * The script's own camera, kept apart from the person's: the chase camera is
+   * handed this one while the opening runs and the steering's orbit is never
+   * written, so nothing that reads the steering -- the settings a wheel or a
+   * focused control saves -- can mistake the script's framing for a choice.
+   * The first draft wrote the script into `steering.orbit` and restored it at
+   * the end, and one scroll in the first half minute saved the beam as the
+   * person's camera for every world after.
+   */
+  const scriptOrbit: Orbit = { yaw: Math.PI / 2, pitch: 0.14, dist: 11 };
   /** Everything the opening was holding, handed back in one place. */
   const endOpening = () => {
     clock.rate = 1;
-    steering.orbit.yaw = framing.yaw;
-    steering.orbit.pitch = framing.pitch;
-    steering.orbit.dist = framing.dist;
     steering.setAutopilot(true);
   };
+  /** What the script last asked of the stick, so `fly` is called on a change and not a frame. */
+  const asked = { yaw: 0, climb: 0 };
   // The flight holds its course and its height while the script is level: with
   // the autopilot on it would wander off on its own errands mid-shot, and
   // `fly(0, 0)` is not enough to take it away, by design -- an arrow key that
@@ -291,15 +292,22 @@ export function createWorld(opts: WorldOptions): World {
   // sound and the picture never disagree about which biome this is.
   const slotIds = new Uint8Array(3),
     slotWeights = new Float32Array(3);
-  const ambienceSpecs = library.biomes.map((biome) => biome.ambience?.layers);
+  const ambienceSpecs = library.biomes.map((biome) =>
+    biome.ambience ? { layers: biome.ambience.layers, inherit: biome.ambience.inherit } : undefined,
+  );
+  const mix = emptyMix();
+  const mixInput = { ids: slotIds, weights: slotWeights, specs: ambienceSpecs, solar: 0, altitude: 0 };
   // The haze a country puts in its own air, resolved once: a swatch name is a
-  // colour the library knows and the sky does not.
+  // colour the library knows and the sky does not. An entry that inherits the
+  // country's air is kept even with no tint of its own, because the slot it
+  // holds has to hand its weight on.
   const hazeSpecs = library.biomes.map((biome) =>
-    biome.ambience?.fogTint === undefined
+    biome.ambience === undefined || (biome.ambience.fogTint === undefined && !biome.ambience.inherit)
       ? undefined
       : {
-          color: new Color(swatchColor(biome.ambience.fogTint)),
-          amount: biome.ambience.fogTintAmount ?? 0.2,
+          color: new Color(biome.ambience.fogTint === undefined ? 0 : swatchColor(biome.ambience.fogTint)),
+          amount: biome.ambience.fogTint === undefined ? 0 : (biome.ambience.fogTintAmount ?? 0.2),
+          inherit: biome.ambience.inherit,
         },
   );
   const haze = new Color();
@@ -337,7 +345,7 @@ export function createWorld(opts: WorldOptions): World {
     chase.update({
       state,
       view: steering.view,
-      orbit: steering.orbit,
+      orbit: opening.live ? scriptOrbit : steering.orbit,
       look: steering.look,
       eye: avatar.eye,
       floorAt: sim.flight.floorAt,
@@ -358,14 +366,11 @@ export function createWorld(opts: WorldOptions): World {
     // and never an accumulation -- and it goes on `uHorizon`, which in this
     // engine is the fog, the background and the dome's horizon at once.
     heightfield.weightsAt(state.x, state.z, slotIds, slotWeights);
-    const hazed = hazeAt(
-      slotIds,
-      slotWeights,
-      hazeSpecs,
-      state.y - heightAt(state.x, state.z),
-      1 - uniforms.uNight.value,
-      haze,
-    );
+    // One height over the ground for the haze and the sound alike -- over the
+    // sea it is the height over the water, because that is what the air and
+    // the ear are over. Read once: it is a triangle interpolation of the window.
+    sample.altitude = state.y - Math.max(0, heightAt(state.x, state.z));
+    const hazed = hazeAt(slotIds, slotWeights, hazeSpecs, sample.altitude, 1 - uniforms.uNight.value, haze);
     if (hazed > 0) {
       uniforms.uHorizon.value.lerp(haze, hazed);
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
@@ -373,25 +378,15 @@ export function createWorld(opts: WorldOptions): World {
     post.setExposure(atmosphere.exposure);
     cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
     clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
-    sample.altitude = state.y - Math.max(0, heightAt(state.x, state.z));
     sample.vy = state.vy;
     sample.gust = state.gust;
     sample.rush = state.speed / SPEED;
     sample.t = state.t;
     sample.x = state.x;
     sample.z = state.z;
-    audio.update(
-      dt,
-      sample,
-      heightAt,
-      layerMix({
-        ids: slotIds,
-        weights: slotWeights,
-        specs: ambienceSpecs,
-        solar: solar(clock.phase),
-        altitude: sample.altitude,
-      }),
-    );
+    mixInput.solar = solar(clock.phase);
+    mixInput.altitude = sample.altitude;
+    audio.update(dt, sample, heightAt, layerMix(mixInput, mix));
     // Last, after everything that decides visibility for its own reasons: a
     // switch may only take away.
     layers.apply();
@@ -454,11 +449,20 @@ export function createWorld(opts: WorldOptions): World {
       // so a hand on the stick is the thing that ends it rather than the thing
       // that fights it.
       if (opening.live) {
-        const script = opening.step(dt);
-        sim.flight.fly(script.yaw, script.climb);
-        steering.orbit.yaw = script.cameraYaw;
-        steering.orbit.pitch = script.cameraPitch;
-        steering.orbit.dist = script.cameraDist;
+        // Stepped by what the flight will accept: a step the flight refuses
+        // (`MAX_STEP`) must not move the script either, or the two drift apart.
+        const script = opening.step(Number.isFinite(dt) && dt <= MAX_STEP ? dt : 0);
+        // `fly` is an arrow key: pressed on a change, not held down every frame.
+        // Called every frame, `fly(0, 0)` re-reads the held height off the
+        // present one and the hold act coasts instead of holding.
+        if (script.yaw !== asked.yaw || script.climb !== asked.climb) {
+          asked.yaw = script.yaw;
+          asked.climb = script.climb;
+          sim.flight.fly(script.yaw, script.climb);
+        }
+        scriptOrbit.yaw = script.cameraYaw;
+        scriptOrbit.pitch = script.cameraPitch;
+        scriptOrbit.dist = script.cameraDist;
         clock.rate = script.dayRate;
         if (!opening.live) endOpening();
       }

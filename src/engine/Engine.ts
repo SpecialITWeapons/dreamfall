@@ -127,7 +127,7 @@ export async function createEngine(
           .then((ms) => {
             if (typeof ms === 'number') gpuMs = ms;
           })
-          // WebGL2 has no timestamps to give; asking is not an error worth having
+          // a resolve can still fail mid-frame (a lost device); it is not an error worth having
           .catch(() => {})
           .finally(() => {
             resolving = false;

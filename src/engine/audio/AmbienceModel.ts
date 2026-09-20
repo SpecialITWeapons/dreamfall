@@ -1,6 +1,7 @@
 // The arithmetic of the ambience, kept apart from Web Audio so it can be
 // tested in Node: what the wind sounds like at a height and a climb, how
 // much sea is around, which note a chime takes.
+import { AMBIENCE_LAYERS, type AmbienceLayer } from '../../../library/contract';
 
 export const PENTA = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
 
@@ -57,12 +58,30 @@ export function chimeNote(r1: number, r2: number): number {
 }
 
 /**
- * The layers a biome may ask for, as the contract names them. The engine
- * synthesises all five; a biome says how much of each belongs to it, and what
- * the flyer hears is those weighed by which biomes are actually under them.
+ * The layers a biome may ask for, as the contract names them -- the one list,
+ * so the validator and the mixer cannot disagree about what a layer is. The
+ * engine synthesises all five; a biome says how much of each belongs to it,
+ * and what the flyer hears is those weighed by which biomes are actually
+ * under them.
  */
-export const LAYERS = ['crickets', 'birds', 'surf', 'bells', 'wind-high'] as const;
-export type Layer = (typeof LAYERS)[number];
+export const LAYERS = AMBIENCE_LAYERS;
+
+/** A mix with nothing in it, for a caller that keeps one and hands it back to `layerMix`. */
+export const emptyMix = (): Record<Layer, number> => ({
+  crickets: 0,
+  birds: 0,
+  surf: 0,
+  bells: 0,
+  'wind-high': 0,
+});
+export type Layer = AmbienceLayer;
+
+/** A biome's ask, as the mixer reads it: its layers, and whether it stands in a country. */
+export interface LayerSpec {
+  layers?: Partial<Record<Layer, number>>;
+  /** Its weight goes to the slots beside it; its own layers are added on top. */
+  inherit?: boolean;
+}
 
 export interface LayerInput {
   /** The biome slots under the flyer, as the height window keeps them. */
@@ -70,7 +89,7 @@ export interface LayerInput {
   /** Their weights, summing to about one. */
   weights: ArrayLike<number>;
   /** What each biome of the registry asks for, by the index its slot points at. */
-  specs: ReadonlyArray<Partial<Record<Layer, number>> | undefined>;
+  specs: ReadonlyArray<LayerSpec | undefined>;
   /** Solar phase: 0 midnight, 0.5 noon. Not the day clock -- what the sun is doing. */
   solar: number;
   /** Height over the ground, m. */
@@ -100,14 +119,30 @@ const fade = (v: number, from: number, to: number) => {
  * biome writing the same two rules, and because a dawn chorus at midnight is
  * wrong in a way no biome would ever ask for.
  */
-export function layerMix(input: LayerInput): Record<Layer, number> {
-  const out = { crickets: 0, birds: 0, surf: 0, bells: 0, 'wind-high': 0 } as Record<Layer, number>;
+export function layerMix(input: LayerInput, out: Record<Layer, number> = emptyMix()): Record<Layer, number> {
+  for (const layer of LAYERS) out[layer] = 0;
+  // A slot that inherits stands in the country the other slots are: its weight
+  // is theirs, so a village does not crowd the jungle's crickets out of the mix
+  // by standing in it. What it names itself is added at its own weight.
+  let country = 0;
+  for (let i = 0; i < 3; i++) {
+    const weight = input.weights[i] ?? 0;
+    if (weight <= 0) continue;
+    const spec = input.specs[input.ids[i] ?? -1];
+    if (!spec?.inherit) country += weight;
+  }
+  const total = Math.max(
+    0,
+    Math.min(1, (input.weights[0] ?? 0) + (input.weights[1] ?? 0) + (input.weights[2] ?? 0)),
+  );
+  const scale = country > 0 ? total / country : 1;
   for (let i = 0; i < 3; i++) {
     const weight = input.weights[i] ?? 0;
     if (weight <= 0) continue;
     const spec = input.specs[input.ids[i] ?? -1];
     if (!spec) continue;
-    for (const layer of LAYERS) out[layer] += weight * Math.max(0, Math.min(1, spec[layer] ?? 0));
+    const share = spec.inherit ? weight : weight * scale;
+    for (const layer of LAYERS) out[layer] += share * Math.max(0, Math.min(1, spec.layers?.[layer] ?? 0));
   }
   // The sun's height off the solar phase: 0 at midnight, 1 at noon.
   const sun = Math.max(0, Math.min(1, 1 - Math.abs(input.solar - 0.5) * 2)) * 2 - 1;

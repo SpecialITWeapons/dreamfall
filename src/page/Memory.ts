@@ -23,13 +23,6 @@ export interface Settings {
   /** The third-person framing: yaw, pitch and distance. */
   camera: { yaw: number; pitch: number; dist: number };
   view: View;
-  outfit: string;
-  /**
-   * The marking, and empty when nobody has chosen one: then the world's own
-   * rule decides (`patternForSeed`), so a fresh seed dresses its flyer itself
-   * and a chosen marking travels with the person instead of with the world.
-   */
-  pattern: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,8 +30,6 @@ export const DEFAULT_SETTINGS: Settings = {
   muted: false,
   camera: { yaw: 0, pitch: ORBIT.pitch, dist: ORBIT.dist },
   view: 'tpp',
-  outfit: 'dusk',
-  pattern: '',
 };
 
 type Raw = Record<string, unknown>;
@@ -56,8 +47,6 @@ export function validateSettings(raw: unknown): Settings {
       dist: finite(cam.dist, ORBIT.minDist, ORBIT.maxDist) ?? DEFAULT_SETTINGS.camera.dist,
     },
     view: r.view === 'fpp' ? 'fpp' : 'tpp',
-    outfit: typeof r.outfit === 'string' ? r.outfit : DEFAULT_SETTINGS.outfit,
-    pattern: typeof r.pattern === 'string' ? r.pattern : DEFAULT_SETTINGS.pattern,
   };
 }
 

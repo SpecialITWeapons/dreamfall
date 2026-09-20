@@ -82,11 +82,11 @@ describe('describe', () => {
       );
     expect(drawn.containsBox(box)).toBe(true);
     // and it names every swatch the outfit does, because the bake paints from these
-    // Seven, not six: the goggles are the one swatch that lives only in a
-    // patch, and until the ring bearings above were written down the
+    // Six, and the goggles among them: they are the one swatch that lives
+    // only in a patch, and until the ring bearings above were written down the
     // description quietly lacked it -- which is exactly the colour a baker
     // would have left off the head.
-    expect(swatches).toEqual(new Set(['suit', 'trim', 'gloves', 'boots', 'helmet', 'skin', 'goggles']));
+    expect(swatches).toEqual(new Set(['suit', 'gloves', 'boots', 'helmet', 'skin', 'goggles']));
     // the head is the one chain that wears a patch, and it says so
     expect(description.chains.filter((c) => c.samples.some((s) => s.ring))).toHaveLength(1);
   });

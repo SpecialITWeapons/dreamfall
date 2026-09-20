@@ -12,7 +12,7 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 `ramp` through its context, which is what lets the layer painter be read by a
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
-interface, procedural human, outfits), `terrain/` (noise, base fields,
+interface, procedural human, the outfit), `terrain/` (noise, base fields,
 heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
 ring, settlement lattice, pools, tree kit, structure kit, road kit, painted
 textures, ground shade, grass), `sky/`
@@ -35,7 +35,7 @@ page works under a Pages subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `avatar/Skin.ts`, `avatar/Flesh.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -69,8 +69,7 @@ page works under a Pages subdirectory.
 - Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
   sits outside the HUD pill on purpose, because the pill dims and "the autopilot
   is off" must not. The dev panel's strings are its own: that rule is about the
-  page a player reads. So are the wardrobe catalogue's names, which sit beside
-  the colours they name -- a garment's name belongs to the garment.
+  page a player reads.
 
 ## Terrain, sky and time
 
@@ -172,21 +171,30 @@ page works under a Pages subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
-- The figure is **one skin on sixteen bones**, not a pile of solids: `Skin.ts`
-  is pure geometry (rings swept along a chain of joints, crowded where a joint
-  bends, weighted symmetrically across it) and is tested in Node;
-  `ProceduralHuman.ts` builds the `Bone` tree and two `SkinnedMesh`es -- the
-  body and the head, separate only so the first person can hide the figure
-  without hiding it part by part. The world's material needs no change:
-  `setupPosition` adds `skinning(object)` for a skinned mesh by itself.
-  Everything a chain looks like is its `profile` -- a half-width in metres at a
-  share of its length -- and its `swatch`, and **a swatch band is only a band if
-  a ring lands in it**: write the stops against the rings the chain samples at,
-  not against a picture of a body. A `swatch` is a belt round the chain and
+- The figure is **one surface on sixteen bones**, grown from a distance field:
+  `Skin.ts` says what a chain is (joints, a `profile` of half-widths in metres
+  at shares of its length, read through a monotone cubic, a section `flatten`
+  that may change along it, a `swatch` and a `patch`), and `Flesh.ts` turns the
+  chains of a region into a field -- each chain a tube of its own section,
+  rounded at its ends, the chains joined by a smooth minimum over `blend`
+  metres -- and pulls the surface out of it with surface nets on a grid of
+  `cell` metres. Both are pure CPU and tested in Node. Three regions: the body
+  (torso, arms, legs, boots, 2 cm, so an arm rounds into the chest instead of
+  standing in it), each hand (6 mm, because a finger is 25 mm across) laid over
+  the sleeve's end, and the head (7 mm) on its own so the first person can hide
+  it. A vertex's bones come from the nearest chain, and from the two nearest on
+  a fillet, so the join follows both and tears from neither; its normal is the
+  field's gradient; its swatch is voted over its cell, and a patch's edge is a
+  mix of the two swatches in proportion, or the visor is a stair at the grid's
+  pitch. 33 000 triangles and about 0.4 s to grow, once, behind the veil.
+  `ProceduralHuman.ts` builds the `Bone` tree and the two `SkinnedMesh`es; the
+  world's material needs no change: `setupPosition` adds `skinning(object)`
+  for a skinned mesh by itself. A `swatch` is a belt round the chain and
   nothing else, which is why a visor is a `patch` -- a colour for one place,
   taking the angle around the ring as well: a dark belt on a pale solid of
   revolution reads as a face from every bearing at once, and the head appears
-  to turn to follow the camera.
+  to turn to follow the camera. There was a ring sweep here before the field;
+  it went because a tube pushed into another tube is a seam.
 - The figure's motion is **five shapes and the air**: box, delta, track, climb,
   and a turn laid over any of the others rather than instead of it. A shape is
   five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
@@ -204,18 +212,13 @@ page works under a Pages subdirectory.
   sprung per joint too, so a shape arrives shoulder first and ankle last.
   `dt <= 0` means "be there now" -- position and velocity both -- which is how
   the world places the figure before the first frame.
-- The wardrobe is a catalogue and a rule. `avatar/Outfits.ts` holds the outfits
-  and the markings; a marking is a **pure function of where a vertex sits on its
-  own chain** -- `along` and `around`, written per vertex by `Skin.ts` -- and it
-  may repaint the **suit alone**, in a colour the outfit already carries. That
-  is what keeps a visor out of a catalogue's reach, and it is what lets the
-  panel's SVG tiles be drawn from the same function the repaint walks: a tile
-  cannot show a marking the figure would not wear. What covers the figure stays
-  inside the palette envelope; the goggles, boots and gloves sit under its floor
-  on purpose, and a test holds both halves. Nobody's choice means the seed's own
-  (`patternForSeed`), and a chosen marking is the person's -- saved as their
-  choice, so it travels to the next world while an unchosen one belongs to the
-  world.
+- The figure wears **one suit in one colour** (`avatar/Outfit.ts`), painted
+  once at build. There was a wardrobe -- six suits, five markings, a panel --
+  and the owner removed it: a marking read as camouflage. What covers the
+  figure stays inside the palette envelope; the goggles, boots and gloves sit
+  under its floor on purpose, and a test holds both halves. `Skin.ts` still
+  writes `along` and `around` per vertex, which is what a UV map would be made
+  of.
 - The opening (`sim/Opening.ts`) is a pure function of how long it has been
   running: five acts, a title card and the pace of the day. It drives the
   flight with `fly(yaw, climb)`, which takes a **sign** as an arrow key does,
@@ -245,8 +248,13 @@ page works under a Pages subdirectory.
   off the same three slots. It goes on **after** `atmosphere.update`, which
   copies the palette every frame, so the tint never accumulates; it goes on
   `uHorizon`, which here is the fog, the background and the dome's horizon at
-  once; it is capped at `MAX_HAZE` and fades out above the low air, because a
-  biome may colour a horizon and never repaint one.
+  once, and on `uHorizonWarm` at six tenths of that, so the sun's side of the
+  sky takes a little less of the tint than the fog does; it is capped at
+  `MAX_HAZE` and fades out above the low air, because a biome may colour a
+  horizon and never repaint one. An entry that stands **in** a country -- a
+  settlement -- says `ambience.inherit`: its slot's weight goes to the biomes
+  beside it in both the haze and the sound, and what it names is added on top,
+  so a village is not a hole in the jungle's air with a bell in it.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.
@@ -355,7 +363,11 @@ page works under a Pages subdirectory.
 - Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
   two heights and then slices it along the wall into panes with piers between
   them, `slabOf` taking one slice at a time (splitting at each plane in turn
-  costs three times the triangles). Which ones are alight after dark is three
+  costs three times the triangles). Each wall -- a vertical plane, by its
+  normal and its offset -- is sliced along **its own length** in its own frame
+  and the pattern is centred on that wall, so a pier lands in every corner
+  whatever bearing the wall stands at; cut along x and z instead, the tower's
+  lantern had half a window on each side of both side corners. Which ones are alight after dark is three
   numbers from three places, because a house is baked once and stood up
   hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
   the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.

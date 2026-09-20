@@ -19,6 +19,19 @@ export interface WorldDebug {
   readonly running: boolean;
   readonly paused: boolean;
   setPaused(on: boolean): void;
+  /**
+   * Whether the animation loop is set and stepping the world. False behind the
+   * gate and while paused or hidden, which is what "no loop behind the gate"
+   * means and what a test can assert without waiting for a frame not to come.
+   */
+  readonly live: boolean;
+  /**
+   * Hold the flight where it is while the loop draws: the world is placed and
+   * rendered every frame, the simulation is not stepped. The bench sets it, so
+   * a vantage is a vantage and not forty metres of flight with a ring rebuild
+   * somewhere in the window. Shader time stands still with it.
+   */
+  hold: boolean;
   readonly frames: number;
   readonly seed: number;
   readonly backend: string;
@@ -72,8 +85,6 @@ export interface WorldDebug {
   readonly opening: { card: number; done: boolean };
   /** End the opening now, as any input would. */
   skipOpening(): void;
-  /** What the figure has on: the outfit and the marking, by id. */
-  readonly wearing: { outfit: string; pattern: string };
   /** The page continued a remembered flight. */
   readonly resumed: boolean;
   snapshot(): ResumeState;

@@ -97,6 +97,11 @@ export function settlement(params, plan) {
         { color: paint.rock, mask: 'slope', from: 0.3, to: 0.5 },
       ],
     },
+    // A settlement stands in a country and sounds like it: the birds and the
+    // crickets are the country's, handed through, and what is added is the
+    // bell -- more of it where there is a landmark to hang one in. Its air is
+    // the country's air too, so a village is not a hole in the jungle's haze.
+    ambience: { inherit: true, layers: { bells: params.landmark ? 0.6 : 0.3 } },
     sites: {
       cell,
       salt,

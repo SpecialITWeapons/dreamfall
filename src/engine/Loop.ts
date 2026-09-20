@@ -10,6 +10,8 @@ export interface LoopDeps {
 export interface Loop {
   readonly running: boolean;
   readonly paused: boolean;
+  /** The animation loop is set and stepping the world: begun, not paused, not hidden, not stopped. */
+  readonly live: boolean;
   readonly frames: number;
   onFirstFrame(cb: () => void): void;
   begin(): void;
@@ -73,6 +75,9 @@ export function createLoop(deps: LoopDeps): Loop {
     },
     get paused() {
       return paused;
+    },
+    get live() {
+      return live();
     },
     get frames() {
       return frames;

@@ -20,6 +20,9 @@ describe('resolveParams', () => {
     expect(p.forceWebGL).toBe(false);
     expect(p.profiling).toBe(false);
     expect(p.dev).toBe(false);
+    // `?dev=1` and nothing else: a bare `?dev` or `?dev=0` is not a request for the panel
+    expect(resolveParams('?dev').dev).toBe(false);
+    expect(resolveParams('?dev=0').dev).toBe(false);
   });
 });
 

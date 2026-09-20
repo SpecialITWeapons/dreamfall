@@ -76,6 +76,25 @@ describe('validateLibrary', () => {
     expect(all).toContain('biome noground: needs a ground hook');
     expect(all).toContain('biome nopresence: needs a presence hook');
   });
+  it('refuses an ambience the engine cannot play, naming the path', () => {
+    // A typo in a swatch name used to reach the sky as NaN: `swatchColor`
+    // parses an unknown name as hex and the fog, the background and the
+    // horizon went NaN together over that biome, in daylight.
+    const errors = validateLibrary({
+      biomes: [
+        biome({ id: 'typo', ambience: { fogTint: 'rockRose', fogTintAmount: 0.2 } }),
+        biome({ id: 'loud', ambience: { layers: { birds: 1.5, owls: 0.2 } as never } }),
+        biome({ id: 'thick', ambience: { fogTint: 'frost', fogTintAmount: -1 } }),
+        biome({ id: 'fine', ambience: { layers: { birds: 0.5 }, fogTint: 'frost', inherit: true } }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome typo.ambience.fogTint');
+    expect(all).toContain('biome loud.ambience.layers: unknown layer "owls"');
+    expect(all).toContain('biome loud.ambience.layers.birds: 1.5 is not a share of 0..1');
+    expect(all).toContain('biome thick.ambience.fogTintAmount: -1 is not an amount');
+    expect(all).not.toContain('biome fine');
+  });
   it('refuses colors in params outside the envelope, naming the path', () => {
     const errors = validateLibrary({
       biomes: [biome({ id: 'neon', params: { base: '#00ff00', alt: 'meadow' } })],
@@ -419,7 +438,13 @@ describe('the library itself', () => {
     // one wind. A field that nothing reads is not a feature, it is a promise,
     // and this is what keeps the promise kept once it has been.
     for (const biome of createLibrary().biomes) {
-      if (biome.sites) continue; // the settlement claims a lattice cell, not a country
+      // the settlement stands in a country and says so: its sound is the
+      // country's, with a bell added
+      if (biome.sites) {
+        expect(biome.ambience?.inherit, `${biome.id} stands in a country`).toBe(true);
+        expect(biome.ambience?.layers?.bells, `${biome.id} has a bell`).toBeGreaterThan(0);
+        continue;
+      }
       const layers = biome.ambience?.layers;
       expect(layers, `${biome.id} says nothing`).toBeTruthy();
       const named = Object.entries(layers!);

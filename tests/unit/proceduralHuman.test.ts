@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
 import { FPP } from '../../src/engine/flight/ChaseCamera';
 import { SPEED, createFlightController } from '../../src/engine/flight/FlightController';
-import { DEFAULT_OUTFIT, DEFAULT_PATTERN, outfitById } from '../../src/engine/avatar/Outfits';
+import { OUTFIT } from '../../src/engine/avatar/Outfit';
 import {
   HUMAN_BOUNDS,
   POSE,
@@ -521,21 +521,6 @@ describe('createProceduralHuman', () => {
     // seventy times as far.
     expect(at.angleTo(placed.object.getObjectByName('shoulderL')!.quaternion)).toBeLessThan(5e-4);
   });
-  it('recolors with an outfit and falls back to the default for an unknown id', () => {
-    const human = createProceduralHuman(lit);
-    // One surface carries every swatch now, so a repaint is a walk of the
-    // vertices rather than seven buffers; the first vertex of the body is on
-    // the spine, which is suit.
-    const skin = human.object.getObjectByName('skin') as Mesh;
-    const before = (skin.geometry.getAttribute('color').array as Float32Array)[0]!;
-    human.setOutfit({ ...DEFAULT_OUTFIT, id: 'test', suit: 0xff0000 }, DEFAULT_PATTERN);
-    const after = skin.geometry.getAttribute('color').array as Float32Array;
-    expect(after[0]).toBeCloseTo(1, 6);
-    expect(after[1]).toBeCloseTo(0, 6);
-    expect(after[0]).not.toBe(before);
-    expect(outfitById('nope')).toBe(DEFAULT_OUTFIT);
-    human.dispose();
-  });
   it('wears every colour the outfit names, because a band nothing lands in is not a band', () => {
     // The goggles were written as the band from 0.58 to 0.80 of the head, and a
     // head of three rings a segment samples at 0, 0.107, 0.321, 0.428, 0.571,
@@ -544,15 +529,13 @@ describe('createProceduralHuman', () => {
     // bounds, and not one of them asked what colour anything was.
     const hues: Record<string, number> = {
       suit: 0xff0000,
-      trim: 0x00ff00,
       helmet: 0x0000ff,
       goggles: 0xffff00,
       boots: 0xff00ff,
       gloves: 0x00ffff,
       skin: 0x804020,
     };
-    const human = createProceduralHuman(lit);
-    human.setOutfit({ ...DEFAULT_OUTFIT, id: 'hues', ...hues }, DEFAULT_PATTERN);
+    const human = createProceduralHuman(lit, { outfit: { ...OUTFIT, ...hues } });
     // A crease darkens a vertex, so what survives a repaint is the ratio, not
     // the value: compare the direction of the colour and nothing else.
     const direction = (r: number, g: number, b: number) => {

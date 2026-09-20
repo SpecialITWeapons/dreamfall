@@ -21,7 +21,7 @@ export function resolveParams(
     seed: seed >>> 0,
     forceWebGL: params.get('webgl') === '1',
     profiling: params.has('profile'),
-    dev: params.has('dev'),
+    dev: params.get('dev') === '1',
   };
 }
 

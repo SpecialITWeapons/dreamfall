@@ -59,17 +59,11 @@ describe('validateSettings', () => {
       muted: 'yes',
       camera: { yaw: 9, pitch: 0.5, dist: 20 },
       view: 'fpp',
-      outfit: 'x',
-      pattern: 3,
     });
     expect(s.volume).toBe(DEFAULT_SETTINGS.volume);
     expect(s.muted).toBe(false);
     expect(s.camera).toEqual({ yaw: 0, pitch: 0.5, dist: 20 });
     expect(s.view).toBe('fpp');
-    expect(s.outfit).toBe('x');
-    // A marking that is not a string is nobody's choice, and the empty string
-    // is what "nobody chose" looks like: the world's own rule picks it then.
-    expect(s.pattern).toBe('');
     expect(validateSettings({ view: 'side', muted: true }).view).toBe('tpp');
     expect(validateSettings({ muted: true }).muted).toBe(true);
   });
