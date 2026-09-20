@@ -798,8 +798,8 @@ Warstwy:
    telefon.
 
 Narzędzia poza bundlem: `tools/bench/` (**zrobione 2026-09-18**: `npm run
-bench`, pięć stanowisk jednego ziarna, piąty percentyl okna klatek, minimum z
-rund), `tools/parity/` (**zrobione 2026-09-18**: `npm run parity:write` i `npm
+bench`, pięć stanowisk jednego ziarna, mediana okna klatek z piątym percentylem
+obok, minimum z rund), `tools/parity/` (**zrobione 2026-09-18**: `npm run parity:write` i `npm
 run parity`, te same pięć stanowisk jako zdjęcia), panel `?dev=1` (statystyki,
 warstwy, skok do ziarna i punktu, doba, koszt haków), `window.__world`.
 

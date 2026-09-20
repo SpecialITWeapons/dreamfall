@@ -91,7 +91,8 @@ describe('measureHeightHooks', () => {
   });
 
   it('asks every configuration the same questions, so a difference between passes is the hooks', () => {
-    // The points are a golden-angle spiral around the place being measured, and
+    // The points walk the ground in rows, as the window does (a spiral measured
+    // the lattice cache instead -- see HookCost.ts), and
     // the whole measurement rests on them being the same points every pass and
     // every run: a fresh set would compare one piece of ground with another.
     const asked = () => {

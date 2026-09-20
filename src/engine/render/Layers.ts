@@ -33,7 +33,10 @@ export function createLayers(groups: Record<string, readonly Hideable[]>): Layer
     on.set(name, value);
     // Turning one on writes `true` once: an object the engine never touches
     // (the terrain, a tree pool) would otherwise stay hidden for ever, and one
-    // it does touch is corrected on the next update anyway.
+    // it does touch is corrected on the next update anyway. "Next update", not
+    // "next draw": a redraw with no update between (`renderOnce` on a paused
+    // loop) shows the cloud sea or the puffs forced on for that one frame,
+    // which is why the panel redraws through `frame()`.
     for (const object of groups[name]!) object.visible = value;
   };
   return {

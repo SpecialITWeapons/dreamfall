@@ -2,9 +2,12 @@
 
 Measurements live here, one section per change that touched the cost.
 Method (from fly-with-me): hold the flyer at fixed vantages of one seed's
-world, read the fifth percentile of a window of frames, take the minimum
-across repeated rounds, interleave builds round by round. The tools that do
-this arrive in M5 (`tools/bench.ts`, `tools/parity.ts`).
+world, read the median of a window of frames (the fifth percentile beside
+it, which is the right statistic on a GPU and the wrong one on a rasteriser
+-- see the M5 section), take the minimum across repeated rounds, interleave
+builds round by round. The tools are `tools/bench/` and `tools/parity/`
+(`npm run bench`, `npm run parity`), one list of vantages in
+`tools/vantages.ts`.
 
 ## M1 baseline
 
@@ -787,7 +790,8 @@ trzech przebiegów zostaje najszybszy.
 
 ## Przegląd wydajności M5: pięć stanowisk, i czego one nie mówią
 
-`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek,
+`npm run bench`, seed 42, WebGL2 na SwiftShaderze, 2 rundy po 16 klatek
+(`BENCH_FRAMES=16`; domyślne to 24),
 najszybsza runda z każdej. Kolumny: mediana odstępu między klatkami, klatki na
 sekundę z całego okna, najszybsza klatka okna, potem to, co klatka narysowała.
 
@@ -832,4 +836,6 @@ się na liczbę, której nigdy nie było. Piąty percentyl wyławia właśnie te
 7,3 ms tam, gdzie każda klatka trwała 3,3 s, i 2 987 ms na piątym stanowisku,
 co wyglądało jak stokrotny koszt wysokości, a było jedynym stanowiskiem, na
 którym artefakt akurat nie wypadł. Sonda po wysokościach (120, 400, 800, 1200,
-1500 m) pokazuje koszt **płaski**: 3,1–3,4 s wszędzie. Nagłówkiem jest mediana.
+1500 m — z czego ostatnie to naprawdę 1356 m, bo sufit lotu jest 1400 m nad
+morzem i kontroler obcina na następnym kroku) pokazuje koszt **płaski**:
+3,1–3,4 s wszędzie. Nagłówkiem jest mediana.

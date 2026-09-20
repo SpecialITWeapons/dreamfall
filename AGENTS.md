@@ -245,8 +245,13 @@ page works under a Pages subdirectory.
   off the same three slots. It goes on **after** `atmosphere.update`, which
   copies the palette every frame, so the tint never accumulates; it goes on
   `uHorizon`, which here is the fog, the background and the dome's horizon at
-  once; it is capped at `MAX_HAZE` and fades out above the low air, because a
-  biome may colour a horizon and never repaint one.
+  once, and on `uHorizonWarm` at six tenths of that, so the sun's side of the
+  sky takes a little less of the tint than the fog does; it is capped at
+  `MAX_HAZE` and fades out above the low air, because a biome may colour a
+  horizon and never repaint one. An entry that stands **in** a country -- a
+  settlement -- says `ambience.inherit`: its slot's weight goes to the biomes
+  beside it in both the haze and the sound, and what it names is added on top,
+  so a village is not a hole in the jungle's air with a bell in it.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.

@@ -1,8 +1,8 @@
 // What a frame costs, at five vantages of one seed's world.
 //
 // The method is fly-with-me's and the spec's (§13): hold the flyer still at
-// fixed vantages, read the **fifth percentile** of a window of frames, and take
-// the **minimum across rounds**. Both of those are there to throw away the
+// fixed vantages, read the **median** of a window of frames (the fifth
+// percentile beside it, see `p5`), and take the **minimum across rounds**. Both of those are there to throw away the
 // machine rather than the engine -- a frame that took longer than its
 // neighbours took longer because something else on the box wanted the CPU, and
 // averaging that in measures the box. The fastest frames are the ones the
@@ -96,11 +96,21 @@ test('what a frame costs at five vantages', async ({ page }) => {
       // one scene and ninety-nine redraws of the chain over it, and they time
       // at 0.2 ms because that is what they are. A frame is what the loop does
       // between two animation frames, and this counts them.
-      await page.evaluate(() => window.__world!.setPaused(false));
+      //
+      // And held: the loop draws, the simulation does not step. Unheld, the
+      // autopilot flew two metres a frame through the window -- forty-eight
+      // over the twenty-four -- which is a ring cell's worth of rebuild landing
+      // in the sample at some vantages and not at others.
+      await page.evaluate(() => {
+        window.__world!.hold = true;
+        window.__world!.setPaused(false);
+      });
       const sample = await page.evaluate(async (frames) => {
         const w = window.__world!;
         const cpu: number[] = [];
         const gpu: number[] = [];
+        let wall = 0,
+          drawn = 0;
         await new Promise<void>((resolve) => {
           let seen = w.frames;
           let last = performance.now();
@@ -108,6 +118,10 @@ test('what a frame costs at five vantages', async ({ page }) => {
             const now = performance.now();
             const drew = w.frames - seen;
             if (drew > 0) {
+              // an interval that held two frames is two frames' worth of wall
+              // time, whatever the per-frame figure divides it into
+              wall += now - last;
+              drawn += drew;
               cpu.push((now - last) / drew);
               gpu.push(w.gpuMs);
               seen = w.frames;
@@ -118,15 +132,17 @@ test('what a frame costs at five vantages', async ({ page }) => {
           };
           requestAnimationFrame(tick);
         });
-        return { cpu, gpu };
+        return { cpu, gpu, wall, drawn };
       }, FRAMES);
-      await page.evaluate(() => window.__world!.setPaused(true));
-      const spent = sample.cpu.reduce((sum, ms) => sum + ms, 0);
+      await page.evaluate(() => {
+        window.__world!.setPaused(true);
+        window.__world!.hold = false;
+      });
       const reading: Reading = {
         name: vantage.name,
         frameMs: median(sample.cpu),
         bestMs: p5(sample.cpu),
-        fps: spent > 0 ? (sample.cpu.length * 1000) / spent : 0,
+        fps: sample.wall > 0 ? (sample.drawn * 1000) / sample.wall : 0,
         gpuMs: median(sample.gpu),
         draws: drawn.draws,
         triangles: drawn.triangles,

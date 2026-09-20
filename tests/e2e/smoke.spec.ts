@@ -27,11 +27,14 @@ test('the veil holds until the first frame, then Begin starts the flight', async
   await expect(page.locator('#beginBtn')).toBeEnabled();
   expect(page.url()).toContain('seed=42');
   expect(await page.evaluate(() => window.__world!.running)).toBe(false);
+  // No loop behind the gate: the animation loop is unset, which is asked of
+  // the loop itself rather than inferred from frames not arriving -- on a
+  // rasteriser a frame takes seconds, so a running loop would pass that too.
+  expect(await page.evaluate(() => window.__world!.live)).toBe(false);
   const idle = await page.evaluate(() => window.__world!.frames);
-  await page.waitForTimeout(400);
-  expect(await page.evaluate(() => window.__world!.frames)).toBe(idle);
   await page.click('#beginBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
+  expect(await page.evaluate(() => window.__world!.live)).toBe(true);
   await page.evaluate(() => window.__world!.skipOpening());
   await expect
     .poll(() => page.evaluate(() => window.__world!.frames), { timeout: 15_000 })
@@ -71,9 +74,9 @@ test('space pauses the flight and dispose releases the GPU', async ({ page }) =>
   await page.keyboard.press('Space');
   await expect.poll(() => page.evaluate(() => window.__world!.paused), { timeout: 15_000 }).toBe(true);
   await expect(page.locator('#pauseBtn')).toHaveText('resume');
-  const frozen = await page.evaluate(() => window.__world!.frames);
-  await page.waitForTimeout(300);
-  expect(await page.evaluate(() => window.__world!.frames)).toBe(frozen);
+  // paused is no loop: asked of the loop, not inferred from a 300 ms silence
+  // that a three-second frame would keep anyway
+  expect(await page.evaluate(() => window.__world!.live)).toBe(false);
   const t = await page.evaluate(() => window.__world!.state.t);
   await page.evaluate(() => window.__world!.step(0.02));
   expect(await page.evaluate(() => window.__world!.state.t)).toBeCloseTo(t + 0.02, 6);
@@ -394,7 +397,11 @@ test('V switches to the eye and back, the HUD and the memory follow', async ({ p
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('dreamfall-settings')!).view)).toBe('fpp');
   await page.click('#viewBtn');
   await expect.poll(() => page.evaluate(() => window.__world!.view), { timeout: 15_000 }).toBe('tpp');
-  await expect.poll(() => page.evaluate(() => window.__world!.cameraFov), { timeout: 15_000 }).toBe(55);
+  // The projection is written on a frame. Drawn by hand rather than waited
+  // for: under a full suite on a rasteriser a loop frame did not land inside
+  // fifteen seconds, and this was the one red of forty-one.
+  await page.evaluate(() => window.__world!.frame(1 / 60));
+  expect(await page.evaluate(() => window.__world!.cameraFov)).toBe(55);
   expect(errors).toEqual([]);
 });
 
@@ -473,7 +480,7 @@ test('the flight resumes on the same seed from the remembered place and time of 
   // Three page starts with a reload among them, and two hundred steps that each
   // render: more than ninety seconds on a software rasteriser having a bad day.
   test.slow();
-  await begun(page, 'seed=42&webgl=1');
+  const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const before = await page.evaluate(() => {
     const w = window.__world!;
@@ -502,6 +509,7 @@ test('the flight resumes on the same seed from the remembered place and time of 
     resumed: false,
     t: 0,
   });
+  expect(errors).toEqual([]);
 });
 
 test('sound starts on Begin and the HUD mutes it', async ({ page }) => {

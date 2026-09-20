@@ -84,6 +84,8 @@ hud.setVolume(audio.volume);
 hud.setMuted(audio.muted, audio.available);
 
 let lastSave = -Infinity;
+/** The bench's own switch: draw frames, step nothing. See `WorldDebug.hold`. */
+let held = false;
 /**
  * What the HUD has been told about the autopilot. It is written in one place
  * -- `showAutopilot` -- with the call that tells the HUD, because a flag that
@@ -124,7 +126,9 @@ const syncHud = () => {
 const loop = createLoop({
   setLoop: (fn) => engine.setLoop(fn),
   update: (dt) => {
-    world.update(dt);
+    // Held, the world is placed and drawn but not stepped: `sim.step` refuses
+    // a zero step, and everything else reads the state where it stands.
+    world.update(held ? 0 : dt);
     syncHud();
     // a couple of times a minute while flying; never before Begin, when nothing has changed
     if (performance.now() - lastSave > 2000) saveFlight();
@@ -426,6 +430,15 @@ const debug: WorldDebug = {
   },
   get paused() {
     return loop.paused;
+  },
+  get live() {
+    return loop.live;
+  },
+  get hold() {
+    return held;
+  },
+  set hold(on: boolean) {
+    held = on;
   },
   get frames() {
     return loop.frames;

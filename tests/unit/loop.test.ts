@@ -90,7 +90,7 @@ describe('createLoop', () => {
     // Drawn already, before any tick: whoever called this is about to read what
     // it drew, and a frame that lands later is a picture of the state they left.
     expect(h.deps.render).toHaveBeenCalledTimes(drawn + 1);
-    expect(loop.frames).toBeGreaterThan(0);
+    expect(loop.frames).toBe(2); // the one behind the gate, and this one
     expect(h.scheduled()).toBe(false);
     expect(h.deps.update).not.toHaveBeenCalled();
   });

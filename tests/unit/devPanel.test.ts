@@ -128,7 +128,7 @@ describe('dev panel', () => {
     expect(text()).toContain('village:0,0');
   });
 
-  it('follows the world on refresh, and says so only when it changed', () => {
+  it('follows the world on refresh, and writes a reading only when it changed', () => {
     const { world, raw } = stub();
     panel = createDevPanel(document, world);
     expect(text()).toContain('baking');
@@ -137,6 +137,20 @@ describe('dev panel', () => {
     panel.refresh();
     expect(text()).toContain('-322');
     expect(text()).toContain('3400 ms');
+    // A refresh that changes nothing touches no text node: the setter on the
+    // seed's own span is watched, and a refresh with the same world writes it
+    // nowhere. (Four refreshes a second of DOM writes is a panel's whole cost.)
+    const seed = [...panel.element.querySelectorAll('.row span')].find((span) => span.textContent === '42')!;
+    expect(seed).toBeTruthy();
+    let writes = 0;
+    Object.defineProperty(seed, 'textContent', {
+      get: () => '42',
+      set: () => {
+        writes++;
+      },
+    });
+    panel.refresh();
+    expect(writes).toBe(0);
   });
 
   it('has a switch per layer, and a click takes it away and redraws', () => {

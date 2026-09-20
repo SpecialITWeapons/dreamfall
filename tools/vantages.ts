@@ -1,6 +1,7 @@
 // The vantages, shared by the bench and by parity, because a cost and a picture
 // have to be of the same place or neither can explain the other.
 import { expect, type Page } from '@playwright/test';
+import { MAX_ALTITUDE } from '../src/engine/flight/FlightController';
 import { DECK_Y } from '../src/engine/terrain/WorldSampler';
 import type { WorldDebug } from '../src/page/Debug';
 
@@ -27,7 +28,10 @@ export interface Vantage {
 export const VANTAGES: Vantage[] = [
   { name: 'dawn', x: 0, z: 0, above: 120, phase: 0.126 },
   { name: 'noon', x: 0, z: 0, above: 120, phase: 0.5 },
-  { name: 'far', x: 0, z: 0, above: 1500, phase: 0.5 },
+  // As high as the flight can be: the ceiling is MAX_ALTITUDE above the sea,
+  // and the ground here is 44 m, so 1 500 would have been clamped to 1 356 on
+  // the next step, with the escape turn armed.
+  { name: 'far', x: 0, z: 0, above: MAX_ALTITUDE - 100, phase: 0.5 },
   // Over the deck, where the cloud sea is drawn and the ground is behind it.
   { name: 'deck', x: 0, z: 0, above: DECK_Y + 180, phase: 0.5 },
   // The village at midnight: lit panes, and the galaxy over them.
@@ -81,5 +85,17 @@ export const settle = async (page: Page, vantage: Vantage) => {
   // frame on a software rasteriser is the better part of a second. The queue
   // above is what actually settles the place; these are for the grass window's
   // last rim.
-  for (let i = 0; i < 4; i++) await page.evaluate(() => window.__world!.frame(1 / 60));
+  // Each waits for an animation frame first: on a machine with a GPU two of
+  // these fit inside one vsync, and the second would redraw the display chain
+  // over a scene pass nobody refilled (AGENTS.md, the loop).
+  for (let i = 0; i < 4; i++)
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) =>
+          requestAnimationFrame(() => {
+            window.__world!.frame(1 / 60);
+            done();
+          }),
+        ),
+    );
 };

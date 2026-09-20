@@ -18,7 +18,10 @@ also how you bench against a particular Chrome).
 From fly-with-me, and §13 of the design:
 
 - **Fixed vantages.** A flight that moves measures a different world every
-  frame. The flight is paused and the frames are driven by hand.
+  frame. The loop runs, because a frame is only a frame when the browser
+  gives it one (see AGENTS.md on the node graph's frame id), but the flight is
+  **held**: `__world.hold` draws every frame and steps the simulation on none
+  of them, so the figure stands where the vantage put it.
 - **The median of a window of frames**, with the fifth percentile beside it.
   The spec asks for the fifth percentile, and on a GPU that is right: frames
   are alike, and a slow one is the machine's fault rather than the engine's.
@@ -50,13 +53,13 @@ printing.
 
 ## What the vantages are for
 
-| vantage | what it holds still                                           |
-| ------- | ------------------------------------------------------------- |
-| dawn    | the low sun, the horizon's tint, the ground under it          |
-| noon    | the same ground with the sun overhead: the palette's own cost |
-| far     | 1 500 m up, where the window's whole reach is in the frame    |
-| deck    | over the cloud sea, where the ground is behind cloud          |
-| night   | the village at midnight: lit panes, and the galaxy over them  |
+| vantage | what it holds still                                            |
+| ------- | -------------------------------------------------------------- |
+| dawn    | the low sun, the horizon's tint, the ground under it           |
+| noon    | the same ground with the sun overhead: the palette's own cost  |
+| far     | at the ceiling, where the window's whole reach is in the frame |
+| deck    | over the cloud sea, where the ground is behind cloud           |
+| night   | the village at midnight: lit panes, and the galaxy over them   |
 
 The night vantage waits for the Milky Way's atlas, which is baked in a worker
 and takes seconds; measuring the night sky without it measures an empty atlas.

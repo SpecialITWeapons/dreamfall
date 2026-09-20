@@ -140,12 +140,6 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
       wardrobeListeners.push(cb);
     },
     /**
-     * The title card over the opening, at the opacity the script asks for. It
-     * is hidden outright at zero rather than left at `opacity: 0`, so that a
-     * card nobody is looking at is not a full-screen element over the canvas
-     * for the rest of the flight.
-     */
-    /**
      * The opening is playing: the controls and the manual banner step out of
      * the picture. It is a class on the body rather than a `hidden` on each,
      * so neither fights the idle dimming or the `inert` the gate sets.
@@ -153,6 +147,12 @@ export function createHud(doc: Document, opts: { idleMs?: number } = {}) {
     setOpening(on: boolean) {
       doc.body.classList.toggle('opening', on);
     },
+    /**
+     * The title card over the opening, at the opacity the script asks for. It
+     * is hidden outright at zero rather than left at `opacity: 0`, so that a
+     * card nobody is looking at is not a full-screen element over the canvas
+     * for the rest of the flight.
+     */
     setTitle(opacity: number) {
       const on = opacity > 0.002;
       title.toggleAttribute('hidden', !on);

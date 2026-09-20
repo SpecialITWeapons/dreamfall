@@ -12,7 +12,6 @@
 // not in `index.html` or `Hud.ts`, where the interface the player reads lives.
 import type { HookCosts } from '../engine/terrain/HookCost';
 import type { WorldDebug } from '../page/Debug';
-import { addressWithSeed } from './../page/Params';
 
 export interface DevPanel {
   readonly element: HTMLElement;
@@ -103,6 +102,15 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     });
   };
   const readings: Array<() => void> = [];
+  // What a refresh reads once and every reading below shares: the renderer's
+  // counters are a copy each time they are asked for, and the scenery's stats
+  // are a fresh object per call, so ten readings asked for ten of each.
+  let frame = world.memory(),
+    scenery = world.scenery;
+  readings.push(() => {
+    frame = world.memory();
+    scenery = world.scenery;
+  });
   const button = (label: string, onClick: () => void, into: HTMLElement) => {
     const node = make('button', '', label);
     node.addEventListener('click', onClick);
@@ -132,15 +140,12 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     fps = 0;
   reading('fps', () => fixed(fps, 1));
   reading('gpu ms', () => fixed(world.gpuMs, 2));
-  reading('geometries', () => String(world.memory().geometries));
-  reading('textures', () => String(world.memory().textures));
-  reading('gpu bytes', () => `${fixed(world.memory().total / 1e6, 1)} MB`);
+  reading('geometries', () => String(frame.geometries));
+  reading('textures', () => String(frame.textures));
+  reading('gpu bytes', () => `${fixed(frame.total / 1e6, 1)} MB`);
   // What the last frame actually drew, which is the question behind every layer
   // switch below it.
-  reading('draws · triangles', () => {
-    const frame = world.memory();
-    return `${frame.draws} · ${frame.triangles.toLocaleString('en')}`;
-  });
+  reading('draws · triangles', () => `${frame.draws} · ${frame.triangles.toLocaleString('en')}`);
 
   section('flight');
   reading('x  z', () => `${fixed(world.state.x)}  ${fixed(world.state.z)}`);
@@ -226,23 +231,19 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   });
 
   section('scenery');
-  const stats = world.scenery;
-  reading('trees · props', () => `${world.scenery?.trees ?? 0} · ${world.scenery?.props ?? 0}`);
+  reading('trees · props', () => `${scenery?.trees ?? 0} · ${scenery?.props ?? 0}`);
   reading('buildings', () => {
-    const refused = world.scenery?.buildingsRefused ?? 0;
-    return `${world.scenery?.buildings ?? 0}${refused > 0 ? ` (${refused} refused)` : ''}`;
+    const refused = scenery?.buildingsRefused ?? 0;
+    return `${scenery?.buildings ?? 0}${refused > 0 ? ` (${refused} refused)` : ''}`;
   });
-  reading('grass', () => String(world.scenery?.grass ?? 0));
-  reading('sites · queued', () => `${world.scenery?.sites ?? 0} · ${world.scenery?.sitesQueued ?? 0}`);
+  reading('grass', () => String(scenery?.grass ?? 0));
+  reading('sites · queued', () => `${scenery?.sites ?? 0} · ${scenery?.sitesQueued ?? 0}`);
   reading(
     'ring · grass · sites ms',
     () =>
-      `${fixed(world.scenery?.ringMs ?? 0, 1)} · ${fixed(world.scenery?.grassMs ?? 0, 1)} · ${fixed(
-        world.scenery?.sitesMs ?? 0,
-        2,
-      )}`,
+      `${fixed(scenery?.ringMs ?? 0, 1)} · ${fixed(scenery?.grassMs ?? 0, 1)} · ${fixed(scenery?.sitesMs ?? 0, 2)}`,
   );
-  reading('bake · rebuilds', () => `${stats?.bakeMs ?? 0} ms · ${world.scenery?.rebuilds ?? 0}`);
+  reading('bake · rebuilds', () => `${scenery?.bakeMs ?? 0} ms · ${scenery?.rebuilds ?? 0}`);
 
   section('layers');
   const layerBox = make('div');
@@ -294,8 +295,12 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   button(
     'load',
     () => {
-      location.href = addressWithSeed(location.href, Number(seedField.value) >>> 0);
-      location.reload();
+      // Written here rather than imported from `page/Params`: a value import
+      // from the page pulls a shared chunk out of the main bundle, and every
+      // player pays a request for a panel they never open.
+      const url = new URL(location.href);
+      url.searchParams.set('seed', String(Number(seedField.value) >>> 0));
+      location.href = url.toString();
     },
     open,
   );

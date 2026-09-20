@@ -1,4 +1,4 @@
-// The streamed ring: 96 m cells out to 1.9 km, rebuilt whole whenever the
+// The streamed ring: 96 m cells out to 2.6 km, rebuilt whole whenever the
 // flight crosses a cell. It is the half of the scenery that decides *what
 // stands where*; the half that decides how it looks is behind ScenerySink, so
 // everything here runs in Node and is tested there.
