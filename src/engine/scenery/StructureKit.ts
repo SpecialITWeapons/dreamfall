@@ -317,63 +317,26 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
       for (let k = 0; k < attribute.itemSize; k++) out.push(attribute.getComponent(i, k));
     return out;
   };
-  // Where the panes fall along each of the two horizontal axes. The pattern is
-  // laid out inside the extent of **the walls this band cuts** and centred in
-  // it, so both corners keep a pier: a pattern anchored at the origin instead
-  // cuts whatever pane the corner happens to land in, and a house with half a
-  // window at every corner is worse than a stripe. The extent is the band's
-  // own and not the whole geometry's: the eaves, the chimney and the plinth
-  // are wider than the wall, and a tower whose shaft tapers from its plinth
-  // had its outer pane sliced by the corner on every stage above it.
-  const extent = { [X]: { lo: Infinity, hi: -Infinity }, [Z]: { lo: Infinity, hi: -Infinity } } as Record<
-    number,
-    { lo: number; hi: number }
-  >;
-  for (let i = 0; i < count; i += 3) {
-    const t = [row(i), row(i + 1), row(i + 2)];
-    const low = Math.min(t[0]![Y]!, t[1]![Y]!, t[2]![Y]!),
-      high = Math.max(t[0]![Y]!, t[1]![Y]!, t[2]![Y]!);
-    if (high <= y + EPS || low >= top - EPS || !isWall(t, X)) continue;
-    for (const axis of [X, Z]) {
-      const span = extent[axis]!;
-      for (const v of t) {
-        if (v[axis]! < span.lo) span.lo = v[axis]!;
-        if (v[axis]! > span.hi) span.hi = v[axis]!;
-      }
-    }
-  }
-  const bounds = (offset: number) => {
-    const { lo, hi } = extent[offset]!;
-    const span = Number.isFinite(hi - lo) ? hi - lo : 0;
-    // How many fit: n panes need n pitches of wall once the pier either side of
-    // them is counted, which is what `n * PITCH` already is. Asking for
-    // `span - (PITCH - WIDTH)` instead loses the last window on every wall --
-    // a 7.7 m gable took two where three fit with a metre of pier to spare.
-    const panes = Math.max(1, Math.floor(span / PANE_PITCH));
-    const used = panes * PANE_PITCH - (PANE_PITCH - PANE_WIDTH);
-    return { start: lo + (span - used) / 2, panes };
-  };
   /**
-   * The wall, along one axis, as a run of cells: pier, pane, pier, pane, pier.
-   * A band triangle is sliced into these and nothing else, so a window has an
-   * edge on all four sides and the wall between two of them is wall.
+   * The band's own wall triangles, each with the wall it belongs to. A wall
+   * is a vertical plane: its horizontal normal and its offset along it, which
+   * is what two faces of one wall share and two walls of one building never
+   * do. The panes are laid along **that wall's own length**, so the pattern
+   * is centred on the wall and not on the building's extent along x or z --
+   * which is the same thing for a box and a different thing for a lantern
+   * turned forty-five degrees, where a cut along z put half a window on each
+   * side of both side corners.
    */
-  const cellsOf = (offset: number) => {
-    const { start, panes } = bounds(offset);
-    const cells: Array<{ lo: number; hi: number; pane: number }> = [];
-    for (let i = 0; i < panes; i++) {
-      const at = start + i * PANE_PITCH;
-      cells.push({ lo: cells.length === 0 ? -Infinity : cells[cells.length - 1]!.hi, hi: at, pane: -1 });
-      cells.push({ lo: at, hi: at + PANE_WIDTH, pane: i });
-    }
-    cells.push({ lo: cells[cells.length - 1]!.hi, hi: Infinity, pane: -1 });
-    return cells;
-  };
-  const along = { [X]: cellsOf(X), [Z]: cellsOf(Z) } as Record<
-    number,
-    Array<{ lo: number; hi: number; pane: number }>
-  >;
-
+  interface Wall {
+    /** The unit tangent along the wall, horizontal. */
+    tx: number;
+    tz: number;
+    lo: number;
+    hi: number;
+    index: number;
+  }
+  const walls = new Map<string, Wall>();
+  const bands: Array<{ band: number[][]; wall: Wall }> = [];
   const lit = new Color(swatchColor(color));
   const rows: number[][] = [];
   for (let i = 0; i < count; i += 3) {
@@ -386,40 +349,105 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
     }
     for (const band of cutAt(cutAt([t], y, Y), top, Y)) {
       // a cut through a corner leaves a sliver of nothing; it is not kept
-      if (Math.hypot(...faceCross(band, X)) <= EPS) continue;
+      const n = faceCross(band, X);
+      if (Math.hypot(...n) <= EPS) continue;
       const middle = (band[0]![Y]! + band[1]![Y]! + band[2]![Y]!) / 3;
       if (!(middle > y && middle < top)) {
         rows.push(...band);
         continue;
       }
-      // Which way this wall runs: a face looking along x is a wall whose
-      // length is measured in z, and the panes are cut across that length.
-      const n = faceCross(band, X);
-      const axis = Math.abs(n[0]!) >= Math.abs(n[2]!) ? Z : X;
-      const lo = Math.min(band[0]![axis]!, band[1]![axis]!, band[2]![axis]!),
-        hi = Math.max(band[0]![axis]!, band[1]![axis]!, band[2]![axis]!);
-      const side = n[0]! + n[2]! > 0 ? 1 : 0;
-      for (const cell of along[axis]!) {
-        if (cell.hi <= lo + EPS || cell.lo >= hi - EPS) continue;
-        for (const piece of slabOf(band, axis, cell.lo, cell.hi)) {
-          if (Math.hypot(...faceCross(piece, X)) <= EPS) continue;
-          if (cell.pane >= 0) {
-            // The window's own number: which wall, how high, how far along. Two
-            // windows of one house never share it, and a house baked twice gets
-            // the same one, because a bake is the same geometry every time.
-            const roll =
-              hash2(cell.pane * 4 + side * 2 + (axis === Z ? 1 : 0), Math.round(y * 100), 0x7719) /
-              4294967296;
-            for (const v of piece) {
-              v[COLOR] = lit.r;
-              v[COLOR + 1] = lit.g;
-              v[COLOR + 2] = lit.b;
-              v[GLOW] = 1;
-              v[PANE] = roll;
-            }
+      // the wall: its outward normal on the ground, and how far out it stands
+      const len = Math.hypot(n[0]!, n[2]!);
+      const nx = n[0]! / len,
+        nz = n[2]! / len;
+      const offset = nx * band[0]![X]! + nz * band[0]![Z]!;
+      const key = `${nx.toFixed(3)},${nz.toFixed(3)},${offset.toFixed(2)}`;
+      let wall = walls.get(key);
+      if (!wall) {
+        wall = { tx: nz, tz: -nx, lo: Infinity, hi: -Infinity, index: walls.size };
+        walls.set(key, wall);
+      }
+      for (const v of band) {
+        const u = v[X]! * wall.tx + v[Z]! * wall.tz;
+        if (u < wall.lo) wall.lo = u;
+        if (u > wall.hi) wall.hi = u;
+      }
+      bands.push({ band, wall });
+    }
+  }
+  /**
+   * The wall, along its length, as a run of cells: pier, pane, pier, pane,
+   * pier. The pattern is laid out inside the wall's extent and centred in it,
+   * so both corners keep a pier: a pattern anchored at the origin instead cuts
+   * whatever pane the corner happens to land in, and a house with half a window
+   * at every corner is worse than a stripe. A band triangle is sliced into
+   * these and nothing else, so a window has an edge on all four sides and the
+   * wall between two of them is wall.
+   */
+  const cellsOf = (wall: Wall) => {
+    const span = wall.hi - wall.lo;
+    // How many fit: n panes need n pitches of wall once the pier either side of
+    // them is counted, which is what `n * PITCH` already is. Asking for
+    // `span - (PITCH - WIDTH)` instead loses the last window on every wall --
+    // a 7.7 m gable took two where three fit with a metre of pier to spare.
+    const panes = Math.max(1, Math.floor(span / PANE_PITCH));
+    const used = panes * PANE_PITCH - (PANE_PITCH - PANE_WIDTH);
+    const start = wall.lo + (span - used) / 2;
+    const cells: Array<{ lo: number; hi: number; pane: number }> = [];
+    for (let i = 0; i < panes; i++) {
+      const at = start + i * PANE_PITCH;
+      cells.push({ lo: cells.length === 0 ? -Infinity : cells[cells.length - 1]!.hi, hi: at, pane: -1 });
+      cells.push({ lo: at, hi: at + PANE_WIDTH, pane: i });
+    }
+    cells.push({ lo: cells[cells.length - 1]!.hi, hi: Infinity, pane: -1 });
+    return cells;
+  };
+  const cells = new Map<Wall, ReturnType<typeof cellsOf>>();
+  // The slicing is done in the wall's own frame: x along the wall, z out of
+  // it, so `slabOf` -- which cuts square to an axis -- cuts square to the wall
+  // whatever bearing the wall stands at. Turned in, sliced, turned back.
+  const turn = (v: number[], wall: Wall, back: boolean): number[] => {
+    const out = v.slice();
+    const px = v[X]!,
+      pz = v[Z]!;
+    if (back) {
+      out[X] = px * wall.tx - pz * wall.tz;
+      out[Z] = px * wall.tz + pz * wall.tx;
+    } else {
+      out[X] = px * wall.tx + pz * wall.tz;
+      out[Z] = -px * wall.tz + pz * wall.tx;
+    }
+    return out;
+  };
+  for (const { band, wall } of bands) {
+    let run = cells.get(wall);
+    if (!run) {
+      run = cellsOf(wall);
+      cells.set(wall, run);
+    }
+    const turned = band.map((v) => turn(v, wall, false));
+    const lo = Math.min(turned[0]![X]!, turned[1]![X]!, turned[2]![X]!),
+      hi = Math.max(turned[0]![X]!, turned[1]![X]!, turned[2]![X]!);
+    for (const cell of run) {
+      if (cell.hi <= lo + EPS || cell.lo >= hi - EPS) continue;
+      for (const slice of slabOf(turned, X, cell.lo, cell.hi)) {
+        const piece = slice.map((v) => turn(v, wall, true));
+        if (Math.hypot(...faceCross(piece, X)) <= EPS) continue;
+        if (cell.pane >= 0) {
+          // The window's own number: which wall, how high, how far along. Two
+          // windows of one house never share it, and a house baked twice gets
+          // the same one, because a bake is the same geometry every time and
+          // the walls are met in the same order.
+          const roll = hash2(cell.pane * 64 + wall.index, Math.round(y * 100), 0x7719) / 4294967296;
+          for (const v of piece) {
+            v[COLOR] = lit.r;
+            v[COLOR + 1] = lit.g;
+            v[COLOR + 2] = lit.b;
+            v[GLOW] = 1;
+            v[PANE] = roll;
           }
-          rows.push(...piece);
         }
+        rows.push(...piece);
       }
     }
   }

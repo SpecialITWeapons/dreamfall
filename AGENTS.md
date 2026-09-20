@@ -360,7 +360,11 @@ page works under a Pages subdirectory.
 - Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
   two heights and then slices it along the wall into panes with piers between
   them, `slabOf` taking one slice at a time (splitting at each plane in turn
-  costs three times the triangles). Which ones are alight after dark is three
+  costs three times the triangles). Each wall -- a vertical plane, by its
+  normal and its offset -- is sliced along **its own length** in its own frame
+  and the pattern is centred on that wall, so a pier lands in every corner
+  whatever bearing the wall stands at; cut along x and z instead, the tower's
+  lantern had half a window on each side of both side corners. Which ones are alight after dark is three
   numbers from three places, because a house is baked once and stood up
   hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
   the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
