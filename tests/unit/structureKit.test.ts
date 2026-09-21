@@ -12,6 +12,18 @@ import tower from '../../library/structures/tower.js';
 import { bakeStructure, createStructureKit } from '../../src/engine/scenery/StructureKit';
 
 const kit = createStructureKit();
+/** A geometry's window attribute, read as the two numbers it packs: whether a vertex glows, and which pane it is. */
+type Packed = {
+  getAttribute(name: string): { count: number; getX(i: number): number; getY(i: number): number };
+};
+const glowOf = (g: Packed) => {
+  const w = g.getAttribute('window');
+  return { count: w.count, getX: (i: number) => w.getX(i) };
+};
+const paneOf = (g: Packed) => {
+  const w = g.getAttribute('window');
+  return { count: w.count, getX: (i: number) => w.getY(i) };
+};
 const cottage = (over: Partial<Structure> = {}): Structure =>
   defineStructure({
     id: 'test',
@@ -28,7 +40,7 @@ const vertices = (geometry: {
   getAttribute(name: string): { count: number; getX(i: number): number; getY(i: number): number };
 }) => {
   const position = geometry.getAttribute('position'),
-    glow = geometry.getAttribute('glow');
+    glow = glowOf(geometry);
   return Array.from({ length: position.count }, (_, i) => ({ y: position.getY(i), glow: glow.getX(i) }));
 };
 
@@ -47,7 +59,7 @@ const glowingArea = (geometry: {
   };
 }) => {
   const p = geometry.getAttribute('position'),
-    glow = geometry.getAttribute('glow');
+    glow = glowOf(geometry);
   let area = 0;
   for (let i = 0; i < p.count; i += 3) {
     if (glow.getX(i) === 0) continue;
@@ -100,15 +112,38 @@ describe('bakeStructure', () => {
       expect(glowingArea(bakeStructure(cottage(), floors, kit).geometry)).toBeCloseTo(one * floors, 3);
     }
   });
-  it('gives a windowless building glow and pane attributes of its own, all zero', () => {
-    // The one material reads both for every building; a barn without either
-    // would warn in the console and compile a program of its own.
+  it('gives a windowless building a window attribute of its own, all zero', () => {
+    // The one material reads it for every building; a barn without it would
+    // warn in the console and compile a program of its own.
     const shed = bakeStructure(cottage({ palette: { wall: 'sandPale', roof: 'terracotta' } }), 1, kit);
-    for (const name of ['glow', 'pane']) {
-      const attribute = shed.geometry.getAttribute(name);
-      expect(attribute, name).toBeTruthy();
-      for (let i = 0; i < attribute.count; i++) expect(attribute.getX(i)).toBe(0);
+    const window = shed.geometry.getAttribute('window');
+    expect(window).toBeTruthy();
+    expect(window.itemSize).toBe(2);
+    for (let i = 0; i < window.count; i++) {
+      expect(window.getX(i)).toBe(0);
+      expect(window.getY(i)).toBe(0);
     }
+  });
+  it('binds no more than the eight vertex buffers WebGPU gives a pipeline', () => {
+    // WebGPU's default `maxVertexBuffers` is eight and three does not ask for
+    // more. A building's pool adds four buffers of its own -- the instance
+    // matrix, the instance colour, `base` and `lamp` -- so the bake may carry
+    // four attributes and not one more. It carried six once (glow, pane and
+    // a uv nothing read, beside position, normal and colour), the pipeline
+    // failed validation, and every house in the world vanished on WebGPU
+    // while WebGL2 drew them all. This is the test that would have said so.
+    const POOL_BUFFERS = 4;
+    for (const structure of createLibrary().structures ?? [])
+      for (let floors = structure.floors[0]; floors <= structure.floors[1]; floors++) {
+        const names = Object.keys(bakeStructure(structure, floors, kit).geometry.attributes);
+        expect(
+          names.length + POOL_BUFFERS,
+          `${structure.id} x${floors}: ${names.join(', ')}`,
+        ).toBeLessThanOrEqual(8);
+        expect(names, structure.id).toEqual(
+          expect.arrayContaining(['position', 'normal', 'color', 'window']),
+        );
+      }
   });
   it('never mixes glow across one triangle, so a window has an edge', () => {
     const all = vertices(bakeStructure(cottage(), 2, kit).geometry);
@@ -127,7 +162,7 @@ describe('bakeStructure', () => {
     // nothing.
     const { geometry } = bakeStructure(cottage({ footprint: [13, 10] }), 1, kit);
     const p = geometry.getAttribute('position'),
-      glow = geometry.getAttribute('glow');
+      glow = glowOf(geometry);
     // The wall plane, taken off the windows themselves: the roof overhangs its
     // walls by an eave, so the widest thing on the building is not a wall.
     let far = 0;
@@ -159,8 +194,8 @@ describe('bakeStructure', () => {
   });
   it('gives every window a number of its own, so the night can light one and not the next', () => {
     const { geometry } = bakeStructure(cottage(), 2, kit);
-    const glow = geometry.getAttribute('glow'),
-      pane = geometry.getAttribute('pane');
+    const glow = glowOf(geometry),
+      pane = paneOf(geometry);
     const rolls = new Set<number>();
     for (let i = 0; i < glow.count; i += 3) {
       // one number per triangle, as the glow is: a window with two of them
@@ -178,7 +213,7 @@ describe('bakeStructure', () => {
       expect(roll).toBeLessThan(1);
     }
     // and the same house baked twice is the same house
-    const again = bakeStructure(cottage(), 2, kit).geometry.getAttribute('pane');
+    const again = paneOf(bakeStructure(cottage(), 2, kit).geometry);
     for (let i = 0; i < pane.count; i++) expect(again.getX(i)).toBe(pane.getX(i));
   });
   it('lays the panes along each wall of its own, whatever bearing the wall stands at', () => {
@@ -193,8 +228,8 @@ describe('bakeStructure', () => {
     const { geometry } = bakeStructure(tower, tower.floors[1], kit);
     const shaftTop = tower.floors[1] * (tower.floorHeight ?? 0);
     const position = geometry.getAttribute('position'),
-      glow = geometry.getAttribute('glow'),
-      pane = geometry.getAttribute('pane');
+      glow = glowOf(geometry),
+      pane = paneOf(geometry);
     const panes = new Map<number, { points: Array<[number, number]>; lantern: boolean }>();
     for (let i = 0; i < glow.count; i += 3) {
       if (glow.getX(i) <= 0) continue;
@@ -295,7 +330,7 @@ const planReach = (shape: Shape, lo: number, hi: number): number => {
  */
 const glowBands = (shape: Shape): Array<{ lo: number; hi: number; area: number }> => {
   const p = shape.getAttribute('position'),
-    glow = shape.getAttribute('glow');
+    glow = glowOf(shape);
   const spans: Array<{ lo: number; hi: number; area: number }> = [];
   for (let i = 0; i < p.count; i += 3) {
     if (glow.getX(i) === 0) continue;

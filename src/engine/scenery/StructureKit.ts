@@ -287,10 +287,8 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
   const source = geometry.index ? geometry.toNonIndexed() : geometry;
   const count = attributeOf(source, 'position').count;
   if (!source.getAttribute('color')) paint(source, 'white');
-  if (!source.getAttribute('glow'))
-    source.setAttribute('glow', new Float32BufferAttribute(new Float32Array(count), 1));
-  if (!source.getAttribute('pane'))
-    source.setAttribute('pane', new Float32BufferAttribute(new Float32Array(count), 1));
+  if (!source.getAttribute('window'))
+    source.setAttribute('window', new Float32BufferAttribute(new Float32Array(count * 2), 2));
 
   const parts = Object.entries(source.attributes);
   const offsets = new Map<string, number>();
@@ -308,8 +306,7 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
     Y = X + 1,
     Z = X + 2,
     COLOR = offsetOf('color'),
-    GLOW = offsetOf('glow'),
-    PANE = offsetOf('pane');
+    WINDOW = offsetOf('window');
 
   const row = (i: number): number[] => {
     const out: number[] = [];
@@ -443,8 +440,8 @@ function windows(geometry: BufferGeometry, y: number, height: number, color: Sce
             v[COLOR] = lit.r;
             v[COLOR + 1] = lit.g;
             v[COLOR + 2] = lit.b;
-            v[GLOW] = 1;
-            v[PANE] = roll;
+            v[WINDOW] = 1;
+            v[WINDOW + 1] = roll;
           }
         }
         rows.push(...piece);
@@ -538,17 +535,27 @@ export function bakeStructure(spec: Structure, floors: number, kit: StructureVer
   const storeys = Math.max(1, Math.round(floors));
   const own: StructureKit = { ...kit, spec, floors: storeys };
   const geometry = spec.bake ? spec.bake(own) : buildStructure(spec, storeys, own);
-  // Every building carries both attributes, windows or none, because one
-  // material reads them for all of them and a barn must not need a program of
+  // Every building carries the window attribute, windows or none, because one
+  // material reads it for all of them and a barn must not need a program of
   // its own: a node program is keyed on the geometry's attribute set, and a
   // missing one is a warning in the console and a second compile of the
-  // material. `glow` alone was not enough once the panes arrived.
-  for (const name of ['glow', 'pane'] as const)
-    if (!geometry.getAttribute(name))
-      geometry.setAttribute(
-        name,
-        new Float32BufferAttribute(new Float32Array(attributeOf(geometry, 'position').count), 1),
-      );
+  // material.
+  //
+  // It is **one** attribute of two floats -- `glow` and `pane` -- and the
+  // box's `uv` is dropped, because of a limit nobody wrote down: WebGPU binds
+  // at most eight vertex buffers to a pipeline unless the device asks for
+  // more, and a pool adds four of its own to a building's (the instance
+  // matrix, the instance colour, `base` and `lamp`). Six attributes here made
+  // ten buffers, the pipeline failed validation, and every house in every
+  // village vanished on WebGPU -- roads and hedges standing round nothing --
+  // while WebGL2, which has no such limit, drew them all. The material reads
+  // no texture, so the uv was a buffer bound for nothing.
+  if (!geometry.getAttribute('window'))
+    geometry.setAttribute(
+      'window',
+      new Float32BufferAttribute(new Float32Array(attributeOf(geometry, 'position').count * 2), 2),
+    );
+  geometry.deleteAttribute('uv');
   const problems = validateBaked(spec, geometry);
   if (problems.length > 0) throw new Error(`scenery library:\n${problems.join('\n')}`);
 
