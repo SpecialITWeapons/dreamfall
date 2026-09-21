@@ -49,12 +49,12 @@ def png_head(b):
     return w, h, b[24], b[25]
 
 
-def png_alpha(b):
-    """Mean, min and max of a PNG's alpha channel, or None when it has none."""
+def decode_png(b):
+    """An 8-bit PNG as (width, height, channels, pixels). Slow and dependency-free."""
     w, h, depth, colour = png_head(b)
-    if colour not in (4, 6) or depth != 8:
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(colour)
+    if channels is None or depth != 8:
         return None
-    channels = 4 if colour == 6 else 2
     idat, off = b'', 8
     while off < len(b):
         ln, = struct.unpack_from('>I', b, off)
@@ -63,7 +63,7 @@ def png_alpha(b):
         off += 12 + ln
     raw = zlib.decompress(idat)
     stride = w * channels
-    prev, out, i = bytearray(stride), [], 0
+    prev, rows, i = bytearray(stride), [], 0
     for _ in range(h):
         f = raw[i]; i += 1
         line = bytearray(raw[i:i + stride]); i += stride
@@ -81,13 +81,55 @@ def png_alpha(b):
             for x in range(stride):
                 a = line[x - channels] if x >= channels else 0
                 c = prev[x - channels] if x >= channels else 0
-                p = a + prev[x] - c
-                pa, pb, pc = abs(p - a), abs(p - prev[x]), abs(p - c)
+                q = a + prev[x] - c
+                pa, pb, pc = abs(q - a), abs(q - prev[x]), abs(q - c)
                 line[x] = (line[x] + (a if pa <= pb and pa <= pc else prev[x] if pb <= pc else c)) & 255
-        out.append(bytes(line[channels - 1::channels]))
+        rows.append(bytes(line))
         prev = line
-    alpha = b''.join(out)
-    return sum(alpha) / len(alpha), min(alpha), max(alpha)
+    return w, h, channels, b''.join(rows)
+
+
+def texture_image(gltf, d, base, texture_index, cache):
+    """The decoded PNG behind a texture reference, decoded at most once."""
+    if texture_index is None:
+        return None
+    src = gltf['textures'][texture_index].get('source')
+    if src is None:
+        return None
+    if src not in cache:
+        img = gltf['images'][src]
+        if 'bufferView' not in img or img.get('mimeType') != 'image/png':
+            cache[src] = None
+        else:
+            bv = gltf['bufferViews'][img['bufferView']]
+            o = base + bv.get('byteOffset', 0)
+            cache[src] = decode_png(d[o:o + bv['byteLength']])
+    return cache[src]
+
+
+def sample(decoded, uvs, channel):
+    """A channel's mean, min and max where the mesh actually reads it.
+
+    Over the whole image instead, an atlas that is three quarters empty answers
+    for the empty part: the helmet's base colour runs 0..255 across the sheet
+    and 254..255 over the texels its own triangles land on, which is the
+    difference between calling it see-through and calling it opaque.
+    """
+    if decoded is None:
+        return None
+    w, h, channels, px = decoded
+    if channel >= channels:
+        return None
+    total, lo, hi = 0, 255, 0
+    for u, v in uvs:
+        x = min(w - 1, max(0, int(u % 1.0 * w)))
+        # glTF's v runs down from the top; the rows are stored the same way.
+        y = min(h - 1, max(0, int(v % 1.0 * h)))
+        value = px[(y * w + x) * channels + channel]
+        total += value
+        lo = min(lo, value)
+        hi = max(hi, value)
+    return (total / len(uvs), lo, hi) if uvs else None
 
 
 def accessor(gltf, d, base, index):
@@ -181,26 +223,51 @@ def main():
                     notes.append(f'{tag}: skin weights sum to 1 on every vertex')
 
     # --- the materials ------------------------------------------------------
+    decoded = {}
+    # Which texels each material is actually read at, gathered from the meshes
+    # that wear it.
+    worn = {}
+    for mesh in gltf.get('meshes', []):
+        for prim in mesh['primitives']:
+            if 'material' not in prim or 'TEXCOORD_0' not in prim['attributes']:
+                continue
+            worn.setdefault(prim['material'], []).extend(
+                accessor(gltf, d, base, prim['attributes']['TEXCOORD_0']))
+
     for mi, mat in enumerate(gltf.get('materials', [])):
+        uvs = worn.get(mi, [])
         tag = f'material {mi} "{mat.get("name", "")}"'
         ext = mat.get('extensions', {})
-        transmission = ext.get('KHR_materials_transmission', {}).get('transmissionFactor')
-        if transmission:
+        khr = ext.get('KHR_materials_transmission', {})
+        factor = khr.get('transmissionFactor')
+        if factor:
+            # three multiplies the factor by the transmission map's red channel,
+            # so a factor of 1 over a near-black map is not glass. Measure it:
+            # reporting the factor alone calls a suit glass when it is not, and
+            # the fault that matters is the other one either way -- any non-zero
+            # transmission puts the material on three's transmission path, which
+            # copies the viewport and builds a mip chain on every render call.
+            stats = sample(
+                texture_image(gltf, d, base, khr.get('transmissionTexture', {}).get('index'), decoded),
+                uvs, 0)
+            if stats:
+                mean, lo, hi = stats
+                effective = (f'{factor * lo / 255:.2f}..{factor * hi / 255:.2f}, mean '
+                             f'{factor * mean / 255:.2f}, over the texels this mesh reads')
+            else:
+                effective = f'{factor:.2f} (no map)'
             faults.append(
-                f'{tag}: KHR_materials_transmission transmissionFactor {transmission}. This is glass. '
-                f'Set the Principled BSDF\'s Transmission Weight to 0.')
+                f'{tag}: KHR_materials_transmission, factor {factor}, effective {effective}. '
+                f'Even a little of it puts the figure on three\'s transmission path: a full-viewport '
+                f'copy and a mip chain every render call, against a pixel budget of 2 000 000. '
+                f'Set the Principled BSDF\'s Transmission Weight to 0 and unplug its texture.')
         if mat.get('alphaMode') == 'BLEND':
             pbr = mat.get('pbrMetallicRoughness', {})
             alpha = pbr.get('baseColorFactor', [1, 1, 1, 1])[3]
-            tex = pbr.get('baseColorTexture', {}).get('index')
-            measured = None
-            if tex is not None:
-                src = gltf['textures'][tex].get('source')
-                img = gltf['images'][src]
-                if 'bufferView' in img and img.get('mimeType') == 'image/png':
-                    bv = gltf['bufferViews'][img['bufferView']]
-                    o = base + bv.get('byteOffset', 0)
-                    measured = png_alpha(d[o:o + bv['byteLength']])
+            img = texture_image(gltf, d, base, pbr.get('baseColorTexture', {}).get('index'), decoded)
+            # The alpha channel is the last one, and only an RGBA or grey+alpha
+            # image has one.
+            measured = sample(img, uvs, img[2] - 1) if img and img[2] in (2, 4) else None
             if measured:
                 mean, lo, hi = measured
                 if hi < 250:
@@ -211,7 +278,12 @@ def main():
                         f'the render method to Dithered/Opaque, and save the texture without an '
                         f'alpha channel.')
                 else:
-                    notes.append(f'{tag}: alphaMode BLEND, texture alpha {lo}..{hi} -- deliberate?')
+                    # The range alone reads as half see-through when a handful
+                    # of texels on an island's edge are the only ones below
+                    # opaque; the mean is what the figure looks like.
+                    notes.append(
+                        f'{tag}: alphaMode BLEND, texture alpha {lo}..{hi}, mean {mean:.0f}/255 '
+                        f'({100 * mean / 255:.0f}% opaque) -- deliberate?')
             elif alpha < 1:
                 faults.append(f'{tag}: alphaMode BLEND with baseColorFactor alpha {alpha}.')
             else:
@@ -233,6 +305,46 @@ def main():
                 warnings.append(
                     f'image {ii} "{img.get("name", "")}": {bv["byteLength"] // 1024} KiB for a figure '
                     f'that is a few dozen pixels tall in flight.')
+
+    # An image carried twice is bytes carried twice. The first export shipped one
+    # texture as both the base colour and the transmission map, 62 per cent of
+    # the file between them.
+    # Byte equality misses it: the same picture saved once as RGB and once as
+    # RGBA is two different files and one texture. Compare the pixels.
+    seen = {}
+    for ii, img in enumerate(gltf.get('images', [])):
+        if 'bufferView' not in img:
+            continue
+        bv = gltf['bufferViews'][img['bufferView']]
+        o = base + bv.get('byteOffset', 0)
+        got = decode_png(d[o:o + bv['byteLength']])
+        if got is None:
+            continue
+        w, h, channels, px = got
+        # A coarse fingerprint: the mean of each channel over a grid of samples.
+        step = max(1, (w * h) // 4096)
+        mark = (w, h, tuple(
+            round(sum(px[k::channels][::step]) / len(px[k::channels][::step]), 2)
+            for k in range(min(3, channels))))
+        if mark in seen:
+            warnings.append(
+                f'image {ii} "{img.get("name", "")}" is the same picture as image {seen[mark]}, '
+                f'saved twice: {bv["byteLength"] // 1024} KiB for nothing.')
+        seen[mark] = ii
+
+    # A colour attribute that is the same colour everywhere is a vertex buffer
+    # and a hundred kilobytes spent saying nothing.
+    for mi, mesh in enumerate(gltf.get('meshes', [])):
+        for pi, prim in enumerate(mesh['primitives']):
+            for name, ai in sorted(prim['attributes'].items()):
+                if not name.startswith('COLOR_'):
+                    continue
+                values = set(accessor(gltf, d, base, ai))
+                if len(values) == 1:
+                    warnings.append(
+                        f'mesh {mi} "{mesh.get("name", "")}" prim {pi}: {name} is {values.pop()} on '
+                        f'every vertex. Dead data, and it costs a vertex buffer. Delete the colour '
+                        f'attribute in Blender.')
 
     # --- the figure itself --------------------------------------------------
     lo = [1e9] * 3
