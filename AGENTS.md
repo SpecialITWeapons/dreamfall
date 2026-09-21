@@ -65,6 +65,15 @@ page works under a Pages subdirectory.
   A capture is not affected: it renders the scene into its own target.
 - Any WebGPU `uncapturederror` is treated as a fatal device loss on
   purpose (fail loud); a shader that only warns must not ship.
+- **A mesh binds at most eight vertex buffers.** That is WebGPU's default
+  `maxVertexBuffers`, three does not ask the device for more, and a pipeline
+  over it fails validation quietly: a console error and the object simply not
+  drawn, on WebGPU only, while WebGL2 draws it. Count every `BufferAttribute`
+  of the geometry plus, on an instanced mesh, the instance matrix, the
+  instance colour and every `InstancedBufferAttribute`. A building's pool
+  reached eleven and every house in the world vanished for a day. Pack
+  numbers into vec2/vec4 attributes (`window`, `lamp`) and drop attributes
+  nothing reads (a building's `uv`); `structureKit.test.ts` counts.
 - Pixel budget of 2,000,000 and DPR capped at 1.5 (`renderScale`).
 - Interface text lives only in `index.html` and `src/page/Hud.ts`; `#manual`
   sits outside the HUD pill on purpose, because the pill dims and "the autopilot
@@ -371,6 +380,8 @@ page works under a Pages subdirectory.
   numbers from three places, because a house is baked once and stood up
   hundreds of times: `pane` is baked per window, `lit` is the lot's, `wake` is
   the settlement's share, and a pane is lit when `fract(pane + lit) <= wake`.
+  They travel packed -- `window` is (glow, pane) on the vertex, `lamp` is
+  (lit, wake) on the instance -- because of the eight-buffer rule above.
 
 ## Measuring
 

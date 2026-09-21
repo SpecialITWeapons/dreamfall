@@ -144,9 +144,8 @@ interface PropPool {
 }
 interface StructurePool {
   mesh: InstancedMesh;
-  /** The instance attribute the night reads: how awake each house is. */
-  lit: InstancedBufferAttribute;
-  wake: InstancedBufferAttribute;
+  /** The instance attribute the night reads: the lot's `lit` roll and the settlement's `wake` share. */
+  lamp: InstancedBufferAttribute;
   top: number;
   radius: number;
   capacity: number;
@@ -294,18 +293,24 @@ export function createPools(deps: {
   // fresh roll per window per house, and a pane is lit when that roll lands
   // under the share. The whole thing used to be one multiply by `lit`, which
   // dimmed every window of a house together and lit every one of them.
-  const pane = attribute<'float'>('pane', 'float'),
-    phase = attribute<'float'>('lit', 'float');
+  //
+  // The five numbers travel in two attributes, not five: `window` carries the
+  // bake's `glow` and `pane`, `lamp` the instance's `lit` and `wake`. WebGPU
+  // binds at most eight vertex buffers to a pipeline unless the device asks
+  // for more, and a building's pool already has the instance matrix, the
+  // instance colour and `base` on top of the geometry's own; as five separate
+  // attributes they made eleven, the pipeline failed validation, and no house
+  // drew on WebGPU while WebGL2 drew them all (see `bakeStructure`).
+  const window = attribute<'vec2'>('window', 'vec2'),
+    lamp = attribute<'vec2'>('lamp', 'vec2');
+  const glow = window.x,
+    pane = window.y,
+    phase = lamp.x,
+    wake = lamp.y;
   const roll = fract(pane.add(phase));
-  // Worked out per fragment, on purpose. Everything here is a per-vertex
-  // constant and it was moved to the vertex stage once (`toVertexStage`) to
-  // save the fragments the arithmetic: on WebGL2 the houses drew as before,
-  // and on the owner's WebGPU every building in the village vanished, roads
-  // and hedges standing round nothing. A fragment's worth of two `fract`s is
-  // not what a frame costs; a material that draws on one backend is.
   buildingMaterial.emissiveNode = attribute<'vec3'>('color', 'vec3')
-    .mul(attribute<'float'>('glow', 'float'))
-    .mul(step(roll, attribute<'float'>('wake', 'float')))
+    .mul(glow)
+    .mul(step(roll, wake))
     // A lit room is not a lamp of a fixed brightness: a kitchen is not a hall.
     .mul(float(0.7).add(fract(pane.mul(7.13).add(phase.mul(3.1))).mul(0.6)))
     .mul(uniforms.uNight);
@@ -319,16 +324,12 @@ export function createPools(deps: {
       const capacity = BUDGET.propInstances;
       const mesh = pool(baked.geometry, buildingMaterial, capacity, 'buildings');
       mesh.castShadow = true;
-      const lit = new InstancedBufferAttribute(new Float32Array(capacity), 1);
-      lit.setUsage(DynamicDrawUsage);
-      mesh.geometry.setAttribute('lit', lit);
-      const wake = new InstancedBufferAttribute(new Float32Array(capacity), 1);
-      wake.setUsage(DynamicDrawUsage);
-      mesh.geometry.setAttribute('wake', wake);
+      const lamp = new InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+      lamp.setUsage(DynamicDrawUsage);
+      mesh.geometry.setAttribute('lamp', lamp);
       structures.set(`${entry.id}:${floors}`, {
         mesh,
-        lit,
-        wake,
+        lamp,
         top: baked.top,
         radius: baked.radius,
         capacity,
@@ -490,15 +491,13 @@ export function createPools(deps: {
       const lx = origin.localX(building.x),
         lz = origin.localZ(building.z);
       write(record.mesh, record.count, lx, building.y, lz, building.yaw, 1, 1, 1, building.tint);
-      record.wake.setX(record.count, building.wake);
-      record.lit.setX(record.count++, building.lit);
+      record.lamp.setXY(record.count++, building.lit, building.wake);
       return true;
     },
     end() {
       for (const record of structures.values()) {
         commit(record.mesh, record.count);
-        record.lit.needsUpdate = true;
-        record.wake.needsUpdate = true;
+        record.lamp.needsUpdate = true;
       }
       for (const record of species.values()) {
         commit(record.wood, record.count);
