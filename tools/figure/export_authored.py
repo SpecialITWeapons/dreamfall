@@ -69,7 +69,7 @@ SETTINGS = {
     'export_yup': True,
 
     # --- the mesh -----------------------------------------------------------
-    'export_apply': True,      # modifiers baked in; the engine has no modifiers
+    'export_apply': True,      # modifiers baked in; the engine has no modifiers (see --no-apply)
     'export_normals': True,
     'export_texcoords': True,
     'export_tangents': False,  # the engine's material builds no normal map
@@ -129,6 +129,13 @@ def args():
     p.add_argument('--blend', help='the .blend to open; omit when Blender already has one open')
     p.add_argument('--out', default='tools/figure/authored.glb', help='where the .glb goes')
     p.add_argument('--keep-glass', action='store_true', help='leave the materials as they are')
+    p.add_argument(
+        '--no-apply',
+        action='store_true',
+        help='export the base mesh instead of applying modifiers. Applying them is usually right -- '
+        'the engine has no modifiers -- but a subdivision left on the stack multiplies the triangle '
+        'count, so the count is printed either way.',
+    )
     # Blender passes the script everything after a bare `--`.
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]
     return p.parse_args(argv)
@@ -142,6 +149,17 @@ def main():
     report = []
     if not a.keep_glass:
         make_opaque(report)
+    if a.no_apply:
+        SETTINGS['export_apply'] = False
+
+    # What is about to be written, so that a modifier nobody remembered cannot
+    # quietly multiply the figure.
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    for obj in bpy.context.scene.objects:
+        if obj.type != 'MESH':
+            continue
+        mesh = obj.evaluated_get(depsgraph).to_mesh() if not a.no_apply else obj.data
+        report.append(f'{obj.name}: {len(mesh.vertices)} verts, {len(mesh.loop_triangles) or "?"} tris')
 
     out = Path(a.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
