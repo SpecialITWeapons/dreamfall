@@ -10,13 +10,47 @@
 // only in what it is called.
 //
 // Pure CPU, no DOM and no renderer: `Quaternion` and `Vector3` are arithmetic.
-import { Quaternion, Vector3 } from 'three';
+import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { FlightPose } from './Avatar';
 import { SPEED } from '../flight/FlightController';
 import { perlin2 } from '../terrain/noise';
 
 const UP = new Vector3(0, 1, 0),
   AXIS_X = new Vector3(1, 0, 0);
+
+/**
+ * The rotation a limb pointing along `a` wears, with the roll about its own
+ * axis **decided** rather than left to whatever `setFromUnitVectors` happens
+ * to produce.
+ *
+ * That function gives the minimal rotation taking +Y to `a`, which is one of
+ * infinitely many, and the one it picks turns as `a` moves. Nothing hanging
+ * off a limb can tell the difference between a shoulder that swept back and a
+ * shoulder that swept back while rolling ninety degrees -- but a forearm can,
+ * because it is carried by both. Measured on the controller: with the roll
+ * left to the accident, an arm sweeping from the box to the delta took the
+ * forearm to 0.79 of the figure's up and held it above 0.5 for a second.
+ *
+ * Here the limb's own frame is built against the figure's up, so a limb that
+ * returns to a direction returns to the same roll and a limb passing through
+ * one passes through the same roll on the way. Only the two joints that hang
+ * off the chest use it: an arm never points within 70 degrees of the figure's
+ * up in any of the shapes -- the furthest is the turn's inner arm at 0.34 --
+ * and neither does a thigh, so the basis is never near the degenerate case
+ * this construction has. A folded shin does point up, which is why a knee is
+ * not built this way.
+ */
+const basis = new Matrix4(),
+  across = new Vector3(),
+  along = new Vector3();
+const rolled = (a: Vector3, out: Quaternion) => {
+  across.crossVectors(UP, a).normalize();
+  // `z = x cross y`, in that order: the other way round is a left-handed
+  // basis, whose matrix has a determinant of minus one and whose quaternion is
+  // not a rotation at all.
+  along.crossVectors(across, a);
+  return out.setFromRotationMatrix(basis.makeBasis(across, a, along));
+};
 
 /**
  * A pose is five directions a side: where the upper arm, the forearm, the
@@ -122,44 +156,59 @@ const POSES = {
   },
 } satisfies Record<string, Pose>;
 
-/**
- * The slots a hinge keeps a quaternion and a weight in. The turn is two slots
- * rather than one because the pose is mirrored, and a single slot whose target
- * flips as the bank crosses zero would apply whatever weight the spring still
- * held to the wrong side of the body.
- */
-
 export type Kind = 'shoulder' | 'elbow' | 'hip' | 'knee' | 'ankle';
 
 /**
- * What every joint wears in one pose, on one side: parent-relative, by the same
- * chain rule the skeleton is built with -- a joint's own quaternion is its
- * parent's orientation undone and its own put on. Doing it here rather than
- * writing the numbers down twice is why a pose cannot drift out of step with
- * the skeleton it is worn on.
+ * Where every joint of one side points in one pose, **in the frame of the
+ * joint above it** -- the same chain rule the skeleton is built with, so a
+ * pose cannot drift out of step with the skeleton it is worn on.
+ *
+ * Directions rather than rotations, and parent-relative rather than the
+ * figure's, and both halves of that were a fault this carried from the day it
+ * was written.
+ *
+ * It used to keep `setFromUnitVectors(UP, d)` per joint and slerp those to
+ * blend two shapes. That quaternion is the *minimal* rotation taking +Y to
+ * `d`, one of infinitely many that do, and the roll it happens to carry about
+ * the limb's own axis is an accident of where `d` points; interpolating two
+ * accidents traces no arc anyone chose. Flown on the controller it put the
+ * forearm at 0.97 of the figure's up -- standing vertical over the back.
+ *
+ * Blending the directions in the figure's frame instead fixed the shoulder and
+ * left the elbow where it was, for a reason worth writing down: in the box the
+ * forearm points **forward** and in the delta it points **back**, 165 degrees
+ * apart. A weighted mean of two nearly opposite vectors very nearly cancels,
+ * and what survives is whatever small component they had in common -- here a
+ * little `y` -- which normalising then blows up to a unit vector pointing
+ * almost straight up. Measured: box 0.41, delta 0.48, turn 0.11 gives a sum of
+ * length 0.15 and a direction of (-0.45, 0.89, 0.02). The arm went over the
+ * top because the arithmetic had nothing else left to say.
+ *
+ * Parent-relative, the same motion is an elbow going from bent to straight:
+ * 76 degrees, nowhere near the antipode, and a blend that means what it says.
+ * The endpoints are unchanged to the bit -- a blend of one shape is that shape
+ * -- so every threshold measured against the old code still holds.
  */
-const poseQuats = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Quaternion> => {
-  const q = (d: Vector3) => new Quaternion().setFromUnitVectors(UP, d);
-  const upper = q(pose.upper(side, inner)),
-    fore = q(pose.fore(side, inner)),
-    thigh = q(pose.thigh(side, inner)),
-    shin = q(pose.shin(side, inner)),
-    foot = q(pose.foot(side, inner));
+const poseAims = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Vector3> => {
+  const upper = pose.upper(side, inner),
+    fore = pose.fore(side, inner),
+    thigh = pose.thigh(side, inner),
+    shin = pose.shin(side, inner),
+    foot = pose.foot(side, inner);
+  /** `d`, seen from a parent limb that points along `axis` and wears `rolled`'s frame. */
+  const under = (axis: Vector3, d: Vector3) =>
+    d.clone().applyQuaternion(rolled(axis, new Quaternion()).invert());
+  /** The elbow and the knee hang off a joint with a decided roll; the ankle off one without. */
+  const plain = (axis: Vector3, d: Vector3) =>
+    d.clone().applyQuaternion(new Quaternion().setFromUnitVectors(UP, axis).invert());
   return {
     shoulder: upper.clone(),
-    elbow: upper.clone().invert().multiply(fore),
+    elbow: under(upper, fore),
     hip: thigh.clone(),
-    knee: thigh.clone().invert().multiply(shin),
-    ankle: shin.clone().invert().multiply(foot),
+    knee: under(thigh, shin),
+    ankle: plain(shin, foot),
   };
 };
-
-/**
- * The slots a hinge keeps a quaternion and a weight in. The turn is two slots
- * rather than one because the pose is mirrored, and a single slot whose target
- * flips as the bank crosses zero would apply whatever weight the spring still
- * held to the wrong side of the body.
- */
 
 const SLOTS = ['box', 'delta', 'track', 'climb', 'turnIn', 'turnOut'] as const;
 type Slot = (typeof SLOTS)[number];
@@ -312,8 +361,10 @@ const PARENT: Record<Kind, Kind | null> = {
 interface Joint {
   kind: Kind;
   side: 1 | -1;
-  /** Where this joint goes in each of the shapes, parent-relative. */
-  targets: Record<Slot, Quaternion>;
+  /** Where this joint points in each of the shapes, in its parent's frame. */
+  aims: Record<Slot, Vector3>;
+  /** The blend of those, this frame. */
+  aim: Vector3;
   /** How much of each shape it is wearing; a spring per slot, not one for the figure. */
   weight: Record<Slot, Spring>;
   /** What the joint is actually doing, as opposed to what the air asked for. */
@@ -426,11 +477,11 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   const look = { x: 0, v: 0 } satisfies Spring;
   const lift = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
-    const targets = {} as Record<Slot, Quaternion>;
+    const aims = {} as Record<Slot, Vector3>;
     const weight = {} as Record<Slot, Spring>;
     for (const slot of SLOTS) {
       const { pose, inner } = SLOT_POSE[slot];
-      targets[slot] = poseQuats(pose, side, inner)[kind];
+      aims[slot] = poseAims(pose, side, inner)[kind];
       // The figure starts in the box and walks out of it, which is also what
       // `dt <= 0` has to reproduce on the very first frame.
       weight[slot] = { x: slot === 'box' ? 1 : 0, v: 0 };
@@ -438,14 +489,27 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
     return {
       kind,
       side,
-      targets,
+      aims,
+      aim: aims.box.clone(),
       weight,
       swing: { x: 0, v: 0 },
-      local: targets.box.clone(),
+      local: new Quaternion(),
       world: new Quaternion(),
     };
   });
   const at = (kind: Kind, side: 1 | -1) => joints.find((j) => j.kind === kind && j.side === side)!;
+  /**
+   * Turn every blended direction into the rotation its bone wears. The two
+   * joints on the chest get a decided roll, because what hangs off them can
+   * tell; the three below them cannot, so they keep the cheaper minimal
+   * rotation and a shin that points at the sky keeps working.
+   */
+  const aimed = () => {
+    for (const j of joints) {
+      if (j.kind === 'shoulder' || j.kind === 'hip') rolled(j.aim, j.local);
+      else j.local.setFromUnitVectors(UP, j.aim);
+    }
+  };
   /** Walk the chain: a limb's orientation is its parent's with its own laid on. */
   const chain = () => {
     for (const j of joints) {
@@ -458,6 +522,7 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   // `world` has to agree, or a body that reads the rest pose off this at load
   // -- to know how far a limb has since travelled -- reads an identity that
   // the figure was never in.
+  aimed();
   chain();
   const want = {} as Record<Slot, number>;
   const qx = new Quaternion();
@@ -582,16 +647,29 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
           if (spring.x < 0) spring.x = 0;
           sum += spring.x;
         }
-        let taken = 0;
-        j.local.copy(j.targets.box);
+        // A weighted mean of the directions, then back onto the sphere. Two
+        // shapes blended this way travel the arc between them; the quaternion
+        // slerp this replaced did not.
+        j.aim.set(0, 0, 0);
         for (const slot of SLOTS) {
           const share = sum > 0 ? j.weight[slot].x / sum : slot === 'box' ? 1 : 0;
           if (share <= POSE.floor) continue;
-          taken += share;
-          j.local.slerp(j.targets[slot], share / taken);
+          j.aim.addScaledVector(j.aims[slot], share);
         }
-        j.local.premultiply(qx.setFromAxisAngle(AXIS_X, j.swing.x));
+        // Only reachable if the kept shares cancelled, which two opposed
+        // directions at equal weight would. The box is where a figure goes
+        // when the air has asked it for nothing it can answer.
+        if (j.aim.lengthSq() < 1e-8) j.aim.copy(j.aims.box);
+        j.aim.normalize();
       }
+      aimed();
+      // The air, on top of the shape: a swing about the parent's own x, which
+      // for a shoulder is the figure's left-right axis and for the joints
+      // under it is whatever that limb hangs from. It is applied to the
+      // rotation rather than to the direction because it is the one thing here
+      // that is meant to carry down the chain -- a wrist trails further than a
+      // shoulder because it wears the shoulder's swing and then its own.
+      for (const j of joints) j.local.premultiply(qx.setFromAxisAngle(AXIS_X, j.swing.x));
       chain();
     },
   };

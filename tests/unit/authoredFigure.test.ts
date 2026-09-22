@@ -1,4 +1,16 @@
-import { Euler, Object3D, Quaternion, Vector3 } from 'three';
+import {
+  Bone,
+  BufferGeometry,
+  Euler,
+  Float32BufferAttribute,
+  MeshBasicMaterial,
+  Object3D,
+  Quaternion,
+  Skeleton,
+  SkinnedMesh,
+  Uint16BufferAttribute,
+  Vector3,
+} from 'three';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
 import { createAuthoredFigure } from '../../src/engine/avatar/AuthoredFigure';
@@ -153,5 +165,174 @@ describe('createAuthoredFigure', () => {
     expect(figure.eye.y).toBeLessThan(0);
     expect(figure.bounds.below).toBeGreaterThan(0);
     expect(new Vector3().copy(figure.eye).length()).toBeLessThan(1);
+  });
+});
+
+/**
+ * The fixture with a skin on it: two meshes over the same bones, drawn
+ * touching at three vertices and weighted differently there, which is the
+ * fault the real file has at its cuffs and its collar. Every other vertex is
+ * a long way from the other mesh, so a weld that reached them would be caught.
+ */
+const skinned = () => {
+  const root = skeleton();
+  root.updateMatrixWorld(true);
+  const bones: Bone[] = [];
+  root.traverse((node) => {
+    // The fixture is `Object3D`s, which is what the real loader hands over too
+    // once `GLTFLoader` has flattened the armature; a `Skeleton` takes them.
+    bones.push(node as unknown as Bone);
+  });
+  bones.shift(); // the holder the tree hangs off, which is not a joint
+  const skeletonOf = new Skeleton(bones);
+
+  /** A mesh of `at.length` vertices, each weighted as the table says. */
+  const mesh = (name: string, at: Vector3[], weights: ReadonlyArray<ReadonlyArray<[string, number]>>) => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new Float32BufferAttribute(
+        at.flatMap((v) => v.toArray()),
+        3,
+      ),
+    );
+    geometry.setAttribute(
+      'normal',
+      new Float32BufferAttribute(
+        at.flatMap(() => [0, 1, 0]),
+        3,
+      ),
+    );
+    const joints: number[] = [];
+    const shares: number[] = [];
+    for (const row of weights) {
+      for (let k = 0; k < 4; k += 1) {
+        const entry = row[k];
+        joints.push(entry ? bones.findIndex((b) => b.name === entry[0]) : 0);
+        shares.push(entry ? entry[1] : 0);
+      }
+    }
+    geometry.setAttribute('skinIndex', new Uint16BufferAttribute(joints, 4));
+    geometry.setAttribute('skinWeight', new Float32BufferAttribute(shares, 4));
+    const skin = new SkinnedMesh(geometry, new MeshBasicMaterial());
+    skin.name = name;
+    root.add(skin);
+    skin.bind(skeletonOf);
+    return skin;
+  };
+
+  // Three places the two meshes touch, and one each where they do not.
+  const seam = [new Vector3(0.2, 1, 0.1), new Vector3(0.21, 1.02, 0.1), new Vector3(-0.2, 0.6, 0)];
+  const skin = mesh(
+    'skin',
+    [...seam, new Vector3(0, 2, 0)],
+    [
+      [['LeftFoot', 1]],
+      [
+        ['LeftFoot', 0.8],
+        ['LeftLeg', 0.2],
+      ],
+      [['RightFoot', 1]],
+      [['LeftArm', 1]],
+    ],
+  );
+  // The same three places, a couple of millimetres off, weighted the other way
+  // round -- which is what makes them part company the moment a foot moves.
+  const suit = mesh(
+    'suit',
+    [...seam.map((v) => v.clone().addScalar(0.002)), new Vector3(0, -2, 0)],
+    [
+      [['LeftLeg', 1]],
+      [
+        ['LeftLeg', 0.7],
+        ['LeftFoot', 0.3],
+      ],
+      [['RightLeg', 1]],
+      [['RightArm', 1]],
+    ],
+  );
+  return { root, skin, suit };
+};
+
+/** A vertex where three's own skinning puts it, in the mesh's frame. */
+const skinnedAt = (mesh: SkinnedMesh, v: number) =>
+  mesh.applyBoneTransform(v, new Vector3().fromBufferAttribute(mesh.geometry.attributes.position!, v));
+
+const weightsAt = (mesh: SkinnedMesh, v: number) => {
+  const joints = mesh.geometry.attributes.skinIndex!;
+  const shares = mesh.geometry.attributes.skinWeight!;
+  const share = new Map<number, number>();
+  for (let k = 0; k < 4; k += 1) {
+    const weight = shares.getComponent(v, k);
+    if (weight > 0) share.set(joints.getComponent(v, k), weight);
+  }
+  return [...share].sort((a, b) => a[0] - b[0]);
+};
+
+describe('the skin the authored figure is cut in', () => {
+  it('re-cuts it in the pose the figure flies in, exactly', () => {
+    const { root, skin, suit } = skinned();
+    const figure = createAuthoredFigure(root);
+    // Level flight at the nominal airspeed: the pose `rebind` bakes to. What
+    // is stored must be what three's own skinning gives back, or the bake has
+    // moved the body somewhere the bind matrices do not undo.
+    figure.update(pose(), 0);
+    figure.object.updateMatrixWorld(true);
+    for (const mesh of [skin, suit]) {
+      mesh.skeleton.update();
+      const position = mesh.geometry.attributes.position!;
+      for (let v = 0; v < position.count; v += 1) {
+        const stored = new Vector3().fromBufferAttribute(position, v);
+        expect(skinnedAt(mesh, v).distanceTo(stored)).toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it('leaves the body somewhere else entirely, which is the point of it', () => {
+    // The T the file was drawn in is nowhere near the box it is flown in, so
+    // the bake has to have moved real distance. A rebind that did nothing
+    // would pass the test above and fail this one.
+    const { root, skin } = skinned();
+    const before = new Vector3().fromBufferAttribute(skin.geometry.attributes.position!, 3);
+    createAuthoredFigure(root);
+    const after = new Vector3().fromBufferAttribute(skin.geometry.attributes.position!, 3);
+    expect(after.distanceTo(before)).toBeGreaterThan(0.05);
+  });
+
+  it('gives two meshes drawn touching the same weights, and leaves the rest alone', () => {
+    const { root, skin, suit } = skinned();
+    createAuthoredFigure(root);
+    for (let v = 0; v < 3; v += 1) expect(weightsAt(suit, v)).toEqual(weightsAt(skin, v));
+    // The two vertices that are two metres from anything keep what they were
+    // drawn with: a weld that reached across the body would be a worse fault
+    // than the seam it was fixing.
+    expect(weightsAt(skin, 3)).toHaveLength(1);
+    expect(weightsAt(suit, 3)).toHaveLength(1);
+    expect(weightsAt(skin, 3)[0]![1]).toBe(1);
+  });
+
+  it('holds the seam shut through every shape the flight can fly', () => {
+    const { root, skin, suit } = skinned();
+    const figure = createAuthoredFigure(root);
+    const drawn: number[] = [];
+    figure.update(pose(), 0);
+    figure.object.updateMatrixWorld(true);
+    skin.skeleton.update();
+    for (let v = 0; v < 3; v += 1) drawn.push(skinnedAt(skin, v).distanceTo(skinnedAt(suit, v)));
+
+    for (const flown of [
+      pose({ pitch: -0.4, vy: -18, speed: SPEED * 1.45 }),
+      pose({ pitch: 0.5, vy: 9, speed: SPEED * 0.8 }),
+      pose({ bank: 0.45, pitch: -0.1, vy: -4, speed: SPEED * 1.2 }),
+    ]) {
+      figure.update(flown, 0);
+      figure.object.updateMatrixWorld(true);
+      skin.skeleton.update();
+      for (let v = 0; v < 3; v += 1) {
+        // Not equal: a blend of bone matrices is not a rigid motion, so a
+        // seam may close. It may not open, which is the fault that shows.
+        expect(skinnedAt(skin, v).distanceTo(skinnedAt(suit, v))).toBeLessThan(drawn[v]! + 1e-4);
+      }
+    }
   });
 });
