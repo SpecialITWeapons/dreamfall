@@ -11,9 +11,10 @@
 // blend skinning is worst.
 //
 // `?figure=glb` picks it. Without that the procedural body is unchanged.
-import { Group, Vector3, type Object3D } from 'three';
+import { Group, Quaternion, Vector3, type Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
+import { createPosture, type Kind } from './Posture';
 import figureUrl from './figure.glb?url';
 
 /**
@@ -31,6 +32,50 @@ const HIPS = 0.877;
  * the body's axis once it is flying face-down.
  */
 const EYE = new Vector3(0, -0.064, 0.679);
+
+/**
+ * Which bone of the authored skeleton each of the posture's ten joints writes
+ * to, left first. This is the whole of the retarget's table: the engine drives
+ * five joints a side and the CMU skeleton has a name for every one of them, so
+ * nothing here is a guess about which bone is which.
+ *
+ * The other twenty-one bones -- three vertebrae, two clavicles, two hip
+ * joints, a second neck, a head and six for the fingers -- keep the pose they
+ * were exported in and ride along. A segmented spine is what a skydiver's arch
+ * is made of and the engine has no joint to drive it with; that is the next
+ * thing to want, not this one.
+ */
+const DRIVEN: Record<Kind, readonly [left: string, right: string]> = {
+  shoulder: ['LeftArm', 'RightArm'],
+  elbow: ['LeftForeArm', 'RightForeArm'],
+  hip: ['LeftUpLeg', 'RightUpLeg'],
+  knee: ['LeftLeg', 'RightLeg'],
+  ankle: ['LeftFoot', 'RightFoot'],
+};
+
+/**
+ * The two joints whose parent in the authored skeleton is not the joint above
+ * them in the engine's chain. The engine hangs a shoulder and a hip straight
+ * off the chest; this skeleton puts a clavicle above the one and a hip joint
+ * above the other, and neither is driven. So those two take the limb's
+ * orientation in the figure's frame and undo their own parent, and the three
+ * below them -- elbow, knee, ankle -- hang off a bone this does drive and wear
+ * the engine's parent-relative rotation exactly as it comes.
+ */
+const UNDER_A_STRANGER: ReadonlySet<Kind> = new Set(['shoulder', 'hip']);
+
+interface Driven {
+  kind: Kind;
+  side: 1 | -1;
+  bone: Object3D;
+  /**
+   * The inverse of this bone's parent's orientation in the figure's frame,
+   * taken once. Only the two above have one, and only because nothing between
+   * them and the root ever moves -- the day the spine is driven, this is read
+   * every frame instead.
+   */
+  fromParent?: Quaternion;
+}
 
 export interface AuthoredFigure extends Avatar {
   /** Every mesh of the figure, for a layer switch and for counting triangles. */
@@ -68,7 +113,27 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
   laid.add(gltf.scene);
   object.add(laid);
 
+  const posture = createPosture();
+  const driven: Driven[] = [];
+  // The parents' orientations are taken while the figure is still at the
+  // origin and unrotated, so what comes back is in the figure's own frame --
+  // which is the frame the posture speaks, quarter turn and all.
+  object.updateMatrixWorld(true);
+  for (const kind of Object.keys(DRIVEN) as Kind[]) {
+    const [left, right] = DRIVEN[kind];
+    for (const [name, side] of [[left, 1] as const, [right, -1] as const]) {
+      const bone = gltf.scene.getObjectByName(name);
+      if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
+      driven.push(
+        UNDER_A_STRANGER.has(kind)
+          ? { kind, side, bone, fromParent: bone.parent!.getWorldQuaternion(new Quaternion()).invert() }
+          : { kind, side, bone },
+      );
+    }
+  }
+
   const meshes: Object3D[] = [];
+  let view: FlightPose['view'] | null = null;
   let triangles = 0;
   gltf.scene.traverse((child) => {
     const mesh = child as Object3D & { isMesh?: boolean; geometry?: { index?: { count: number } | null } };
@@ -92,9 +157,21 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
     // these numbers in `World.ts`, so sharing them is what keeps a swap of the
     // figure from also being a change to how it is allowed to fly.
     bounds: HUMAN_BOUNDS,
-    update(pose: FlightPose) {
+    update(pose: FlightPose, dt: number) {
       object.position.set(pose.x, pose.y, pose.z);
       object.rotation.set(-pose.pitch, pose.heading, pose.bank);
+      posture.update(pose, dt);
+      for (const d of driven) {
+        if (d.fromParent) d.bone.quaternion.copy(d.fromParent).multiply(posture.world(d.kind, d.side));
+        else d.bone.quaternion.copy(posture.local(d.kind, d.side));
+      }
+      // The first person draws none of the figure, for the same reason the
+      // grown one draws none of itself: this is one surface on one skeleton and
+      // a skin cannot be culled part by part.
+      if (pose.view !== view) {
+        view = pose.view;
+        for (const mesh of meshes) mesh.visible = view === 'tpp';
+      }
     },
     dispose() {
       object.traverse((child) => {

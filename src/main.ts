@@ -7,6 +7,7 @@ import type { View } from './engine/flight/Steering';
 import { createLoop } from './engine/Loop';
 import { createWorld } from './engine/World';
 import type { Avatar } from './engine/avatar/Avatar';
+import { loadAuthoredFigure } from './engine/avatar/AuthoredFigure';
 import type { DevPanel } from './dev/Panel';
 import { installDebug, type DisposeReport, type WorldDebug } from './page/Debug';
 import { createGate } from './page/Gate';
@@ -47,11 +48,18 @@ await veil.stage('ground');
 // the world takes a figure rather than making one. It rides inside the
 // ground's stage rather than getting a line of its own, because a line on the
 // veil is interface text and interface text is for the player, not for a
-// switch only whoever builds this ever throws. The import is dynamic, so
-// nobody else's bundle carries the loader or the model.
+// switch only whoever builds this ever throws.
+//
+// The import is static and that is deliberate. Behind a dynamic one it read
+// better and measured worse: this module and `ProceduralHuman` share
+// `Posture`, so the split pulled 26 kB of shapes and springs out of the main
+// bundle into a chunk of its own and charged every player a second request for
+// it -- the same fault AGENTS.md records against the dev panel. Static, the
+// module costs 0.87 kB nobody runs, and `figure.glb` is a URL until
+// `loadAuthoredFigure` is actually called, so the megabyte is still only paid
+// by whoever asked for it.
 let authored: Avatar | undefined;
 if (params.authoredFigure) {
-  const { loadAuthoredFigure } = await import('./engine/avatar/AuthoredFigure');
   authored = await loadAuthoredFigure();
   mark('figure');
 }

@@ -17,6 +17,7 @@ be deciding something the author has an opinion about.
 Options:
   --enclosed-by NAME    drop triangles of other meshes that sit inside NAME.
                         Repeatable. NAME itself is never trimmed.
+  --collar N            keep N rings of triangles around every cut (default 2).
   --drop-unskinned      drop meshes with no skin weights (the default cube).
   --drop-mesh NAME      drop this mesh outright. For geometry an enclosure test
                         cannot reach: an eyeball behind a helmet with no visor
@@ -26,7 +27,14 @@ Options:
                         and turn off doubleSided on every material.
   --keep-blend NAME     keep alphaMode BLEND on this material (a visor).
                         Repeatable. Its transmission still goes.
+  --two-sided NAME      keep this material double-sided. A sleeve and a trouser
+                        are open tubes: cull their inside and a grazing angle
+                        looks through the cuff at the sky. Repeatable.
   --max-texture N       downsample any image wider or taller than N.
+  --tint NAME=RRGGBB    paint a material's base colour. The hex is sRGB, the
+                        way a person picks it; glTF wants linear, and handed
+                        over as one another a warm skin renders as a pale
+                        ghost. Repeatable.
   --dry-run             say what would happen and write nothing.
 """
 
@@ -124,6 +132,26 @@ def crossings(point, grid_axis, axis):
         if f * sum(e2[k] * q[k] for k in range(3)) > 1e-9:
             hits += 1
     return hits
+
+
+def widen(triangles, inside, rings):
+    """Give back `rings` of triangles around every cut, so the seam tucks under.
+
+    Removing every triangle whose centre is inside the shell is right to the
+    letter and wrong at the edge of it: the test is per triangle, the shell is
+    a surface with a hole at each cuff, and a body cut flush at the hole ends
+    in a raw open rim you can see straight into. Measured on this figure, the
+    leg stopped 20 mm above where the trouser started -- two centimetres of
+    overlap, and a visible ring of nothing between the boot and the ankle.
+    Two rings of collar put the cut a good centimetre under the cloth.
+    """
+    for _ in range(rings):
+        kept = {v for tri, hid in zip(triangles, inside) if not hid for v in tri}
+        widened = [hid and not any(v in kept for v in tri) for tri, hid in zip(triangles, inside)]
+        if widened == inside:
+            break
+        inside = widened
+    return inside
 
 
 def enclosed(centres, triangles):
@@ -295,7 +323,10 @@ def main():
     p.add_argument('--drop-mesh', action='append', default=[], metavar='NAME')
     p.add_argument('--opaque', action='store_true')
     p.add_argument('--keep-blend', action='append', default=[], metavar='NAME')
+    p.add_argument('--two-sided', action='append', default=[], metavar='NAME')
     p.add_argument('--max-texture', type=int, metavar='N')
+    p.add_argument('--collar', type=int, default=2, metavar='N')
+    p.add_argument('--tint', action='append', default=[], metavar='NAME=RRGGBB')
     p.add_argument('--dry-run', action='store_true')
     a = p.parse_args()
     if not a.out and not a.dry_run:
@@ -351,7 +382,7 @@ def main():
                     continue
                 centres = [[sum(data['POSITION'][v][k] for v in tri) / 3 for k in range(3)]
                            for tri in triangles]
-                inside = enclosed(centres, shell_tris)
+                inside = widen(triangles, enclosed(centres, shell_tris), a.collar)
                 gone = sum(inside)
                 if gone:
                     report.append(f'"{name}": {gone} of {len(triangles)} triangles are inside '
@@ -394,6 +425,29 @@ def main():
             values = read_accessor(gltf, raw, base, skin['inverseBindMatrices'])
             skin['inverseBindMatrices'] = build.add(values, 'MAT4', 5126)
 
+    # A hex a person picked is sRGB; glTF's factors are linear light.
+    def to_linear(byte):
+        c = byte / 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    tints, asked = {}, {}
+    for entry in a.tint:
+        name, _, hexcode = entry.partition('=')
+        hexcode = hexcode.lstrip('#')
+        if len(hexcode) != 6:
+            raise SystemExit(f'--tint {entry}: the colour is six hex digits, as sRGB')
+        tints[name] = [to_linear(int(hexcode[k : k + 2], 16)) for k in (0, 2, 4)] + [1.0]
+        asked[name] = hexcode
+    for material in gltf.get('materials', []):
+        name = material.get('name', '')
+        if name not in tints:
+            continue
+        material.setdefault('pbrMetallicRoughness', {})['baseColorFactor'] = tints[name]
+        report.append(f'material "{name}": base colour set to sRGB #{asked[name]}')
+    for name in tints:
+        if not any(m.get('name') == name for m in gltf.get('materials', [])):
+            raise SystemExit(f'--tint {name}: no material of that name')
+
     # A material nothing wears is a texture nothing reads is a picture nobody
     # sees. Dropping the eyeballs left an iris behind at 80 KiB, so the sweep
     # starts at the material and falls through.
@@ -423,7 +477,7 @@ def main():
             report.append(f'material "{name}": transmission stripped')
         if not extensions:
             material.pop('extensions', None)
-        if material.get('doubleSided'):
+        if material.get('doubleSided') and name not in a.two_sided:
             material['doubleSided'] = False
         if name in a.keep_blend:
             report.append(f'material "{name}": alphaMode BLEND kept')
