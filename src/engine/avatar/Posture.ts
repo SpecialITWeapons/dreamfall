@@ -315,10 +315,30 @@ export interface Torso {
   lean: number;
 }
 
+/**
+ * Where the figure is looking, in radians, for a body with a neck to look
+ * with. Both are the whole of it, to spread over however many bones a neck
+ * turns out to have.
+ *
+ * A head is not a limb and does not wait for the air: a person looks into a
+ * turn before they are in it, which is why this is sprung faster than a
+ * shoulder rather than slower. It cannot actually lead -- nothing here knows
+ * what the flight is about to do -- but arriving first is most of what leading
+ * looks like.
+ */
+export interface Gaze {
+  /** Into the turn. Positive is toward the figure's left, which is +x. */
+  yaw: number;
+  /** Chin up, which is what keeps the eyes on the horizon while the back arches. */
+  pitch: number;
+}
+
 export interface Posture {
   update(pose: FlightPose, dt: number): void;
   /** What the spine is doing this frame. Zero throughout on a body built without one. */
   readonly torso: Torso;
+  /** Where the head is looking this frame, relative to the chest. */
+  readonly gaze: Gaze;
   /**
    * The joint's rotation relative to the one above it. A skeleton built the
    * way `ProceduralHuman` builds its own -- chest, then shoulder, then elbow,
@@ -348,6 +368,16 @@ export interface Posture {
  */
 const TORSO = { arch: 0.35, lean: 0.22, lag: 0.22 };
 
+/**
+ * How far the head turns, and how fast. Thirty degrees into a hard turn is
+ * what a person does without moving their shoulders; past that the shoulders
+ * go too, and the shoulders here are busy flying. The chin comes up with the
+ * arch and by rather less than the arch, so the eyes end up somewhere between
+ * the horizon and the ground rather than level -- which is where a skydiver's
+ * eyes are, because the ground is the thing worth looking at.
+ */
+const GAZE = { yaw: 0.52, pitch: 0.24, lag: 0.08 };
+
 export function createPosture(opts: { spine?: boolean } = {}): Posture {
   let time = 0;
   // Where the arch is felt. A body with no joint between the hips and the
@@ -358,6 +388,9 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   const torso: Torso = { arch: 0, lean: 0 };
   const bend = { x: 0, v: 0 } satisfies Spring;
   const sway = { x: 0, v: 0 } satisfies Spring;
+  const gaze: Gaze = { yaw: 0, pitch: 0 };
+  const look = { x: 0, v: 0 } satisfies Spring;
+  const lift = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
     const targets = {} as Record<Slot, Quaternion>;
     const weight = {} as Record<Slot, Spring>;
@@ -384,6 +417,7 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
 
   return {
     torso,
+    gaze,
     local: (kind, side) => at(kind, side).local,
     world: (kind, side) => at(kind, side).world,
     update(pose, dt) {
@@ -414,6 +448,16 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
       );
       torso.arch = bend.x;
       torso.lean = sway.x;
+      // The head. A bank is the only thing here that knows a turn is happening
+      // -- the heading is where the figure points, not how fast it is coming
+      // round -- and a banked flyer is a turning one, so the bank is what the
+      // head reads. It leans the other way from the sign of the bank for the
+      // same reason the inner side of the body does: a roll about +z takes the
+      // left side down, and down is the way round.
+      settle(look, -clamp01(pose.bank / POSE.bank, -1) * GAZE.yaw, 1 / GAZE.lag, DAMPING.joint, dt);
+      settle(lift, arch * GAZE.pitch, 1 / GAZE.lag, DAMPING.joint, dt);
+      gaze.yaw = look.x;
+      gaze.pitch = lift.x;
 
       // ---- what shape the figure is holding --------------------------------
       const dive = clamp01(-pose.pitch / POSE.dive);

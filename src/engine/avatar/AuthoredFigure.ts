@@ -77,20 +77,34 @@ const SPINE: ReadonlyArray<{ bone: string; share: number }> = [
 ];
 
 /**
- * A vertebra, with the two axes it bends about written in its parent's frame.
- *
- * Not its own local axes: those carry whatever rotation the bone was exported
- * with, and `LowerBack`'s idea of x is not the figure's. What an arch is, is a
- * rotation about the figure's own left-right axis, so that axis is taken into
- * each parent's frame once and the bend is applied there.
+ * The neck, and the head on the end of it. A real neck turns furthest at the
+ * top -- the joint under the skull does about half of it on its own -- so the
+ * head takes the largest share and the two cervical bones divide the rest.
+ * Written the other way round, the head stays square to the shoulders and only
+ * the throat bends, which reads as a wound rather than as looking.
  */
-interface Vertebra {
+const NECK: ReadonlyArray<{ bone: string; share: number }> = [
+  { bone: 'Neck', share: 0.25 },
+  { bone: 'Neck1', share: 0.3 },
+  { bone: 'Head', share: 0.45 },
+];
+
+/**
+ * A bone bent about two of the figure's own axes.
+ *
+ * Not about its own local axes: a bone carries whatever rotation Blender gave
+ * it, and `LowerBack`'s idea of x is not the figure's. What an arch is, is a
+ * rotation about the figure's left-right axis, so that axis is taken into the
+ * bone's parent's frame once, at load, and the bend is applied there. Both
+ * chains here hang off bones nothing drives, which is what lets it be once.
+ */
+interface Bendable {
   bone: Object3D;
-  /** What the bone was exported wearing; the bend is laid over this, never instead of it. */
+  /** What the bone was exported wearing; a bend is laid over this, never instead of it. */
   rest: Quaternion;
   /** The figure's x and y, in this bone's parent's frame. */
-  archAxis: Vector3;
-  leanAxis: Vector3;
+  aboutX: Vector3;
+  aboutY: Vector3;
   share: number;
 }
 
@@ -148,7 +162,6 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
   // that are there for it.
   const posture = createPosture({ spine: true });
   const driven: Driven[] = [];
-  const spine: Vertebra[] = [];
   // The parents' orientations are taken while the figure is still at the
   // origin and unrotated, so what comes back is in the figure's own frame --
   // which is the frame the posture speaks, quarter turn and all.
@@ -166,18 +179,30 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
     }
   }
 
-  for (const { bone: name, share } of SPINE) {
-    const bone = gltf.scene.getObjectByName(name);
-    if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
-    const intoParent = bone.parent!.getWorldQuaternion(new Quaternion()).invert();
-    spine.push({
-      bone,
-      share,
-      rest: bone.quaternion.clone(),
-      archAxis: new Vector3(1, 0, 0).applyQuaternion(intoParent),
-      leanAxis: new Vector3(0, 1, 0).applyQuaternion(intoParent),
+  const bendable = (names: typeof SPINE): Bendable[] =>
+    names.map(({ bone: name, share }) => {
+      const bone = gltf.scene.getObjectByName(name);
+      if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
+      const intoParent = bone.parent!.getWorldQuaternion(new Quaternion()).invert();
+      return {
+        bone,
+        share,
+        rest: bone.quaternion.clone(),
+        aboutX: new Vector3(1, 0, 0).applyQuaternion(intoParent),
+        aboutY: new Vector3(0, 1, 0).applyQuaternion(intoParent),
+      };
     });
-  }
+  const spine = bendable(SPINE);
+  const neck = bendable(NECK);
+
+  /** Bend a chain by `x` about the figure's left-right axis and `y` about its up. */
+  const flex = (chain: Bendable[], x: number, y: number) => {
+    for (const part of chain) {
+      bend.setFromAxisAngle(part.aboutX, x * part.share);
+      sway.setFromAxisAngle(part.aboutY, y * part.share);
+      part.bone.quaternion.copy(bend).multiply(sway).multiply(part.rest);
+    }
+  };
 
   const bend = new Quaternion();
   const sway = new Quaternion();
@@ -214,14 +239,12 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
         if (d.fromParent) d.bone.quaternion.copy(d.fromParent).multiply(posture.world(d.kind, d.side));
         else d.bone.quaternion.copy(posture.local(d.kind, d.side));
       }
-      // The back. Both bends are about axes in the parent's frame, so they go
-      // on in front of the rest rather than after it, and the bone keeps
-      // whatever the exporter gave it underneath.
-      for (const v of spine) {
-        bend.setFromAxisAngle(v.archAxis, -posture.torso.arch * v.share);
-        sway.setFromAxisAngle(v.leanAxis, posture.torso.lean * v.share);
-        v.bone.quaternion.copy(bend).multiply(sway).multiply(v.rest);
-      }
+      // The back arches and leans; the head lifts its chin and looks into the
+      // turn. Both are negative about x, because a rotation that way takes the
+      // figure's `ahead` toward its `up` -- and up, for a body lying on the
+      // air, is away from the ground it is looking at.
+      flex(spine, -posture.torso.arch, posture.torso.lean);
+      flex(neck, -posture.gaze.pitch, posture.gaze.yaw);
       // The first person draws none of the figure, for the same reason the
       // grown one draws none of itself: this is one surface on one skeleton and
       // a skin cannot be culled part by part.

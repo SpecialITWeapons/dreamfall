@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
-import { JOINTS, createPosture } from '../../src/engine/avatar/Posture';
+import { JOINTS, POSE, createPosture } from '../../src/engine/avatar/Posture';
 import { SPEED } from '../../src/engine/flight/FlightController';
 
 const pose = (over: Partial<FlightPose> = {}): FlightPose => ({
@@ -100,5 +100,65 @@ describe('createPosture', () => {
     // `z` is ahead: an arm swept back along the body has less of it than an arm
     // held out in front, whichever shape the names are given.
     expect(points(dive.world('shoulder', 1)).z).toBeLessThan(points(climb.world('shoulder', 1)).z);
+  });
+
+  it('the arch goes to the hips or to the spine, and never to both', () => {
+    const dive = pose({ vy: -18, pitch: -0.4, speed: SPEED * 1.4 });
+    const boned = createPosture({ spine: true });
+    const boneless = createPosture();
+    boned.update(dive, 0);
+    boneless.update(dive, 0);
+    // A body with vertebrae bends them; one without keeps the arch in its
+    // hips, which is where `ProceduralHuman` has always put it.
+    expect(boned.torso.arch).toBeGreaterThan(0.2);
+    expect(boneless.torso.arch).toBe(0);
+    const hip = (p: ReturnType<typeof createPosture>) =>
+      new Vector3().copy(UP).applyQuaternion(p.world('hip', 1));
+    expect(hip(boned).angleTo(hip(boneless))).toBeGreaterThan(0.05);
+  });
+
+  it('the head looks into the turn, both ways, and by the same amount', () => {
+    const left = createPosture({ spine: true });
+    const right = createPosture({ spine: true });
+    // A roll about +z takes the left side down, which is a turn to the left.
+    left.update(pose({ bank: -POSE.bank }), 0);
+    right.update(pose({ bank: POSE.bank }), 0);
+    expect(left.gaze.yaw).toBeGreaterThan(0.4);
+    expect(right.gaze.yaw).toBeCloseTo(-left.gaze.yaw, 6);
+    // Level flight looks straight ahead. Not asserted as exactly zero for the
+    // pitch: the chin follows the descent, and level is not descending.
+    const ahead = createPosture({ spine: true });
+    ahead.update(pose(), 0);
+    // `toBeCloseTo`, not `toBe`: a bank of zero comes out of the arithmetic as
+    // negative zero, and `Object.is(-0, 0)` is false.
+    expect(ahead.gaze.yaw).toBeCloseTo(0, 10);
+    expect(ahead.gaze.pitch).toBeCloseTo(0, 10);
+  });
+
+  it('the chin comes up with the descent, and by less than the back bends', () => {
+    const posture = createPosture({ spine: true });
+    posture.update(pose({ vy: -20 }), 0);
+    expect(posture.gaze.pitch).toBeGreaterThan(0.15);
+    // Past the arch and the eyes leave the ground, which is the one thing a
+    // skydiver is looking at.
+    expect(posture.gaze.pitch).toBeLessThan(posture.torso.arch);
+  });
+
+  it('the head arrives before the shoulder does, because a person looks first', () => {
+    const turning = pose({ bank: POSE.bank });
+    const posture = createPosture({ spine: true });
+    posture.update(pose(), 0);
+    // One short step into a turn from level: how much of the way each has come.
+    posture.update(turning, 1 / 60);
+    const settled = createPosture({ spine: true });
+    settled.update(turning, 0);
+    const headShare = Math.abs(posture.gaze.yaw / settled.gaze.yaw);
+    const shoulder = (p: ReturnType<typeof createPosture>) => p.world('shoulder', 1);
+    const level = createPosture({ spine: true });
+    level.update(pose(), 0);
+    const shoulderShare =
+      level.world('shoulder', 1).angleTo(shoulder(posture)) /
+      level.world('shoulder', 1).angleTo(shoulder(settled));
+    expect(headShare).toBeGreaterThan(shoulderShare);
   });
 });
