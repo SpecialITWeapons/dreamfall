@@ -394,6 +394,25 @@ def main():
             values = read_accessor(gltf, raw, base, skin['inverseBindMatrices'])
             skin['inverseBindMatrices'] = build.add(values, 'MAT4', 5126)
 
+    # A material nothing wears is a texture nothing reads is a picture nobody
+    # sees. Dropping the eyeballs left an iris behind at 80 KiB, so the sweep
+    # starts at the material and falls through.
+    worn_materials = {pr['material'] for mesh in kept_meshes for pr in mesh['primitives']
+                      if 'material' in pr}
+    materials, material_remap = [], {}
+    for mi, material in enumerate(gltf.get('materials', [])):
+        if mi in worn_materials:
+            material_remap[mi] = len(materials)
+            materials.append(material)
+        else:
+            report.append(f'material "{material.get("name", mi)}": nothing wears it, dropped')
+    if 'materials' in gltf:
+        gltf['materials'] = materials
+        for mesh in kept_meshes:
+            for pr in mesh['primitives']:
+                if 'material' in pr:
+                    pr['material'] = material_remap[pr['material']]
+
     # Materials first, then the pictures, because stripping an extension can
     # orphan the texture that fed it: this figure's transmission map is 600 KiB
     # of a picture that, once the transmission goes, nothing reads.
