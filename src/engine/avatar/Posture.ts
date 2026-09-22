@@ -297,8 +297,28 @@ interface Joint {
   world: Quaternion;
 }
 
+/**
+ * What the torso is doing, in radians, for a body that has a spine to do it
+ * with. Both are the whole of it: a consumer with three vertebrae gives each a
+ * third, one with six gives each a sixth, and neither number is this module's
+ * business.
+ */
+export interface Torso {
+  /**
+   * The arch. Positive is belly down and hips forward, which is the shape a
+   * skydiver holds to stay stable and the first thing they are taught. It
+   * follows the descent rather than the nose, because what arches a back is
+   * falling, not pointing.
+   */
+  arch: number;
+  /** Side bend into a turn: the body leads the bank rather than being carried by it. */
+  lean: number;
+}
+
 export interface Posture {
   update(pose: FlightPose, dt: number): void;
+  /** What the spine is doing this frame. Zero throughout on a body built without one. */
+  readonly torso: Torso;
   /**
    * The joint's rotation relative to the one above it. A skeleton built the
    * way `ProceduralHuman` builds its own -- chest, then shoulder, then elbow,
@@ -320,8 +340,24 @@ export interface Posture {
  * now" -- the springs are placed rather than stepped -- which is how a world
  * poses a body before its first frame.
  */
-export function createPosture(): Posture {
+/**
+ * How far the torso bends at the ends of what the flight can do. A skydiver's
+ * arch across the whole lumbar and thoracic run is twenty degrees or so, not
+ * the forty a photograph suggests -- a photograph is taken at the moment of
+ * the hardest arch there is, and this figure holds its shape for minutes.
+ */
+const TORSO = { arch: 0.35, lean: 0.22, lag: 0.22 };
+
+export function createPosture(opts: { spine?: boolean } = {}): Posture {
   let time = 0;
+  // Where the arch is felt. A body with no joint between the hips and the
+  // shoulders has to put it in the hips, which is where an arch is felt
+  // anyway; a body with three vertebrae puts it where it belongs and the hips
+  // stop doing a job that is not theirs. Doing both would arch it twice.
+  const spine = opts.spine ?? false;
+  const torso: Torso = { arch: 0, lean: 0 };
+  const bend = { x: 0, v: 0 } satisfies Spring;
+  const sway = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
     const targets = {} as Record<Slot, Quaternion>;
     const weight = {} as Record<Slot, Spring>;
@@ -347,6 +383,7 @@ export function createPosture(): Posture {
   const qx = new Quaternion();
 
   return {
+    torso,
     local: (kind, side) => at(kind, side).local,
     world: (kind, side) => at(kind, side).world,
     update(pose, dt) {
@@ -363,9 +400,20 @@ export function createPosture(): Posture {
       // the nominal they trail, below it they come forward, and the far joints
       // feel it more than the near ones.
       const drag = press - 1;
-      // A dive also arches the back, and the figure has no spine joint to arch
-      // -- so the hips take it, which is where an arch is felt anyway.
+      // A dive arches the back. Where that arch is worn is the one thing this
+      // module lets a body differ about, because it is the one thing a body
+      // can differ about: a spine or no spine.
       const arch = clamp01(-pose.vy / 20, -1);
+      settle(bend, spine ? arch * TORSO.arch : 0, 1 / TORSO.lag, DAMPING.joint, dt);
+      settle(
+        sway,
+        spine ? clamp01(pose.bank / POSE.bank, -1) * TORSO.lean : 0,
+        1 / TORSO.lag,
+        DAMPING.joint,
+        dt,
+      );
+      torso.arch = bend.x;
+      torso.lean = sway.x;
 
       // ---- what shape the figure is holding --------------------------------
       const dive = clamp01(-pose.pitch / POSE.dive);
@@ -403,7 +451,7 @@ export function createPosture(): Posture {
             swing = Math.sin(w * 1.3 + 0.7 + phase) * flutter * 1.2;
             break;
           case 'hip':
-            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + drift + arch * 0.12;
+            swing = Math.sin(w * 0.8 + 1.1 + phase) * flutter * 0.7 + drift + (spine ? 0 : arch * 0.12);
             break;
           case 'knee':
             swing = Math.sin(w * 1.1 + 2.4 + phase) * flutter * 1.4;
