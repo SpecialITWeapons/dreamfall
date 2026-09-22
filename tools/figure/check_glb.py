@@ -23,6 +23,7 @@ from pathlib import Path
 # src/engine/avatar/ProceduralHuman.ts and tools/figure/figure.json.
 ENGINE_BONES = 16
 ENGINE_HEIGHT = 1.7  # metres, nose to toe
+ENGINE_TRIANGLES = 33_000  # what Flesh.ts grows, per AGENTS.md
 # WebGPU gives a pipeline eight vertex buffers and three does not ask for more;
 # a pipeline over it fails validation quietly. See AGENTS.md.
 MAX_VERTEX_BUFFERS = 8
@@ -289,7 +290,9 @@ def main():
             else:
                 warnings.append(f'{tag}: alphaMode BLEND. Opaque costs less and sorts itself.')
         if mat.get('doubleSided'):
-            warnings.append(f'{tag}: doubleSided -- twice the fragments, for a suit nobody sees inside.')
+            warnings.append(
+                f'{tag}: doubleSided -- twice the fragments. A closed surface does not need it; a hole '
+                f'is a hole to close in the mesh.')
 
     # --- the textures -------------------------------------------------------
     for ii, img in enumerate(gltf.get('images', [])):
@@ -347,18 +350,38 @@ def main():
                         f'attribute in Blender.')
 
     # --- the figure itself --------------------------------------------------
-    lo = [1e9] * 3
-    hi = [-1e9] * 3
+    # Only what the skeleton moves is the figure. Measured over every mesh in
+    # the file instead, Blender's default cube -- two metres on a side, sitting
+    # where nobody deleted it -- makes the figure 2.67 m tall.
+    lo, hi, tris, loose = [1e9] * 3, [-1e9] * 3, 0, []
     for mesh in gltf.get('meshes', []):
         for prim in mesh['primitives']:
             a = gltf['accessors'][prim['attributes']['POSITION']]
+            count = (gltf['accessors'][prim['indices']]['count'] // 3
+                     if 'indices' in prim else a['count'] // 3)
+            if 'JOINTS_0' not in prim['attributes']:
+                loose.append((mesh.get('name', ''), count))
+                continue
+            tris += count
             for k in range(3):
                 lo[k] = min(lo[k], a['min'][k])
                 hi[k] = max(hi[k], a['max'][k])
-    height = hi[1] - lo[1]
-    notes.append(f'figure: {height:.3f} m tall, {hi[0] - lo[0]:.3f} m across, {hi[2] - lo[2]:.3f} m deep')
-    if not 1.4 < height < 2.1:
-        warnings.append(f'figure: {height:.3f} m tall. The engine\'s own is about {ENGINE_HEIGHT} m.')
+    if loose:
+        warnings.append(
+            'not weighted to the skeleton, so not the figure: '
+            + ', '.join(f'"{n}" ({t} tris)' for n, t in loose)
+            + '. Exporting the whole scene carries whatever else is in it.')
+    if tris:
+        height = hi[1] - lo[1]
+        notes.append(
+            f'figure: {height:.3f} m tall, {hi[0] - lo[0]:.3f} m across, {hi[2] - lo[2]:.3f} m deep, '
+            f'{tris} tris over {len(gltf.get("meshes", [])) - len(loose)} skinned meshes')
+        if not 1.4 < height < 2.1:
+            warnings.append(f'figure: {height:.3f} m tall. The engine\'s own is about {ENGINE_HEIGHT} m.')
+        if tris > ENGINE_TRIANGLES:
+            warnings.append(
+                f'figure: {tris} tris against the {ENGINE_TRIANGLES} the engine grows for itself. '
+                f'An authored figure that costs more than the procedural one is not a saving.')
 
     for line in notes:
         print(f'  . {line}')
