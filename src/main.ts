@@ -6,6 +6,8 @@ import { createEngine } from './engine/Engine';
 import type { View } from './engine/flight/Steering';
 import { createLoop } from './engine/Loop';
 import { createWorld } from './engine/World';
+import type { Avatar } from './engine/avatar/Avatar';
+import { loadAuthoredFigure } from './engine/avatar/AuthoredFigure';
 import type { DevPanel } from './dev/Panel';
 import { installDebug, type DisposeReport, type WorldDebug } from './page/Debug';
 import { createGate } from './page/Gate';
@@ -42,6 +44,25 @@ hud.setBackend(engine.backend);
 engine.resize(innerWidth, innerHeight, devicePixelRatio);
 
 await veil.stage('ground');
+// `?figure=glb`: the authored body, fetched before the world is built because
+// the world takes a figure rather than making one. It rides inside the
+// ground's stage rather than getting a line of its own, because a line on the
+// veil is interface text and interface text is for the player, not for a
+// switch only whoever builds this ever throws.
+//
+// The import is static and that is deliberate. Behind a dynamic one it read
+// better and measured worse: this module and `ProceduralHuman` share
+// `Posture`, so the split pulled 26 kB of shapes and springs out of the main
+// bundle into a chunk of its own and charged every player a second request for
+// it -- the same fault AGENTS.md records against the dev panel. Static, the
+// module costs 0.87 kB nobody runs, and `figure.glb` is a URL until
+// `loadAuthoredFigure` is actually called, so the megabyte is still only paid
+// by whoever asked for it.
+let authored: Avatar | undefined;
+if (params.authoredFigure) {
+  authored = await loadAuthoredFigure();
+  mark('figure');
+}
 // the window of ground fills here, and the materials are assembled: half a
 // second of blocking work, which is why the line above waits for a paint
 const world = createWorld({
@@ -55,6 +76,7 @@ const world = createWorld({
   muted: settings.muted,
   reducedMotion: motionPreference.matches,
   deferScenery: true,
+  avatar: authored,
 });
 mark('ground');
 // The species, the props and their painted textures: most of a second of

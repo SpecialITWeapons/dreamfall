@@ -3,6 +3,8 @@ export interface PageParams {
   forceWebGL: boolean;
   profiling: boolean;
   dev: boolean;
+  /** `?figure=glb`: fly the authored body instead of the grown one. */
+  authoredFigure: boolean;
 }
 
 /**
@@ -22,6 +24,7 @@ export function resolveParams(
     forceWebGL: params.get('webgl') === '1',
     profiling: params.has('profile'),
     dev: params.get('dev') === '1',
+    authoredFigure: params.get('figure') === 'glb',
   };
 }
 

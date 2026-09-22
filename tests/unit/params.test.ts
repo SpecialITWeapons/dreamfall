@@ -3,8 +3,14 @@ import { addressWithSeed, resolveParams, shareAddress } from '../../src/page/Par
 
 describe('resolveParams', () => {
   it('reads an explicit seed and flags', () => {
-    const p = resolveParams('?seed=42&webgl=1&profile=1&dev=1');
-    expect(p).toEqual({ seed: 42, forceWebGL: true, profiling: true, dev: true });
+    const p = resolveParams('?seed=42&webgl=1&profile=1&dev=1&figure=glb');
+    expect(p).toEqual({
+      seed: 42,
+      forceWebGL: true,
+      profiling: true,
+      dev: true,
+      authoredFigure: true,
+    });
   });
   it('falls back to the remembered seed, then to a random 32-bit one', () => {
     expect(resolveParams('', () => 0.5, 7).seed).toBe(7);
@@ -20,6 +26,10 @@ describe('resolveParams', () => {
     expect(p.forceWebGL).toBe(false);
     expect(p.profiling).toBe(false);
     expect(p.dev).toBe(false);
+    expect(p.authoredFigure).toBe(false);
+    // the authored body is `?figure=glb` exactly; anything else is the grown one
+    expect(resolveParams('?figure').authoredFigure).toBe(false);
+    expect(resolveParams('?figure=1').authoredFigure).toBe(false);
     // `?dev=1` and nothing else: a bare `?dev` or `?dev=0` is not a request for the panel
     expect(resolveParams('?dev').dev).toBe(false);
     expect(resolveParams('?dev=0').dev).toBe(false);
