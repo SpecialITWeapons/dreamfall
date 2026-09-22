@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
 import { JOINTS, POSE, createPosture } from '../../src/engine/avatar/Posture';
+import { createFlightController } from '../../src/engine/flight/FlightController';
 import { SPEED } from '../../src/engine/flight/FlightController';
 
 const pose = (over: Partial<FlightPose> = {}): FlightPose => ({
@@ -160,5 +161,78 @@ describe('createPosture', () => {
       level.world('shoulder', 1).angleTo(shoulder(posture)) /
       level.world('shoulder', 1).angleTo(shoulder(settled));
     expect(headShare).toBeGreaterThan(shoulderShare);
+  });
+
+  /**
+   * How far from level a turn has taken the shoulders, both sides summed. The
+   * turn is the one shape the two sides disagree about, so one side alone
+   * answers half the question.
+   */
+  const turned = (p: ReturnType<typeof createPosture>, level: ReturnType<typeof createPosture>) =>
+    p.world('shoulder', 1).angleTo(level.world('shoulder', 1)) +
+    p.world('shoulder', -1).angleTo(level.world('shoulder', -1));
+
+  /** A second of flight at 60 Hz, with the bank written by `at`. */
+  const fly = (at: (t: number) => number) => {
+    const p = createPosture({ spine: true });
+    for (let i = 0; i < 60; i++) p.update(pose({ bank: at(i / 60) }), 1 / 60);
+    return p;
+  };
+
+  it('rolling into a turn wears more of it than sitting in the same bank', () => {
+    const level = fly(() => 0);
+    // Both arrive at the same bank. One has been rolling there at 0.3 rad/s,
+    // which is a brisk entry and well inside what the controller can do; the
+    // other has been sitting in it the whole time.
+    const rolling = fly((t) => t * 0.3);
+    const holding = fly(() => 0.3);
+    expect(turned(rolling, level)).toBeGreaterThan(turned(holding, level) * 1.1);
+  });
+
+  it('rolling out of one starts letting go before the bank does', () => {
+    const level = fly(() => 0);
+    const leaving = fly((t) => 0.6 - t * 0.3);
+    const holding = fly(() => 0.3);
+    // Both end at 0.3 of bank. The one on its way out is already unwinding,
+    // which is the only anticipation available to something that cannot see
+    // what the flight is about to do.
+    expect(turned(leaving, level)).toBeLessThan(turned(holding, level) * 0.9);
+  });
+
+  it('a roll rate nobody can fly would be a shape nobody can reach', () => {
+    // The same guard AGENTS.md asks of every threshold in `POSE`, for the one
+    // this file added: measured against the controller rather than written
+    // from a picture. Holding the stick hard over rolls at about 0.32 rad/s
+    // and reversing an S-turn peaks near 0.62.
+    const flight = createFlightController({
+      seed: 42,
+      groundAt: () => -4000,
+      dayPhase: () => 0.3,
+      start: { y: 1000 },
+    });
+    let last = flight.state.bank;
+    let peak = 0;
+    for (let t = 0; t < 30; t += 1 / 60) {
+      flight.fly(Math.floor(t / 3) % 2 === 0 ? -1 : 1, 0);
+      flight.step(1 / 60);
+      if (t > 0.5) peak = Math.max(peak, Math.abs(flight.state.bank - last) * 60);
+      last = flight.state.bank;
+    }
+    expect(POSE.roll).toBeLessThanOrEqual(peak);
+    // And not so far under it that every twitch of the stick is a whole roll.
+    expect(POSE.roll).toBeGreaterThan(peak / 2);
+  });
+
+  it('a body placed before its first frame is not rolling', () => {
+    // `dt <= 0` has no previous bank to difference against, and a resumed
+    // flight arrives already banked: differencing that against a zero nobody
+    // flew would throw the figure into a turn it is not in.
+    const placed = createPosture({ spine: true });
+    placed.update(pose({ bank: 0.35 }), 0);
+    const settled = createPosture({ spine: true });
+    for (let i = 0; i < 120; i++) settled.update(pose({ bank: 0.35 }), 1 / 60);
+    const level = createPosture({ spine: true });
+    level.update(pose(), 0);
+    expect(Math.abs(turned(placed, level) - turned(settled, level))).toBeLessThan(0.05);
   });
 });

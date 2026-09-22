@@ -190,7 +190,34 @@ const SLOT_POSE: Record<Slot, { pose: Pose; inner: boolean }> = {
  * worth a slerp, and is what keeps the blend at two or three shapes rather
  * than six.
  */
-export const POSE = { dive: 0.4, climb: 0.42, fast: 0.28, slow: 0.22, bank: 0.38, lean: 0.7, floor: 0.005 };
+export const POSE = {
+  dive: 0.4,
+  climb: 0.42,
+  fast: 0.28,
+  slow: 0.22,
+  bank: 0.38,
+  lean: 0.7,
+  floor: 0.005,
+  /**
+   * How fast a roll has to be going to count as a whole one, rad/s. Measured
+   * on the controller like every other number here: holding the stick hard
+   * over rolls at 0.32 and reversing an S-turn peaks at 0.62, so 0.45 is a
+   * brisk entry rather than a ceiling nothing reaches.
+   */
+  roll: 0.45,
+  /**
+   * What a roll is worth against a bank that is merely being held. Half: a
+   * flyer rolling into a turn is *doing* something and a flyer sitting in one
+   * has already done it, and the difference between those two is most of what
+   * makes a turn look intended rather than suffered. It goes the other way on
+   * the way out, so the shape starts unwinding while the bank is still there
+   * -- which is the only anticipation available to something that cannot see
+   * the future.
+   */
+  lead: 0.5,
+  /** How long the roll rate is smoothed over, s. A raw derivative of a banking angle is noise. */
+  rollLag: 0.12,
+};
 
 /**
  * How long a joint takes to catch up with what the air is asking of it, s. The
@@ -389,6 +416,13 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   const bend = { x: 0, v: 0 } satisfies Spring;
   const sway = { x: 0, v: 0 } satisfies Spring;
   const gaze: Gaze = { yaw: 0, pitch: 0 };
+  // The bank a frame ago, and how fast it is moving. Nothing in `FlightPose`
+  // carries a roll rate, and the first frame has no previous bank to take one
+  // from -- a resumed flight arrives already banked, and differencing against
+  // a zero nobody flew would throw the figure into a turn it is not in.
+  let lastBank = 0;
+  let flown = false;
+  const rolling = { x: 0, v: 0 } satisfies Spring;
   const look = { x: 0, v: 0 } satisfies Spring;
   const lift = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
@@ -483,7 +517,20 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
       const track = clamp01((drive - 0.5) * 2) * road;
       const delta = (1 - Math.abs(drive - 0.5) * 2) * road;
       const box = clamp01((0.5 - drive) * 2) * road;
-      const lean = clamp01(Math.abs(pose.bank) / POSE.bank) * POSE.lean;
+      // How much of a turn the figure is wearing. Two things say so and they
+      // are not the same thing: the bank it is holding, and how fast that bank
+      // is being changed. Before this only the first was read, so rolling into
+      // a turn and sitting in one looked alike -- and coming out of one, the
+      // shape unwound exactly as slowly as the bank did, which is a figure
+      // being carried by a turn rather than flying one.
+      const roll = dt > 0 && flown ? (pose.bank - lastBank) / dt : 0;
+      lastBank = pose.bank;
+      flown = true;
+      settle(rolling, roll, 1 / POSE.rollLag, DAMPING.joint, dt);
+      // Positive where the roll is going the way the bank already leans, which
+      // is into the turn; negative on the way out, where it takes lean away.
+      const lead = clamp01((Math.sign(pose.bank) * rolling.x) / POSE.roll, -1);
+      const lean = clamp01(Math.abs(pose.bank) / POSE.bank + lead * POSE.lead) * POSE.lean;
       const spare = (1 - lean) / (track + delta + climb + box || 1);
       want.box = box * spare;
       want.delta = delta * spare;
