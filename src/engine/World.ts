@@ -13,8 +13,8 @@ import { createAmbience, type Ambience } from './audio/Ambience';
 import { emptyMix, layerMix } from './audio/AmbienceModel';
 import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
-import type { FlightPose } from './avatar/Avatar';
-import { HUMAN_BOUNDS, createProceduralHuman, type ProceduralHuman } from './avatar/ProceduralHuman';
+import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './avatar/Avatar';
+import { createProceduralHuman } from './avatar/ProceduralHuman';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
 import { MAX_STEP, MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
@@ -61,6 +61,12 @@ export interface WorldOptions {
   volume?: number;
   muted?: boolean;
   reducedMotion?: boolean;
+  /**
+   * The figure to fly. Without one the world grows its own. An authored body
+   * has to be fetched before the world is built, and what the page fetches is
+   * the page's business.
+   */
+  avatar?: Avatar;
 }
 
 export interface World {
@@ -78,7 +84,7 @@ export interface World {
   readonly clock: DayClock;
   readonly steering: Steering;
   readonly chase: ChaseCamera;
-  readonly avatar: ProceduralHuman;
+  readonly avatar: Avatar;
   readonly audio: Ambience;
   readonly obstacles: Obstacles;
   readonly scenery: Scenery | null;
@@ -204,7 +210,11 @@ export function createWorld(opts: WorldOptions): World {
   scene.add(clouds.mesh);
   const cloudSea = createCloudSea(uniforms, horizon);
   scene.add(cloudSea.mesh);
-  const avatar = createProceduralHuman(litMaterial);
+  // The figure is the one thing the world will take ready-made: an authored
+  // body has to be fetched, and fetching is the page's business, not the
+  // world's. Nothing else here knows which one it got -- `Avatar` is the whole
+  // of what the flight and the camera ask for.
+  const avatar = opts.avatar ?? createProceduralHuman(litMaterial);
   scene.add(avatar.object);
   // The layer switches. The scenery's arrays are filled when it is planted --
   // which is after this, when the page defers the bake for its own veil -- and

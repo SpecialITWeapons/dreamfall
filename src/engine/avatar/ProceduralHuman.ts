@@ -34,13 +34,13 @@ import { vertexColor } from 'three/tsl';
 import { SPEED } from '../flight/FlightController';
 import type { LitMaterial } from '../render/SoftLighting';
 import { perlin2 } from '../terrain/noise';
-import type { Avatar, FlightPose } from './Avatar';
+import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
 import { buildFlesh } from './Flesh';
 import { mergeSkins, type Chain, type Skin } from './Skin';
 import { OUTFIT, type Outfit, type Swatch } from './Outfit';
 
 /** How far the figure hangs under its center, and how far it reaches sideways, m; the flight reads these before the figure exists. */
-export const HUMAN_BOUNDS = { below: 0.3, radius: 1.1 } as const;
+export { HUMAN_BOUNDS };
 
 export interface ProceduralHuman extends Avatar {
   readonly triangles: number;
