@@ -53,7 +53,7 @@ describe('createPosture', () => {
       expect(posture.world('ankle', side).angleTo(ankle)).toBeLessThan(1e-5);
       // A chain root's own rotation is its orientation, because the engine
       // hangs it straight off the chest.
-      expect(posture.world('shoulder', side).angleTo(posture.local('shoulder', side))).toBe(0);
+      expect(posture.world('shoulder', side).angleTo(posture.local('shoulder', side))).toBeLessThan(1e-6);
     }
   });
 
@@ -234,5 +234,85 @@ describe('createPosture', () => {
     const level = createPosture({ spine: true });
     level.update(pose(), 0);
     expect(Math.abs(turned(placed, level) - turned(settled, level))).toBeLessThan(0.05);
+  });
+
+  it('never swings an arm up over the back, however the flight is flown', () => {
+    // The fault the owner saw before the arithmetic did, and the one this
+    // file's blend was rebuilt for. Flown on the real controller rather than
+    // on synthetic poses, because a step change in airspeed is not something
+    // the flight can do and the fault was in the path between two shapes.
+    //
+    // The bound is 0.5 of the figure's up, about thirty degrees. The shapes
+    // themselves reach 0.30 -- the turn's outer forearm -- so anything under
+    // half is the authored pose and its overshoot, and anything over it is a
+    // limb going somewhere nobody asked for. Before the rebuild this reached
+    // 0.98 and held above 0.5 for a second and an eighth.
+    for (const [name, stick] of [
+      ['nose up', (t: number) => [0, t > 0.5 ? 1 : 0] as const],
+      ['nose down', (t: number) => [0, t > 0.5 ? -1 : 0] as const],
+      ['hard turn', (t: number) => [t > 0.5 ? -1 : 0, 0] as const],
+      ['S-turn into a climb', (t: number) => [Math.floor(t / 2) % 2 === 0 ? -1 : 1, t > 2 ? 1 : 0] as const],
+    ] as const) {
+      const flight = createFlightController({
+        seed: 42,
+        groundAt: () => -4000,
+        dayPhase: () => 0.3,
+        start: { y: 2000 },
+      });
+      const posture = createPosture({ spine: true });
+      let peak = -1;
+      for (let i = 0; i < 600; i++) {
+        const [yaw, climb] = stick(i / 60);
+        flight.fly(yaw, climb);
+        flight.step(1 / 60);
+        const s = flight.state;
+        posture.update(
+          {
+            x: s.x,
+            y: s.y,
+            z: s.z,
+            heading: s.heading,
+            bank: s.bank,
+            pitch: s.pitch,
+            vy: s.vy,
+            speed: s.speed,
+            windPhase: s.windPhase,
+            gust: s.gust,
+            view: 'tpp',
+          },
+          1 / 60,
+        );
+        for (const kind of ['shoulder', 'elbow'] as const)
+          for (const side of [1, -1] as const) peak = Math.max(peak, points(posture.world(kind, side)).y);
+      }
+      expect(peak, name).toBeLessThan(0.5);
+    }
+  });
+
+  it('a shape on its own is the shape that was written down', () => {
+    // The blend was rebuilt twice over -- directions instead of rotations,
+    // then the parent's frame instead of the figure's, then a decided roll on
+    // the two joints that hang off the chest. None of that may move a pose
+    // the figure actually holds, only the path between two of them.
+    //
+    // Within a hundredth, not to the bit: the air is never doing nothing. At a
+    // nominal airspeed with no gust and the wind's phase at zero, the drift a
+    // joint reads off the noise field is still not zero, so a limb sits a
+    // fraction of a degree off the shape it wears. That is the figure
+    // breathing, and asserting it away would be asserting it gone.
+    const posture = createPosture();
+    posture.update(pose(), 0);
+    // `dir(...)` normalises, so these are the entries of `POSES.box` for the
+    // left side, verbatim.
+    const authored: Array<[string, 'shoulder' | 'elbow', Vector3]> = [
+      ['upper arm', 'shoulder', new Vector3(0.78, -0.08, 0.62).normalize()],
+      ['forearm', 'elbow', new Vector3(-0.46, 0.16, 0.87).normalize()],
+    ];
+    for (const [name, kind, want] of authored) {
+      // A degree and a half, which is the drift and not the shape. The forearm
+      // is the one that matters: it hangs off the upper arm and so reads its
+      // roll as well, and a roll decided differently would show here first.
+      expect(points(posture.world(kind, 1)).angleTo(want), name).toBeLessThan(0.026);
+    }
   });
 });
