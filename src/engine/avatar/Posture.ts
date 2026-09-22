@@ -39,18 +39,42 @@ const UP = new Vector3(0, 1, 0),
  * and neither does a thigh, so the basis is never near the degenerate case
  * this construction has. A folded shin does point up, which is why a knee is
  * not built this way.
+ *
+ * `hand` is which way round the frame is built, and an arm and a leg do not
+ * want the same answer. Deciding the roll fixes *which* roll a limb wears, and
+ * that number then lands on the bone and twists the skin on it. Measured
+ * against the minimal rotation, which adds no twist at all: the shoulder's
+ * frame sits 51 degrees off it in level flight, and the hip's sat **153**.
+ * An arm survives that, because an arm reads much the same rolled either way;
+ * a leg does not. The knee hinged backwards and the thigh wrung itself out,
+ * which is what a skinned limb looks like turned inside its own sleeve. So the
+ * hip builds its frame the other way round -- a half turn about the limb's own
+ * axis, which is still right-handed, `(-x, y, -z)` -- and lands within 27
+ * degrees of no twist instead of 153.
+ *
+ * Nothing below these two joints has to know: `under` reads the parent's frame
+ * through this same function, so a knee stays exactly where the pose put it
+ * whichever way its thigh is rolled. The twist is the only thing that moves.
  */
 const basis = new Matrix4(),
   across = new Vector3(),
   along = new Vector3();
-const rolled = (a: Vector3, out: Quaternion) => {
-  across.crossVectors(UP, a).normalize();
+const rolled = (a: Vector3, out: Quaternion, hand: 1 | -1 = 1) => {
+  across.crossVectors(UP, a).multiplyScalar(hand).normalize();
   // `z = x cross y`, in that order: the other way round is a left-handed
   // basis, whose matrix has a determinant of minus one and whose quaternion is
   // not a rotation at all.
   along.crossVectors(across, a);
   return out.setFromRotationMatrix(basis.makeBasis(across, a, along));
 };
+
+/**
+ * Which way round each of the two rolled joints builds its frame. See
+ * `rolled`: an arm and a leg want opposite answers, and the two places that
+ * read this -- the frame a joint wears, and the frame its child is measured
+ * in -- have to read the same one or the child moves.
+ */
+const ROLL = { shoulder: 1, hip: -1 } as const satisfies Partial<Record<Kind, 1 | -1>>;
 
 /**
  * A pose is five directions a side: where the upper arm, the forearm, the
@@ -195,18 +219,28 @@ const poseAims = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Vector
     thigh = pose.thigh(side, inner),
     shin = pose.shin(side, inner),
     foot = pose.foot(side, inner);
-  /** `d`, seen from a parent limb that points along `axis` and wears `rolled`'s frame. */
-  const under = (axis: Vector3, d: Vector3) =>
-    d.clone().applyQuaternion(rolled(axis, new Quaternion()).invert());
-  /** The elbow and the knee hang off a joint with a decided roll; the ankle off one without. */
-  const plain = (axis: Vector3, d: Vector3) =>
-    d.clone().applyQuaternion(new Quaternion().setFromUnitVectors(UP, axis).invert());
+  // Each direction is taken in the frame its own parent will actually be
+  // wearing, which means building the chain here exactly as `aimed` and
+  // `chain` will build it: the top of a limb gets `rolled`'s decided frame,
+  // and everything under it the minimal rotation, laid on its parent's.
+  //
+  // Guessing the parent's frame instead of composing it is a bug with one
+  // symptom and it is not a subtle one. The ankle used to be measured against
+  // `setFromUnitVectors(UP, shin)` -- the frame the shin *would* wear if
+  // nothing above it had a roll. What the shin actually wears is the thigh's
+  // decided roll with that laid on top, so the foot arrived 167 degrees round
+  // its own axis from where the file draws it: a sole pointing at the sky.
+  const frame = new Quaternion();
+  const beneath = (parent: Quaternion, d: Vector3) => d.clone().applyQuaternion(parent.clone().invert());
+  const shoulder = rolled(upper, new Quaternion(), ROLL.shoulder);
+  const hip = rolled(thigh, new Quaternion(), ROLL.hip);
+  const knee = hip.clone().multiply(frame.setFromUnitVectors(UP, beneath(hip, shin)));
   return {
     shoulder: upper.clone(),
-    elbow: under(upper, fore),
+    elbow: beneath(shoulder, fore),
     hip: thigh.clone(),
-    knee: under(thigh, shin),
-    ankle: plain(shin, foot),
+    knee: beneath(hip, shin),
+    ankle: beneath(knee, foot),
   };
 };
 
@@ -506,7 +540,8 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
    */
   const aimed = () => {
     for (const j of joints) {
-      if (j.kind === 'shoulder' || j.kind === 'hip') rolled(j.aim, j.local);
+      const hand = ROLL[j.kind as keyof typeof ROLL];
+      if (hand) rolled(j.aim, j.local, hand);
       else j.local.setFromUnitVectors(UP, j.aim);
     }
   };
