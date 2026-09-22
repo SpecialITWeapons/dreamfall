@@ -412,6 +412,19 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
     };
   });
   const at = (kind: Kind, side: 1 | -1) => joints.find((j) => j.kind === kind && j.side === side)!;
+  /** Walk the chain: a limb's orientation is its parent's with its own laid on. */
+  const chain = () => {
+    for (const j of joints) {
+      const above = PARENT[j.kind];
+      if (above) j.world.copy(at(above, j.side).world).multiply(j.local);
+      else j.world.copy(j.local);
+    }
+  };
+  // The box, before anyone has asked for a frame. `local` starts there and
+  // `world` has to agree, or a body that reads the rest pose off this at load
+  // -- to know how far a limb has since travelled -- reads an identity that
+  // the figure was never in.
+  chain();
   const want = {} as Record<Slot, number>;
   const qx = new Quaternion();
 
@@ -532,14 +545,7 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
         }
         j.local.premultiply(qx.setFromAxisAngle(AXIS_X, j.swing.x));
       }
-      // The chain, walked after every joint has its own rotation: a limb's
-      // orientation in the figure's frame is its parent's with its own laid on.
-      // `JOINTS` is in walking order, so one pass does it.
-      for (const j of joints) {
-        const above = PARENT[j.kind];
-        if (above) j.world.copy(at(above, j.side).world).multiply(j.local);
-        else j.world.copy(j.local);
-      }
+      chain();
     },
   };
 }

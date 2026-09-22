@@ -62,7 +62,7 @@ const DRIVEN: Record<Kind, readonly [left: string, right: string]> = {
  * below them -- elbow, knee, ankle -- hang off a bone this does drive and wear
  * the engine's parent-relative rotation exactly as it comes.
  */
-const UNDER_A_STRANGER: ReadonlySet<Kind> = new Set(['shoulder', 'hip']);
+const UNDER_A_STRANGER: ReadonlySet<Kind> = new Set(['hip']);
 
 /**
  * The three vertebrae between the hips and the shoulders, and how much of the
@@ -90,21 +90,23 @@ const NECK: ReadonlyArray<{ bone: string; share: number }> = [
 ];
 
 /**
- * A bone bent about two of the figure's own axes.
+ * How much of the upper arm's travel the collarbone goes with it.
  *
- * Not about its own local axes: a bone carries whatever rotation Blender gave
- * it, and `LowerBack`'s idea of x is not the figure's. What an arch is, is a
- * rotation about the figure's left-right axis, so that axis is taken into the
- * bone's parent's frame once, at load, and the bend is applied there. Both
- * chains here hang off bones nothing drives, which is what lets it be once.
+ * A shoulder is not a hinge on a post. Lift an arm and the girdle under it
+ * turns too -- about one degree for every two past the first thirty, which
+ * anatomy calls scapulohumeral rhythm -- and the collarbone is the part of
+ * that this skeleton has a bone for. A quarter is the collarbone's own share
+ * of it; the scapula does the rest and is not here. Without it the arms read
+ * as bolted to the chest, which is the one thing a shoulder must not look
+ * like.
  */
+const CLAVICLE = 0.24;
+
+/** A bone bent about two of the figure's own axes, as a share of the whole bend. */
 interface Bendable {
   bone: Object3D;
   /** What the bone was exported wearing; a bend is laid over this, never instead of it. */
   rest: Quaternion;
-  /** The figure's x and y, in this bone's parent's frame. */
-  aboutX: Vector3;
-  aboutY: Vector3;
   share: number;
 }
 
@@ -133,8 +135,23 @@ export interface AuthoredFigure extends Avatar {
  * built in, so nothing is waiting on it that the player can see.
  */
 export async function loadAuthoredFigure(url: string = figureUrl): Promise<AuthoredFigure> {
-  const gltf = await new GLTFLoader().loadAsync(url);
+  return createAuthoredFigure((await new GLTFLoader().loadAsync(url)).scene);
+}
 
+/**
+ * The retarget, with nothing about where the body came from.
+ *
+ * Split out from the load so that the arithmetic can be tested against a
+ * skeleton made of bones rather than against a megabyte of .glb: the two
+ * questions are different ones. Whether three accepts the file is
+ * `tools/figure/load_glb.mjs`. Whether an arm ends up where the posture says
+ * it should, on a skeleton whose every bone carries a rest rotation of its
+ * own, is a test in Node -- and it is the question this file can get wrong.
+ *
+ * `body` is a scene holding a CMU-named skeleton. It is taken over, not
+ * copied.
+ */
+export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   const object = new Group();
   object.name = 'figure';
   // `YXZ`, the same order the flight's angles are written in, so the figure and
@@ -154,8 +171,14 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
   // it instead hung the figure most of a metre under the flight with its hips
   // a metre ahead of the camera's target.
   laid.position.z = -HIPS;
-  laid.add(gltf.scene);
+  laid.add(body);
   object.add(laid);
+
+  const named = (name: string): Object3D => {
+    const bone = body.getObjectByName(name);
+    if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
+    return bone;
+  };
 
   // `spine: true` moves the arch out of the hips, where a body with no
   // vertebra between them and the shoulders has to keep it, and into the three
@@ -167,10 +190,12 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
   // which is the frame the posture speaks, quarter turn and all.
   object.updateMatrixWorld(true);
   for (const kind of Object.keys(DRIVEN) as Kind[]) {
+    // The shoulder is written by the collarbone loop, which needs where the
+    // collarbone actually ended up and so cannot be done from a table.
+    if (kind === 'shoulder') continue;
     const [left, right] = DRIVEN[kind];
     for (const [name, side] of [[left, 1] as const, [right, -1] as const]) {
-      const bone = gltf.scene.getObjectByName(name);
-      if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
+      const bone = named(name);
       driven.push(
         UNDER_A_STRANGER.has(kind)
           ? { kind, side, bone, fromParent: bone.parent!.getWorldQuaternion(new Quaternion()).invert() }
@@ -180,36 +205,55 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
   }
 
   const bendable = (names: typeof SPINE): Bendable[] =>
-    names.map(({ bone: name, share }) => {
-      const bone = gltf.scene.getObjectByName(name);
-      if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
-      const intoParent = bone.parent!.getWorldQuaternion(new Quaternion()).invert();
-      return {
-        bone,
-        share,
-        rest: bone.quaternion.clone(),
-        aboutX: new Vector3(1, 0, 0).applyQuaternion(intoParent),
-        aboutY: new Vector3(0, 1, 0).applyQuaternion(intoParent),
-      };
-    });
+    names.map(({ bone, share }) => ({ bone: named(bone), share, rest: named(bone).quaternion.clone() }));
   const spine = bendable(SPINE);
   const neck = bendable(NECK);
+  /** The hips, which nothing drives, so this is taken once. */
+  const chest = named('Hips').getWorldQuaternion(new Quaternion());
+  const collar = ([1, -1] as const).map((side) => {
+    const bone = named(side > 0 ? 'LeftShoulder' : 'RightShoulder');
+    return { side, bone, rest: bone.quaternion.clone(), arm: named(side > 0 ? 'LeftArm' : 'RightArm') };
+  });
 
-  /** Bend a chain by `x` about the figure's left-right axis and `y` about its up. */
-  const flex = (chain: Bendable[], x: number, y: number) => {
-    for (const part of chain) {
-      bend.setFromAxisAngle(part.aboutX, x * part.share);
-      sway.setFromAxisAngle(part.aboutY, y * part.share);
-      part.bone.quaternion.copy(bend).multiply(sway).multiply(part.rest);
-    }
-  };
-
+  /** Where each upper arm rests, in the figure's frame: the box, which the skin is cut for. */
+  const restArm = [posture.world('shoulder', 1).clone(), posture.world('shoulder', -1).clone()];
+  const IDENTITY = new Quaternion();
   const bend = new Quaternion();
   const sway = new Quaternion();
+  const axis = new Vector3();
+  const inv = new Quaternion();
+  const spineTop = new Quaternion();
+  const neckRoot = new Quaternion();
+  const swing = new Quaternion();
+  const clavicle = new Quaternion();
+
+  /**
+   * Bend a chain by `x` about the figure's left-right axis and `y` about its
+   * up, and give back where the last bone ended up.
+   *
+   * The axes are the figure's and they are taken into each bone's parent's
+   * frame **every frame**, from where that parent actually is. Taken once at
+   * load they were wrong the moment anything above the chain moved: the neck
+   * hangs off the top of the spine, so a back arched twenty degrees had the
+   * head yawing about an axis twenty degrees out. A bone carries whatever
+   * rotation Blender gave it, so its own local x is not the figure's and never
+   * was the thing to use.
+   */
+  const flex = (chain: Bendable[], x: number, y: number, parent: Quaternion): Quaternion => {
+    for (const part of chain) {
+      inv.copy(parent).invert();
+      bend.setFromAxisAngle(axis.set(1, 0, 0).applyQuaternion(inv), x * part.share);
+      sway.setFromAxisAngle(axis.set(0, 1, 0).applyQuaternion(inv), y * part.share);
+      part.bone.quaternion.copy(bend).multiply(sway).multiply(part.rest);
+      parent.multiply(part.bone.quaternion);
+    }
+    return parent;
+  };
+
   const meshes: Object3D[] = [];
   let view: FlightPose['view'] | null = null;
   let triangles = 0;
-  gltf.scene.traverse((child) => {
+  body.traverse((child) => {
     const mesh = child as Object3D & { isMesh?: boolean; geometry?: { index?: { count: number } | null } };
     if (!mesh.isMesh) return;
     meshes.push(mesh);
@@ -242,9 +286,26 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
       // The back arches and leans; the head lifts its chin and looks into the
       // turn. Both are negative about x, because a rotation that way takes the
       // figure's `ahead` toward its `up` -- and up, for a body lying on the
-      // air, is away from the ground it is looking at.
-      flex(spine, -posture.torso.arch, posture.torso.lean);
-      flex(neck, -posture.gaze.pitch, posture.gaze.yaw);
+      // air, is away from the ground it is looking at. The spine is walked
+      // first because everything above it hangs off where it finished.
+      const top = flex(spine, -posture.torso.arch, posture.torso.lean, spineTop.copy(chest));
+      flex(neck, -posture.gaze.pitch, posture.gaze.yaw, neckRoot.copy(top));
+      // The collarbones, and the arms on the ends of them. The girdle takes a
+      // quarter of however far the upper arm has travelled from the shape the
+      // skin was cut in, about the axis it travelled on; the arm then gets
+      // exactly where the posture says it should be, in the figure's frame,
+      // whatever the chest and the collarbone did on the way. That last part
+      // is what keeps `POSE`'s thresholds meaning what they were measured to
+      // mean: they were taken against the flight's envelope, not against an
+      // arm that an arched back had already carried somewhere else.
+      for (const { side, bone, rest, arm } of collar) {
+        const wanted = posture.world('shoulder', side);
+        swing.copy(wanted).multiply(inv.copy(restArm[side > 0 ? 0 : 1]!).invert());
+        swing.slerp(IDENTITY, 1 - CLAVICLE);
+        bone.quaternion.copy(top).invert().multiply(swing).multiply(top).multiply(rest);
+        clavicle.copy(top).multiply(bone.quaternion);
+        arm.quaternion.copy(clavicle).invert().multiply(wanted);
+      }
       // The first person draws none of the figure, for the same reason the
       // grown one draws none of itself: this is one surface on one skeleton and
       // a skin cannot be culled part by part.
