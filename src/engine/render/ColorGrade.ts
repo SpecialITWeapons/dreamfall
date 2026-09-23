@@ -12,7 +12,6 @@ export interface PaletteKey {
   horizonWarm: Color;
   upperWarm: Color;
   glow: Color;
-  below: Color;
   sun: Color;
   sunI: number;
   hemiSky: Color;
@@ -120,7 +119,7 @@ export function applyLook(look: Look): Look {
     const sky = LOOK.sky;
     if (day) {
       for (const field of ['zenith', 'upper', 'hemiSky'] as const) adjustColor(key[field], sky.dayBlue, day);
-      for (const field of ['horizon', 'below'] as const) adjustColor(key[field], sky.dayHorizon, day * 0.85);
+      adjustColor(key.horizon, sky.dayHorizon, day * 0.85);
     }
     if (dusk) {
       for (const field of ['glow', 'horizonWarm', 'upperWarm', 'sun'] as const)
