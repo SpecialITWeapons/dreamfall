@@ -69,7 +69,8 @@ const GRASS_ALPHA_TEST = 0.08;
 export const GRASS_FADE: [number, number] = [400, 540];
 
 const BARK_GROOVES = ['#4f5b43', '#8d906a', '#656c50', '#a2a07b', '#596347'];
-const GRASS_BLADES = ['#638c37', '#7ca448', '#8cae50', '#a2bb61'];
+/** The blades' own greens; a tuft's tint multiplies them (`Grass.ts`, `tuftTint`). */
+export const GRASS_BLADES = ['#638c37', '#7ca448', '#8cae50', '#a2bb61'];
 
 /** A fresh canvas of this size, ready to paint on; the canvas comes back as ctx.canvas. */
 function paint(width: number, height: number): CanvasRenderingContext2D {
