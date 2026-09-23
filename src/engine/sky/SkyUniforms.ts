@@ -1,13 +1,30 @@
 // Every uniform the sky, the fog, the lights, the water and the clouds share.
 // One directional horizon owns both the sky boundary and every fogged
 // surface, so all of them read these and nothing else.
-import { Color, Vector2, Vector3 } from 'three';
+import {
+  Color,
+  DataTexture,
+  LinearFilter,
+  RedFormat,
+  RepeatWrapping,
+  UnsignedByteType,
+  Vector2,
+  Vector3,
+} from 'three';
 import { uniform } from 'three/tsl';
 import type { Look } from '../render/ColorGrade';
 import { DECK_Y } from '../terrain/WorldSampler';
+import type { CloudCover } from './CloudCover';
 
-export function createSkyUniforms(look: Look) {
+export function createSkyUniforms(look: Look, cover: CloudCover) {
   const cloudWhite = new Color(look.cloud.white);
+  // The deck's one field, as the GPU reads it: every layer of the deck samples
+  // this (`cloudCoverAt`), the CPU reads the same bytes (`cover.at`).
+  const cloudCover = new DataTexture(cover.data, cover.texels, cover.texels, RedFormat, UnsignedByteType);
+  cloudCover.wrapS = cloudCover.wrapT = RepeatWrapping;
+  cloudCover.magFilter = cloudCover.minFilter = LinearFilter;
+  cloudCover.generateMipmaps = false;
+  cloudCover.needsUpdate = true;
   return {
     /** Shader motion follows simulation time, including pause and hidden tabs. */
     time: uniform(0),
@@ -45,6 +62,9 @@ export function createSkyUniforms(look: Look) {
     uWorldOrigin: uniform(new Vector2(0, 0)),
     /** The world's wind, m/s; every cloud layer drifts with it. */
     uWind: uniform(new Vector2(0, 0)),
+    /** Where the deck has cloud, 0..1, repeating every `uCoverPeriod` metres (sky/CloudCover.ts). */
+    cloudCover,
+    uCoverPeriod: uniform(cover.period),
     cloudWhite,
     moonColor: new Color(look.moon.color),
     fogDensity: look.fogDensity,

@@ -73,6 +73,9 @@ describe('createWorldSampler', () => {
   it('exposes the world constants', () => {
     expect(CELL).toBe(16);
     expect(SEA_LEVEL).toBe(0);
-    expect(DECK_Y).toBe(520);
+    // 520 in fly-with-me and here until the owner raised it: the deck is where
+    // the banks are, and from over it the ground shows between them, which
+    // reads as height only if there is height between the two.
+    expect(DECK_Y).toBe(800);
   });
 });

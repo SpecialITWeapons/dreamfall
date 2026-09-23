@@ -19,6 +19,7 @@ import {
   pow,
   smoothstep,
 } from 'three/tsl';
+import { cloudBankAt } from './CloudShadow';
 import type { SkyUniforms } from './SkyUniforms';
 
 export function createHorizon(u: SkyUniforms) {
@@ -55,8 +56,13 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   // Gentle local air; only the far streamed edge needs complete cover.
   const farCover = smoothstep(2600, 4100, distance);
   const air = float(1).sub(float(1).sub(distF).mul(float(1).sub(lowAir)).mul(float(1).sub(farCover)));
-  // The typings leave the height fog factor untyped; it is a float.
-  const seaF = (exponentialHeightFogFactor(float(0.0000085), u.uDeck.sub(30)) as Node<'float'>).mul(u.uAbove);
+  // The typings leave the height fog factor untyped; it is a float. It is the
+  // cloud sea's own fog, so it lies only where the deck has cloud: over a gap
+  // between the banks the ground is seen through the air and nothing else.
+  const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
+  const seaF = (exponentialHeightFogFactor(float(0.0000085), u.uDeck.sub(30)) as Node<'float'>)
+    .mul(u.uAbove)
+    .mul(cloudBankAt(u, worldXZ));
   const factor = max(max(air, seaF), u.uWhiteout);
   scene.fogNode = fog(horizon.horizonTint(normalize(positionWorld.sub(cameraPosition))), factor);
 }

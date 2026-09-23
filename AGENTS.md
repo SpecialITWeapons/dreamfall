@@ -35,7 +35,7 @@ page works under a Pages subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -271,6 +271,12 @@ page works under a Pages subdirectory.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.
+- **The deck is one field** (`sky/CloudCover.ts`): a repeating square baked
+  per seed, 30 to 60 per cent of it cloud by region, read at `p - wind * t` by
+  the GPU as `cloudCover` and by the CPU as `cover.at`. The cloud sea, its
+  fog, the puffs and the shadows all read it, so from over the deck the ground
+  shows through the same gaps it is seen through from under it. It was four
+  fields once, and the sea alone was a sheet over the whole world.
 
 ## Scenery
 

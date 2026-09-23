@@ -1,4 +1,9 @@
-// The cloud sea: a heaped plane just under the deck, seen only from above.
+// The cloud sea: a heaped plane just under the deck, seen only from above, and
+// only where the deck has cloud. It was a sheet over the whole world at 94 per
+// cent, so from above there was nothing but overcast however few clouds the
+// flyer had just climbed past; now it reads the deck's one field
+// (`cloudCoverAt`), and between its banks the ground shows through, far below
+// and moving at its own pace under them.
 // The surface is atmosphere, not land inside its own height fog, so its folds
 // are painted directly: a normal from the heap's slope turns the sunward
 // flanks to the sun, warm while it is low, blushing opposite it, and leaves
@@ -25,6 +30,7 @@ import {
   vec3,
 } from 'three/tsl';
 import { DECK_Y } from '../terrain/WorldSampler';
+import { cloudBankAt, cloudCoverAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
 
@@ -39,10 +45,11 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
     side: DoubleSide,
     fog: false,
   });
-  material.opacityNode = u.uAbove.mul(0.94);
   // World-space folds: the local frame moves with the floating origin, the
   // heap must not; the wind carries it, and its two scales boil at their own pace.
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
+  const cloud = cloudCoverAt(u, worldXZ);
+  material.opacityNode = u.uAbove.mul(0.94).mul(cloudBankAt(u, worldXZ));
   const advected = worldXZ.sub(u.uWind.mul(u.time));
   const heapAt = (p: Node<'vec2'>) =>
     mx_noise_float(p.mul(0.0016).add(u.time.mul(0.009)))
@@ -79,9 +86,15 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   })();
   const cover = max(u.uWhiteout, smoothstep(2000, 4300, length(positionWorld.sub(cameraPosition))));
   material.colorNode = mix(folds, horizon.horizonTint(view), cover);
+  // A bank's edge sinks as it thins, so the sea ends in a slope and not in a
+  // cut: the heap is worn as much as there is cloud, and a clear place sits
+  // under the banks around it.
   material.positionNode = vec3(
     positionLocal.x,
-    heap.add(sin(worldXZ.x.mul(0.006).add(u.time.mul(0.2))).mul(4.0)),
+    heap
+      .add(sin(worldXZ.x.mul(0.006).add(u.time.mul(0.2))).mul(4.0))
+      .mul(cloud)
+      .sub(float(1).sub(cloud).mul(30)),
     positionLocal.z,
   );
   const geometry = new PlaneGeometry(CLOUD_SEA_SIZE, CLOUD_SEA_SIZE, 96, 96);
