@@ -57,9 +57,10 @@ test('the veil says what the start is doing, and the timings are readable after 
   await expect(page.locator('#loading')).toHaveClass(/gone/);
   const timings = await page.evaluate(() => window.__world!.timings);
   // every step of the start is measured, in order, and the last one is the frame
-  expect(Object.keys(timings)).toEqual(['graphics', 'ground', 'scenery', 'sky']);
+  expect(Object.keys(timings)).toEqual(['graphics', 'figure', 'ground', 'scenery', 'sky']);
   expect(timings.graphics).toBeGreaterThan(0);
-  expect(timings.ground).toBeGreaterThanOrEqual(timings.graphics!);
+  expect(timings.figure).toBeGreaterThanOrEqual(timings.graphics!);
+  expect(timings.ground).toBeGreaterThanOrEqual(timings.figure!);
   expect(timings.scenery).toBeGreaterThanOrEqual(timings.ground!);
   expect(timings.sky).toBeGreaterThanOrEqual(timings.scenery!);
   expect(errors).toEqual([]);
