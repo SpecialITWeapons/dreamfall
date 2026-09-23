@@ -12,8 +12,12 @@ import { fbm, hash2, pyramidPeaks, ridgedMulti, sstep } from './noise';
 /** Terrain sample spacing, m. */
 export const CELL = 16;
 export const SEA_LEVEL = 0;
-/** Cloud deck altitude, m. */
-export const DECK_Y = 520;
+/**
+ * Cloud deck altitude, m. 520 in fly-with-me; the owner raised it, so that
+ * from over the deck the ground between the banks is far enough down to move
+ * under them at its own pace. The highest summits of seed 42 still pierce it.
+ */
+export const DECK_Y = 800;
 /** The range: a warped ridged massif carrying a lattice of pyramidal summits. */
 export const PEAKS = { cell: 2400, radius: 850, power: 1.7, lift: 900, massif: 640 } as const;
 /** Width of the climate fields, m. */

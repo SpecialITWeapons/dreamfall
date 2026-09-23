@@ -1,7 +1,14 @@
-// Clouds: soft volumes as the flyer approaches the deck. Forty instanced
+// Clouds: soft volumes as the flyer approaches the deck. Sixty-four instanced
 // puffs, each seven merged spheres, drift through a field that wraps around
 // the flyer; they shrink as the camera nears them so nothing pops. Positions
 // are computed in world coordinates and written in local ones.
+//
+// They stand only where the deck has cloud: each reads the deck's one field
+// (`CloudCover.at`, the same bytes the sea and the shadows sample on the GPU)
+// and is worn as much as its place is under a bank, so the few clouds a flyer
+// passes under the deck are the banks it looks down on from over it. They
+// drift with the wind itself, as the field does, or they would slide out of
+// their banks.
 import { InstancedMesh, Matrix4, Quaternion, SphereGeometry, Vector3, type BufferGeometry } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
@@ -23,9 +30,10 @@ import {
 } from 'three/tsl';
 import { mulberry32, sstep } from '../terrain/noise';
 import { DECK_Y } from '../terrain/WorldSampler';
+import type { CloudCover } from './CloudCover';
 import type { SkyUniforms } from './SkyUniforms';
 
-export const CLOUDS = 40;
+export const CLOUDS = 64;
 export const CLOUD_FIELD = 6400;
 
 function puffGeometry(seed: number): BufferGeometry {
@@ -49,7 +57,7 @@ function puffGeometry(seed: number): BufferGeometry {
   return merged;
 }
 
-export function createClouds(seed: number, u: SkyUniforms) {
+export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
   material.colorNode = mix(
     u.uHorizon,
@@ -75,7 +83,7 @@ export function createClouds(seed: number, u: SkyUniforms) {
       y: DECK_Y + (r() - 0.5) * 90,
       s: 55 + r() * 95,
       rot: r() * 6.283,
-      drift: 0.6 + r() * 0.8,
+      drift: 0.95 + r() * 0.1,
     });
   const m4 = new Matrix4(),
     q = new Quaternion(),
@@ -104,7 +112,10 @@ export function createClouds(seed: number, u: SkyUniforms) {
         const px = bx + x,
           pz = bz + z;
         const d = Math.hypot(px - cx, c.y - cy, pz - cz);
-        const shrink = sstep(c.s * 1.6, c.s * 3.6, d);
+        // Moved against the wind as the shader moves its point, so the CPU and
+        // the GPU read the one field at one place.
+        const bank = sstep(0.35, 0.8, cover.at(px - wind.x * t, pz - wind.z * t));
+        const shrink = sstep(c.s * 1.6, c.s * 3.6, d) * bank;
         q.setFromAxisAngle(v.set(0, 1, 0), c.rot);
         m4.compose(
           v.set(px - originX, c.y, pz - originZ),

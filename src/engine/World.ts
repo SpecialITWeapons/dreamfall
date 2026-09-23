@@ -26,6 +26,7 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
+import { createCloudCover } from './sky/CloudCover';
 import { createCloudSea } from './sky/CloudSea';
 import { createClouds } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
@@ -178,7 +179,8 @@ export function createWorld(opts: WorldOptions): World {
     clock.evalPalette();
   }
   const look = clock.look;
-  const uniforms = createSkyUniforms(look);
+  const cloudCover = createCloudCover(opts.seed);
+  const uniforms = createSkyUniforms(look, cloudCover);
   uniforms.uWind.value.set(wind.x, wind.z);
   const horizon = createHorizon(uniforms);
   // The dome covers the whole background; the clear color only matters for the frame before the dome compiles.
@@ -204,7 +206,7 @@ export function createWorld(opts: WorldOptions): World {
   scene.add(water.mesh);
   const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
   scene.add(skyDome.mesh);
-  const clouds = createClouds(opts.seed, uniforms);
+  const clouds = createClouds(opts.seed, uniforms, cloudCover);
   scene.add(clouds.mesh);
   const cloudSea = createCloudSea(uniforms, horizon);
   scene.add(cloudSea.mesh);
@@ -503,6 +505,7 @@ export function createWorld(opts: WorldOptions): World {
       galaxy.dispose();
       clouds.dispose();
       cloudSea.dispose();
+      uniforms.cloudCover.dispose();
       avatar.dispose();
       lights.dispose();
       scene.clear();
