@@ -45,7 +45,6 @@ const P = (
   zenith: number,
   upper: number,
   horizon: number,
-  below: number,
   sun: number,
   sunI: number,
   hemiSky: number,
@@ -62,15 +61,13 @@ const P = (
   horizonWarm: C(horizonWarm),
   upperWarm: C(upperWarm),
   glow: C(glow),
-  below: C(below),
   sun: C(sun),
   sunI,
   hemiSky: C(hemiSky),
   hemiGround: C(hemiGround),
   hemiI,
 });
-const night = (t: number) =>
-  P(t, 0x071222, 0x10192e, 0x2e2831, 0x10121b, 0xffb070, 2.4, 0x213258, 0x0e1116, 0.6);
+const night = (t: number) => P(t, 0x071222, 0x10192e, 0x2e2831, 0xffb070, 2.4, 0x213258, 0x0e1116, 0.6);
 
 /** The ungraded look: palette anchors through the day keyed in solar phase, terrain and cloud colors, the moon. */
 export function baseLook(): Look {
@@ -86,7 +83,6 @@ export function baseLook(): Look {
         0x03071a,
         0x0a1430,
         0x1a2a4c,
-        0x0b1224,
         0xffb070,
         2.4,
         0x22335a,
@@ -102,7 +98,6 @@ export function baseLook(): Look {
         0x11254e,
         0x2c4878,
         0x6b7d9c,
-        0x2a3448,
         0xffa860,
         2.5,
         0x4c5f88,
@@ -118,7 +113,6 @@ export function baseLook(): Look {
         0x2d5c92,
         0x6d95bc,
         0x9eafbc,
-        0x5f7480,
         0xffb070,
         2.9,
         0xa8c2d6,
@@ -134,7 +128,6 @@ export function baseLook(): Look {
         0x3a80b4,
         0x74a8cc,
         0x9dbdcb,
-        0x83a3a8,
         0xffe0b0,
         3.0,
         0xbcd8e8,
@@ -145,27 +138,13 @@ export function baseLook(): Look {
         0xf8d29c,
       ),
       // noon: the approved day
-      P(
-        0.5,
-        0x3e8dbb,
-        0x76acd0,
-        0x96bdcd,
-        0x8dacae,
-        0xfff1cb,
-        3,
-        0xc2deeb,
-        0x739054,
-        1.8,
-        0xe2e4c3,
-        0xabcfda,
-      ),
+      P(0.5, 0x3e8dbb, 0x76acd0, 0x96bdcd, 0xfff1cb, 3, 0xc2deeb, 0x739054, 1.8, 0xe2e4c3, 0xabcfda),
       // late afternoon: the light turns gold
       P(
         0.7,
         0x3f7fae,
         0x7ca4c2,
         0xa4b4ba,
-        0x8a9a94,
         0xffd9a0,
         2.9,
         0xc4d4d8,
@@ -181,7 +160,6 @@ export function baseLook(): Look {
         0x2f4a82,
         0x6c7aa0,
         0x9aa0b0,
-        0x5a5c6a,
         0xff9a40,
         2.7,
         0xa898b0,
@@ -197,7 +175,6 @@ export function baseLook(): Look {
         0x172850,
         0x394272,
         0x6c6480,
-        0x2e3448,
         0xff9048,
         2.4,
         0x4a4a76,
@@ -213,7 +190,6 @@ export function baseLook(): Look {
         0x060c22,
         0x0e1838,
         0x243050,
-        0x0e1424,
         0xffb070,
         2.4,
         0x263658,
@@ -243,7 +219,6 @@ export interface Palette {
   horizonWarm: Color;
   upperWarm: Color;
   glow: Color;
-  below: Color;
   sun: Color;
   sunI: number;
   hemiSky: Color;
@@ -258,7 +233,6 @@ const PALETTE_COLORS = [
   'horizonWarm',
   'upperWarm',
   'glow',
-  'below',
   'sun',
   'hemiSky',
   'hemiGround',
@@ -289,7 +263,6 @@ export function createDayClock(opts: { phase?: number } = {}): DayClock {
     horizonWarm: C(0),
     upperWarm: C(0),
     glow: C(0),
-    below: C(0),
     sun: C(0),
     sunI: 1,
     hemiSky: C(0),
