@@ -194,7 +194,10 @@ page works under a Pages subdirectory.
   the whole slab of toes is inside it, skinned from the nearest vertex of the
   foot -- because painted toes read as a sock; then the skin is re-cut into the
   box (`rebind`), because a body modelled in a T and flown with its arms back is
-  a right angle from the only pose its skin is correct in. A limb's roll about
+  a right angle from the only pose its skin is correct in; and last, for the
+  delta, the track and the climb, where the box is furthest away, the skin is
+  **corrected per shape** by morph targets that put it where skinning from the
+  file would, worn as much as the shoulders wear the shape (`Posture.shape`). A limb's roll about
   its own axis is invisible to every test that compares directions and is what
   twists the skin, so `authoredFile.test.ts` loads the real file twice and
   measures it; `tools/figure/look.mjs` photographs a corner of the envelope from
@@ -212,6 +215,11 @@ page works under a Pages subdirectory.
   instead was a pose that existed and could not be reached. Nose up and slow are
   one state and not two, because a climb is paid for in airspeed; the climb
   sweeps the arms back like the track and is told from it by the knees.
+- The head holds its chin up always and more in a dive, turns about the line
+  of the spine (for a body face down that is what turns a face, and the normal
+  of the back only tips an ear), looks into a turn, and glances about when
+  nothing asks anything of it -- a pure function of the flight's clock, faded
+  out by a turn (`GAZE`).
 - Every joint is a spring-damper the air pushes, substepped so `omega * h` stays
   under a half, slower the further it is from the chest; the shape weights are
   sprung per joint too, so a shape arrives shoulder first and ankle last.
@@ -419,7 +427,10 @@ page works under a Pages subdirectory.
 
 ## Checking
 
-`npm run check` (types, lint, format, tests, build) and `npm run test:e2e`.
+`npm run check` (types, lint, format, tests, build) and `npm run test:e2e`. CI
+runs the first on every push and pull request; the browser tests run on CI only
+when started by hand (Actions, CI, Run workflow), so run them locally before a
+change that touches what the page draws.
 Close any browser tab left open for testing when you're done.
 
 ## Maintaining this file

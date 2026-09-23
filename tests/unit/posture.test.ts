@@ -126,23 +126,61 @@ describe('createPosture', () => {
     right.update(pose({ bank: POSE.bank }), 0);
     expect(left.gaze.yaw).toBeGreaterThan(0.4);
     expect(right.gaze.yaw).toBeCloseTo(-left.gaze.yaw, 6);
-    // Level flight looks straight ahead. Not asserted as exactly zero for the
-    // pitch: the chin follows the descent, and level is not descending.
+    // Level flight looks straight ahead, chin up: a flyer on their belly holds
+    // the head up and looks ahead, and a face pointed down the line of the
+    // spine is what the owner saw and asked to have lifted.
     const ahead = createPosture({ spine: true });
     ahead.update(pose(), 0);
     // `toBeCloseTo`, not `toBe`: a bank of zero comes out of the arithmetic as
     // negative zero, and `Object.is(-0, 0)` is false.
     expect(ahead.gaze.yaw).toBeCloseTo(0, 10);
-    expect(ahead.gaze.pitch).toBeCloseTo(0, 10);
+    expect(ahead.gaze.pitch).toBeGreaterThan(0.5);
+    expect(ahead.gaze.pitch).toBeLessThan(0.8);
   });
 
-  it('the chin comes up with the descent, and by less than the back bends', () => {
+  it('the chin comes up further with the descent, and by less than the back bends', () => {
+    const level = createPosture({ spine: true });
+    level.update(pose(), 0);
     const posture = createPosture({ spine: true });
     posture.update(pose({ vy: -20 }), 0);
-    expect(posture.gaze.pitch).toBeGreaterThan(0.15);
+    const more = posture.gaze.pitch - level.gaze.pitch;
+    expect(more).toBeGreaterThan(0.15);
     // Past the arch and the eyes leave the ground, which is the one thing a
     // skydiver is looking at.
-    expect(posture.gaze.pitch).toBeLessThan(posture.torso.arch);
+    expect(more).toBeLessThan(posture.torso.arch);
+  });
+
+  it('an idle head looks about, the same way every time, and a turn takes it over', () => {
+    // A minute of level flight, sampled: the head goes somewhere, and goes
+    // there again on a second flight flown the same.
+    const fly = (bank: number) => {
+      const posture = createPosture({ spine: true });
+      posture.update(pose({ bank }), 0);
+      const seen: number[] = [];
+      for (let i = 0; i < 3600; i++) {
+        posture.update(pose({ bank, windPhase: i / 60 }), 1 / 60);
+        if (i % 30 === 0) seen.push(posture.gaze.yaw);
+      }
+      return seen;
+    };
+    const idle = fly(0);
+    expect(fly(0)).toEqual(idle);
+    const spread = Math.max(...idle) - Math.min(...idle);
+    expect(spread).toBeGreaterThan(0.3);
+    // No glance past what a neck turns without the shoulders.
+    expect(Math.max(...idle.map(Math.abs))).toBeLessThan(0.6);
+    // In a hard turn the head is on the turn, and the glances are gone.
+    const turn = fly(-POSE.bank).slice(20);
+    expect(Math.max(...turn) - Math.min(...turn)).toBeLessThan(0.1);
+  });
+
+  it('the head nods into a climb before the body has made it', () => {
+    const posture = createPosture({ spine: true });
+    posture.update(pose(), 0);
+    const still = posture.gaze.pitch;
+    // The nose coming up at a brisk rate, for a fifth of a second.
+    for (let i = 1; i <= 12; i++) posture.update(pose({ pitch: 0.02 * i }), 1 / 60);
+    expect(posture.gaze.pitch).toBeGreaterThan(still + 0.05);
   });
 
   it('the head arrives before the shoulder does, because a person looks first', () => {
@@ -313,6 +351,23 @@ describe('createPosture', () => {
       // is the one that matters: it hangs off the upper arm and so reads its
       // roll as well, and a roll decided differently would show here first.
       expect(points(posture.world(kind, 1)).angleTo(want), name).toBeLessThan(0.026);
+    }
+  });
+
+  it('says how much of each shape a joint wears, adding to one, and a pure shape is all of it', () => {
+    const posture = createPosture({ spine: true });
+    for (const [slot, flown] of [
+      ['box', pose()],
+      ['delta', pose({ pitch: -0.2, vy: -8, speed: SPEED * 1.14 })],
+      ['track', pose({ pitch: -0.42, vy: -16, speed: SPEED * 1.48 })],
+      ['climb', pose({ pitch: 0.56, vy: 12, speed: SPEED * 0.75 })],
+    ] as const) {
+      posture.update(flown, 0);
+      for (const { kind, side } of JOINTS) {
+        const shape = posture.shape(kind, side);
+        expect(Object.values(shape).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+        expect(shape[slot], `${slot} ${kind}`).toBeCloseTo(1, 9);
+      }
     }
   });
 });

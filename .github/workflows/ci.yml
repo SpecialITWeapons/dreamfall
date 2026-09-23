@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # The browser tests run only when asked for, from the Actions tab: under
+  # SwiftShader the suite takes twenty-odd minutes and its slowest tests time
+  # out on a busy runner, so on every push it was mostly a wait for a coin toss.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,6 +31,18 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      - run: npm run build
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test

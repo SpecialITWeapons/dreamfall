@@ -151,14 +151,19 @@ describe('createAuthoredFigure', () => {
     }
   });
 
-  it('a level glide leaves the back straight and the head square', () => {
+  it('a level glide leaves the back straight and holds the head up', () => {
     const figure = createAuthoredFigure(skeleton());
     const straight = skeleton();
     figure.update(pose(), 0);
-    for (const bone of ['LowerBack', 'Spine', 'Spine1', 'Neck', 'Neck1', 'Head']) {
+    for (const bone of ['LowerBack', 'Spine', 'Spine1']) {
       const now = figure.object.getObjectByName(bone)!.quaternion;
       expect(now.angleTo(straight.getObjectByName(bone)!.quaternion)).toBeLessThan(1e-6);
     }
+    // The chin is up in level flight, and the top of the neck does most of it.
+    const turned = (bone: string) =>
+      figure.object.getObjectByName(bone)!.quaternion.angleTo(straight.getObjectByName(bone)!.quaternion);
+    expect(turned('Head')).toBeGreaterThan(0.2);
+    expect(turned('Head')).toBeGreaterThan(turned('Neck'));
   });
 
   it('reports an eye ahead of and under the body, where a face-down flyer has one', () => {
