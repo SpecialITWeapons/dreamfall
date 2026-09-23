@@ -237,6 +237,26 @@ describe('createGrass', () => {
     jumped.dispose();
   });
 
+  it('keeps its meadow when flown far from the middle of the world', () => {
+    // The owner's grass came for a moment and went: flown out to x -44584, the
+    // first rim rebuild threw every standing tuft away. A tuft remembers its
+    // tile by key, and the key -- tile x times 2^23, plus tile z -- was kept in
+    // an Int32Array, which wraps past 2^31: 256 tiles, 16 km from the middle.
+    // A wrapped key matches no tile the window wants, so every tuft left, while
+    // the window's own set of tiles, kept as numbers, still said they stood and
+    // wrote nothing back. What was left was the new rim, 400 m out and faded.
+    const origin = createOrigin();
+    const far = { x: -44584, z: 14294 };
+    const flown = grassOver(0.2);
+    for (let i = 0; i <= 4; i++) flown.update(far.x + i * 64, far.z + i * 64, 120, origin, i === 0);
+    const jumped = grassOver(0.2);
+    jumped.update(far.x + 4 * 64, far.z + 4 * 64, 120, origin, true);
+    expect(jumped.count).toBeGreaterThan(2000);
+    expect(flown.count).toBe(jumped.count);
+    flown.dispose();
+    jumped.dispose();
+  });
+
   it('never fills a form past its share -- the window cannot reach the ceiling in one rebuild', () => {
     const grass = grassOver(1);
     grass.update(0, 0, 120, createOrigin(), false);
