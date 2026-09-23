@@ -985,6 +985,7 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   const IDENTITY = new Quaternion();
   const bend = new Quaternion();
   const sway = new Quaternion();
+  const twist = new Quaternion();
   const axis = new Vector3();
   const inv = new Quaternion();
   const spineTop = new Quaternion();
@@ -993,8 +994,13 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   const clavicle = new Quaternion();
 
   /**
-   * Bend a chain by `x` about the figure's left-right axis and `y` about its
-   * up, and give back where the last bone ended up.
+   * Bend a chain by `x` about the figure's left-right axis, `y` about its up
+   * and `z` about its length, and give back where the last bone ended up. The
+   * spine arches about `x` and leans about `y`; the neck nods about `x` and
+   * turns about `z` -- the line of the spine, for a body lying face down --
+   * which is what turns a face. It used to turn about `y`, which for this body
+   * tips an ear toward a shoulder and leaves the face on the ground: the head
+   * "looked into the turn" with its eyes exactly where they had been.
    *
    * The axes are the figure's and they are taken into each bone's parent's
    * frame **every frame**, from where that parent actually is. Taken once at
@@ -1004,12 +1010,13 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
    * rotation Blender gave it, so its own local x is not the figure's and never
    * was the thing to use.
    */
-  const flex = (chain: Bendable[], x: number, y: number, parent: Quaternion): Quaternion => {
+  const flex = (chain: Bendable[], x: number, y: number, z: number, parent: Quaternion): Quaternion => {
     for (const part of chain) {
       inv.copy(parent).invert();
       bend.setFromAxisAngle(axis.set(1, 0, 0).applyQuaternion(inv), x * part.share);
       sway.setFromAxisAngle(axis.set(0, 1, 0).applyQuaternion(inv), y * part.share);
-      part.bone.quaternion.copy(bend).multiply(sway).multiply(part.rest);
+      twist.setFromAxisAngle(axis.set(0, 0, 1).applyQuaternion(inv), z * part.share);
+      part.bone.quaternion.copy(bend).multiply(sway).multiply(twist).multiply(part.rest);
       parent.multiply(part.bone.quaternion);
     }
     return parent;
@@ -1031,8 +1038,8 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
     // figure's `ahead` toward its `up` -- and up, for a body lying on the
     // air, is away from the ground it is looking at. The spine is walked
     // first because everything above it hangs off where it finished.
-    const top = flex(spine, -posture.torso.arch, posture.torso.lean, spineTop.copy(chest));
-    flex(neck, -posture.gaze.pitch, posture.gaze.yaw, neckRoot.copy(top));
+    const top = flex(spine, -posture.torso.arch, posture.torso.lean, 0, spineTop.copy(chest));
+    flex(neck, -posture.gaze.pitch, 0, posture.gaze.yaw, neckRoot.copy(top));
     // The collarbones, and the arms on the ends of them. The girdle takes a
     // quarter of however far the upper arm has travelled from the shape the
     // skin was cut in, about the axis it travelled on; the arm then gets

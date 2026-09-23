@@ -312,4 +312,56 @@ describe('the authored figure against its own file', () => {
     figure.update(pose({}), 0);
     expect(suit.morphTargetInfluences!.every((w) => w < 1e-6)).toBe(true);
   });
+
+  it('holds its head up and turns its face into a turn, which is what a face does', async () => {
+    // The face, as the file draws it, points ahead of a standing body; laid
+    // down, that is straight at the ground. Read it into the head's own frame
+    // once, from the untouched file, and follow the head with it.
+    const file = await load();
+    const laid = new Object3D();
+    laid.rotation.x = Math.PI / 2;
+    laid.add(file);
+    laid.updateMatrixWorld(true);
+    const drawnHead = file.getObjectByName('Head')!.getWorldQuaternion(new Quaternion());
+    const faceInHead = new Vector3(0, -1, 0).applyQuaternion(drawnHead.invert());
+    const figure = createAuthoredFigure(await load());
+    const face = (bank: number) => {
+      figure.update(
+        {
+          x: 0,
+          y: 0,
+          z: 0,
+          heading: 0,
+          bank,
+          pitch: 0,
+          vy: 0,
+          speed: SPEED,
+          windPhase: 0,
+          gust: 0,
+          view: 'tpp',
+        },
+        0,
+      );
+      figure.object.updateMatrixWorld(true);
+      const inFigure = figure.object.getWorldQuaternion(new Quaternion()).invert();
+      const head = inFigure.multiply(
+        figure.object.getObjectByName('Head')!.getWorldQuaternion(new Quaternion()),
+      );
+      return faceInHead.clone().applyQuaternion(head);
+    };
+    const deg = (r: number) => (r * 180) / Math.PI;
+    // Level flight: the eyes ahead of the chest, somewhere between the ground
+    // ahead and the horizon -- not on the ground under the figure, where a face
+    // pointed down the spine had them.
+    const level = face(0);
+    const up = deg(Math.atan2(level.z, -level.y));
+    expect(up).toBeGreaterThan(30);
+    expect(up).toBeLessThan(60);
+    expect(Math.abs(level.x)).toBeLessThan(0.05);
+    // A turn: the face goes round toward the inner side. A negative bank takes
+    // the left side down, and left is +x. The turn used to tip an ear and leave
+    // the face where it was, which this reads as zero.
+    expect(deg(Math.atan2(face(-0.47).x, -face(-0.47).y))).toBeGreaterThan(20);
+    expect(deg(Math.atan2(face(0.47).x, -face(0.47).y))).toBeLessThan(-20);
+  });
 });

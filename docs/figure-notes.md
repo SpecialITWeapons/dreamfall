@@ -68,30 +68,40 @@ of it the seam weld, 88 ms the rebind, before the weld's grid was made cheaper.
 
 ## Open, in the order I would take them
 
-### 1. The armpit in a dive and a climb
+### 1. The shoulder and the elbow away from the box — corrected per shape
 
-Unchanged by everything so far: mean 0.72, worst 0.04. The cause is measured
-and is not a bug — **the upper arm swings 120° between the box and the dive**
-and 102° between the box and the climb, so no single bind pose is near both
-ends, and `rebind` cuts the skin for one of them.
+The owner saw it from the chase camera before any number did: in the track and
+the climb the shoulder was an epaulette and the elbow a telescope, the forearm
+stepping out of the upper arm. The cause was the one this section always
+named — **the upper arm swings 120° between the box and the dive and 102°
+between the box and the climb**, and the elbow the box holds bent at 116° is
+nearly straight in both, so a skin cut in the box is far from home there.
 
-Three ways out, in increasing order of cost:
+What fixed it is none of the three ways out this section used to list. The
+file is drawn with straight arms held out, much nearer the track and the
+climb than the box is, so in those shapes the skin is skinned **from the file**
+instead: at load, for the delta, the track and the climb, the difference
+between the two skinnings is kept as a morph target and worn in the
+proportion the shoulders wear that shape (`correction`, `CORRECTED`,
+`Posture.shape`). Computed rather than sculpted, and exact at each shape; in
+the box it is zero by construction. Measured on the suit around the shoulder,
+as the share of its drawn area the worst twentieth of its triangles keeps:
 
-- **Narrow the swing** in `POSE`. This is an art decision and the owner has not
-  made it. Every threshold in `POSE` must stay inside what the controller can
-  actually fly (`pitch -0.42..+0.56`, `rush 0.75..1.48`, `bank 0.47`); a test
-  asks the controller itself, and a number written from a picture of a skydiver
-  instead was a pose that existed and could not be reached.
-- **A second bone in the shoulder.** The skeleton has 31 bones and no scapula;
-  the collarbone is standing in for the whole girdle at a quarter share. Adding
-  one means re-rigging the .glb, not a code change.
-- **Bake at the middle instead of the box.** Already tried and measured, and it
-  is the trade it looks like: the dive's worst triangle goes 0.04 → 0.36 and
-  the climb's 0.12 → 0.34, while level flight falls 0.98 → 0.60, the turn
-  0.73 → 0.53, and the cuffs — which the box holds shut to a tenth of a
-  millimetre — open eight. Rejected because level flight is what the figure is
-  in whenever the pilot is not doing something. Do not re-derive this; change
-  `BAKE` in `AuthoredFigure.ts` if you want to see it again.
+| shape | box-cut | corrected |
+| ----- | ------- | --------- |
+| delta | 0.45    | 0.64      |
+| track | 0.38    | 0.56      |
+| climb | 0.42    | 0.56      |
+
+and the worst stretch in the track from 2.2 to 1.6. Two other things were
+measured and left: spreading the track's and the climb's arms wider from the
+body changes these numbers by a hundredth, and smoothing the file's own
+weights round the shoulder buys the box and the turn at the track's expense.
+What is left — about a fifth of the area in the worst hundredth, in every
+shape including the box — is the file's weights and would take a re-rig.
+
+Still true of the rejected ways out: baking at the middle trades level flight
+away, and the skeleton has no scapula.
 
 ### 2. The foot in a steep dive — looked at, and nothing there
 
@@ -121,6 +131,25 @@ what `Torso`'s arch does when the flight is climbing rather than falling.
   figure. The grown figure had the head as its own region for exactly this
   reason, and showed its own arms.
 - The pelvis and the finger bones are not driven. Ten joints a side are.
+
+### The head
+
+It was there and could not be seen, for two reasons. It turned into a turn
+about the figure's up, which for a body lying face down tips an ear toward a
+shoulder and leaves the face on the ground; and it held the face straight
+down the line of the spine in level flight, lifting the chin only in a dive.
+Measured on the file, the face pointed at the ground under the chest in a
+level glide and at exactly the same place in a hard turn either way.
+
+Now (`GAZE` in `Posture.ts`, `flex` in `AuthoredFigure.ts`): the chin is held
+up all the time, the face about 44° off straight down in level flight, more in
+a dive and less in a climb, whose nose is already up; the head turns about the
+line of the spine, about 35° into a hard turn; when nothing asks anything of
+it, it glances about — a quick look, a hold, a third of them straight ahead,
+all a pure function of the flight's clock — and a turn fades the glances out;
+it nods into a change of flight angle before the body has made it; and the
+flutter reaches the helmet. The skin is cut with the chin up, because `BAKE`
+is level flight and level flight now has one.
 
 ## Traps, each of which cost a day
 

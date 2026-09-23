@@ -429,7 +429,10 @@ export interface Torso {
 /**
  * Where the figure is looking, in radians, for a body with a neck to look
  * with. Both are the whole of it, to spread over however many bones a neck
- * turns out to have.
+ * turns out to have. `yaw` is a turn of the head about the neck's own axis --
+ * the face going round toward a shoulder -- and `pitch` a nod about the
+ * figure's left-right one, chin up; a body lying face down on the air turns
+ * its head about the line of its spine, not about the normal of its back.
  *
  * A head is not a limb and does not wait for the air: a person looks into a
  * turn before they are in it, which is why this is sprung faster than a
@@ -438,9 +441,9 @@ export interface Torso {
  * looks like.
  */
 export interface Gaze {
-  /** Into the turn. Positive is toward the figure's left, which is +x. */
+  /** Into the turn, or at whatever caught its eye. Positive turns the face toward the figure's left, +x. */
   yaw: number;
-  /** Chin up, which is what keeps the eyes on the horizon while the back arches. */
+  /** Chin up from looking straight down, which a flyer never does for long. */
   pitch: number;
 }
 
@@ -487,14 +490,65 @@ export interface Posture {
 const TORSO = { arch: 0.35, lean: 0.22, lag: 0.22 };
 
 /**
- * How far the head turns, and how fast. Thirty degrees into a hard turn is
- * what a person does without moving their shoulders; past that the shoulders
- * go too, and the shoulders here are busy flying. The chin comes up with the
- * arch and by rather less than the arch, so the eyes end up somewhere between
- * the horizon and the ground rather than level -- which is where a skydiver's
- * eyes are, because the ground is the thing worth looking at.
+ * How the head moves, and how fast.
+ *
+ * `lift` is the chin held up all the time. Without it the face pointed
+ * straight down the line of the spine in level flight, the helmet square on
+ * the shoulders and the eyes on the ground under the figure's own chest, and
+ * the owner saw it at once: a flyer on their belly holds the head up and looks
+ * ahead, somewhere between the ground ahead and the horizon. `pitch` is how
+ * much more the arch adds, rather less than the arch, so a dive does not tip
+ * the eyes off the ground they are diving at.
+ *
+ * `yaw` is how far into a hard turn: thirty degrees is what a person turns
+ * without moving their shoulders, and the shoulders here are busy flying.
+ * `lag` is faster than any limb's, because a person looks first.
+ *
+ * `glance` is what the head does when nothing is asking anything of it: a
+ * person gliding over a landscape looks at it. A glance is quick and a look
+ * is held -- sprung at `lag`, held for about `every` seconds, a third of
+ * them straight ahead -- as far as `yaw` either way and `down` toward the
+ * ground under the figure. A turn takes the head over and the glances fade
+ * with it.
+ *
+ * `lead` is the nod into a change of flight angle before the body has made
+ * it: `rate` of pitch a second is a whole one. `buffet` is how much of the
+ * limbs' flutter reaches the head, which the helmet catches like a sail.
  */
-const GAZE = { yaw: 0.52, pitch: 0.24, lag: 0.08 };
+const GAZE = {
+  lift: 0.65,
+  pitch: 0.24,
+  yaw: 0.52,
+  lag: 0.08,
+  glance: { yaw: 0.42, down: 0.3, every: 3.2, lag: 0.12, ahead: 0.35 },
+  lead: { pitch: 0.18, rate: 0.3, lag: 0.15 },
+  buffet: 0.35,
+};
+
+/** A number in 0..1 for an integer, the same every time: a glance's dice. */
+const dice = (n: number, salt: number) => {
+  let h = Math.imul(n ^ Math.imul(salt, 0x9e3779b1), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+/**
+ * Where an idle head looks at `time`, as a pure function of it: the same
+ * flight glances the same way, and a paused one holds its glance. The span of
+ * each look is irregular without any state -- the clock is bent by a slow sine
+ * before it is cut into looks, and a clock bent that little still only runs
+ * forward -- and the first look is straight ahead, so a figure placed with
+ * `dt <= 0` at the start of a flight looks where it is going.
+ */
+const glanceAt = (time: number) => {
+  const look = Math.floor((time + 0.9 * Math.sin(time * 0.37)) / GAZE.glance.every);
+  if (look <= 0 || dice(look, 1) < GAZE.glance.ahead) return { yaw: 0, pitch: 0 };
+  return {
+    yaw: (dice(look, 2) * 2 - 1) * GAZE.glance.yaw,
+    // Mostly down, at the ground going by; now and then a little up.
+    pitch: (dice(look, 3) * 1.25 - 1) * GAZE.glance.down,
+  };
+};
 
 export function createPosture(opts: { spine?: boolean } = {}): Posture {
   let time = 0;
@@ -516,6 +570,11 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   const rolling = { x: 0, v: 0 } satisfies Spring;
   const look = { x: 0, v: 0 } satisfies Spring;
   const lift = { x: 0, v: 0 } satisfies Spring;
+  const glanceYaw = { x: 0, v: 0 } satisfies Spring;
+  const glancePitch = { x: 0, v: 0 } satisfies Spring;
+  // The flight angle a frame ago, for the head's nod into a change of it.
+  let lastPitch = 0;
+  const nodding = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
     const aims = {} as Record<Slot, Vector3>;
     const weight = {} as Record<Slot, Spring>;
@@ -615,10 +674,27 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
       // head reads. It leans the other way from the sign of the bank for the
       // same reason the inner side of the body does: a roll about +z takes the
       // left side down, and down is the way round.
+      const turning = clamp01(Math.abs(pose.bank) / POSE.bank);
+      // Nose coming up or going down, smoothed: the head nods into it first.
+      const nod = dt > 0 && flown ? (pose.pitch - lastPitch) / dt : 0;
+      lastPitch = pose.pitch;
+      settle(nodding, nod, 1 / GAZE.lead.lag, DAMPING.pose, dt);
       settle(look, -clamp01(pose.bank / POSE.bank, -1) * GAZE.yaw, 1 / GAZE.lag, DAMPING.joint, dt);
-      settle(lift, arch * GAZE.pitch, 1 / GAZE.lag, DAMPING.joint, dt);
-      gaze.yaw = look.x;
-      gaze.pitch = lift.x;
+      settle(
+        lift,
+        GAZE.lift + arch * GAZE.pitch + clamp01(nodding.x / GAZE.lead.rate, -1) * GAZE.lead.pitch,
+        1 / GAZE.lag,
+        DAMPING.joint,
+        dt,
+      );
+      // What caught its eye, less of it the harder the turn.
+      const idle = glanceAt(time);
+      settle(glanceYaw, idle.yaw * (1 - turning), 1 / GAZE.glance.lag, DAMPING.joint, dt);
+      settle(glancePitch, idle.pitch * (1 - turning), 1 / GAZE.glance.lag, DAMPING.joint, dt);
+      // And the air on the helmet, on top of all of it.
+      const buffet = flutter * GAZE.buffet;
+      gaze.yaw = look.x + glanceYaw.x + Math.sin(w * 1.9) * buffet;
+      gaze.pitch = lift.x + glancePitch.x + Math.sin(w * 2.3 + 1.3) * buffet * 0.7;
 
       // ---- what shape the figure is holding --------------------------------
       const dive = clamp01(-pose.pitch / POSE.dive);
