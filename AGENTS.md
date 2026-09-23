@@ -274,8 +274,10 @@ page works under a Pages subdirectory.
 - **The deck is one field** (`sky/CloudCover.ts`): a repeating square baked
   per seed, 30 to 60 per cent of it cloud by region, read at `p - wind * t` by
   the GPU as `cloudCover` and by the CPU as `cover.at`. The cloud sea, its
-  fog, the puffs and the shadows all read it, so from over the deck the ground
-  shows through the same gaps it is seen through from under it. It was four
+  fog, the puffs, the shadows and the dome's painting of the deck's underside
+  (where the view ray meets the sea's plane) all read it, so from over the
+  deck the ground shows through the same gaps the sky shows through from
+  under it. The dome's other painted clouds are a higher layer of their own. It was four
   fields once, and the sea alone was a sheet over the whole world.
 
 ## Scenery
