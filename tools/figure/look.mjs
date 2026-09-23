@@ -44,12 +44,17 @@ const SIDES = [
   ['side', -393, 0],
   ['below', -393, -200],
   ['above', 0, 200],
+  ['front', -785, 0],
+  ['frontlow', -785, -150],
 ];
 
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || undefined,
   args: [
+    // `WEBGPU=1`: the backend a machine with a GPU gets by default, which can
+    // draw what WebGL2 does not. SwiftShader has an adapter for it too.
+    ...(process.env.WEBGPU ? ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'] : []),
     '--use-gl=angle',
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
@@ -60,22 +65,46 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 960 } });
 page.on('console', (m) => {
   if (m.type() === 'error') console.log('console:', m.text());
 });
+// This container's Chromium is older than three's WebGPU backend: it rejects the
+// `swizzle` member three now puts in a texture view's descriptor, and the page
+// dies before its first frame. Dropping the member is what a browser without
+// the feature would do with it anyway.
+if (process.env.WEBGPU) {
+  await page.addInitScript(() => {
+    const proto = /** @type {any} */ (globalThis).GPUTexture?.prototype;
+    if (!proto) return;
+    const createView = proto.createView;
+    proto.createView = function (/** @type {any} */ descriptor) {
+      if (descriptor && 'swizzle' in descriptor) {
+        const rest = { ...descriptor };
+        delete rest.swizzle;
+        return createView.call(this, rest);
+      }
+      return createView.call(this, descriptor);
+    };
+  });
+}
 // Close in and nearly level, silent: the remembered framing is read at load.
 await page.addInitScript(() => {
   const camera = { yaw: 0, pitch: 0.15, dist: 3 };
   localStorage.setItem('dreamfall-settings', JSON.stringify({ volume: 0, muted: true, camera, view: 'tpp' }));
 });
-await page.goto('http://localhost:4173/?seed=42&webgl=1');
+await page.goto(`http://localhost:4173/?seed=42${process.env.WEBGPU ? '' : '&webgl=1'}`);
 await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 600_000 });
 await page.click('#beginBtn');
 const flown = await page.evaluate(
-  ({ key, shape }) => {
+  ({ key, shape, day, above }) => {
     const w = /** @type {NonNullable<Window['__world']>} */ (window.__world);
     w.skipOpening();
     w.setPaused(true);
+    // `DAY=0.5` photographs at noon rather than wherever the clock has got to.
+    if (day !== null) w.dayPhase = day;
     // A climb from where the flight begins goes up into the cloud deck and
     // photographs fog; from low down it runs out of pitch long before that.
     if (shape === 'climb') w.jump(w.state.x, w.state.z, 120);
+    // `ABOVE=60` drops the flight that far over the ground first, where the
+    // grass is.
+    if (above !== null) w.jump(w.state.x, w.state.z, above);
     if (key) w.key(key);
     /** @param {{ pitch: number, speed: number, bank: number }} s */
     const there = (s) =>
@@ -87,16 +116,21 @@ const flown = await page.evaluate(
     // Up to twenty seconds of flight, and no further than the corner asked for:
     // held any longer, a dive meets the ground and pulls out of itself.
     let reached = false;
-    for (let i = 0; i < 1200 && !reached; i++) {
+    for (let i = 0; i < (shape === 'level' ? 30 : 1200) && !reached; i++) {
       w.step(1 / 60);
       reached = there(w.state);
     }
     const s = w.state;
     return { reached, pitch: s.pitch, rush: s.speed / 40, bank: s.bank, clearance: w.clearance };
   },
-  { key: KEYS[shape] ?? null, shape },
+  {
+    key: KEYS[shape] ?? null,
+    shape,
+    day: process.env.DAY ? Number(process.env.DAY) : null,
+    above: process.env.ABOVE ? Number(process.env.ABOVE) : null,
+  },
 );
-console.log(shape, JSON.stringify(flown));
+console.log(shape, JSON.stringify(flown), await page.evaluate(() => window.__world?.backend));
 if (shape !== 'level' && !flown.reached)
   console.log(`never reached the ${shape}; these are of wherever it got to`);
 

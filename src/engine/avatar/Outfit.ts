@@ -8,7 +8,7 @@
 // The suit and the helmet are the file's shapes in these colours: the file's
 // own were near-black on both, so the figure was one dark silhouette
 // (`AuthoredFigure.ts`, `recolour`). The helmet's visor is told from its shell
-// by the file's own texture. The body the file carries is hands, feet
+// by the file's own texture, read once at load. The body the file carries is hands, feet
 // and a neck -- everything the suit covers was cut away -- so the hands are
 // painted into gloves and the feet get boots built over them (`dress`,
 // `cobble`).

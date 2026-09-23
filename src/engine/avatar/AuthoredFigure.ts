@@ -24,8 +24,6 @@ import {
   type BufferAttribute,
   type Object3D,
 } from 'three';
-import { color, float, mix, step, texture } from 'three/tsl';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
 import { SPEED } from '../flight/FlightController';
@@ -739,22 +737,56 @@ function cobble(body: SkinnedMesh): SkinnedMesh[] {
   return boots;
 }
 
+/** A texture's pixels, RGBA, rows from the top: what `glTF` UVs index. */
+export interface Texels {
+  data: ArrayLike<number>;
+  width: number;
+  height: number;
+}
+
+/**
+ * Read an image's pixels in a browser, through a 2D canvas. Null where there is
+ * no way to -- a test in Node, whose images are stubs -- and the caller then
+ * does without.
+ */
+const readTexels = (image: unknown): Texels | null => {
+  const source = image as { width?: number; height?: number } | null;
+  if (typeof OffscreenCanvas === 'undefined' || !source?.width || !source.height) return null;
+  const canvas = new OffscreenCanvas(source.width, source.height);
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.drawImage(image as CanvasImageSource, 0, 0);
+  return context.getImageData(0, 0, source.width, source.height);
+};
+
 /**
  * Give the suit and the helmet the outfit's colours instead of the file's.
  *
  * The suit's texture is a flat 0x2a2a2a, so it loses it and takes
- * `OUTFIT.suit`. The helmet's texture is two colours, and they are two parts:
- * the shell drawn in 0x2a2a2a and the visor in black. Painted one colour, as
- * it first was here, the helmet lost its visor and read as a lump; so the
- * texture stays, as a mask, and says which texel is which -- the shell takes
- * `OUTFIT.helmet` and the visor `OUTFIT.visor`, glossier than the shell,
- * because a visor is glass. A change of colour is one line in `Outfit.ts`.
+ * `OUTFIT.suit`. The helmet's texture is two parts on a transparent ground:
+ * the shell drawn in (39, 38, 37) and the visor in black. Painted one colour,
+ * as it first was here, the helmet lost its visor and read as a lump.
+ *
+ * The second answer read the texture in the shader as a mask, and on WebGPU
+ * the owner saw a skull: the shell blotched dark and the visor striped, where
+ * WebGL2 drew it clean at every distance. Whatever WebGPU does differently
+ * with that texture, the helmet no longer asks it anything. The texture is
+ * read once, here, on the CPU: every triangle is the shell or the visor by the
+ * texel under its middle, the index is sorted into those two groups, and each
+ * group wears a plain material of its own -- the visor glossier, because a
+ * visor is glass. No vertex is split, so the smoothed normals run across the
+ * visor's edge, and the edge itself is sharp, along the mesh. Of 2500
+ * triangles 347 are visor and 113 straddle the painted edge, which is the
+ * resolution the edge now has.
  *
  * Found by what they are rather than what Blender called them: of the textured
  * meshes, the one that rides the head -- nine in ten of its vertices mostly on
  * that bone -- is the helmet, and the other is the suit.
  */
-function recolour(skins: readonly SkinnedMesh[]): SkinnedMesh | null {
+function recolour(
+  skins: readonly SkinnedMesh[],
+  texels: (image: unknown) => Texels | null,
+): SkinnedMesh | null {
   let helmet: SkinnedMesh | null = null;
   for (const mesh of skins) {
     const material = mesh.material as MeshStandardMaterial;
@@ -765,14 +797,12 @@ function recolour(skins: readonly SkinnedMesh[]): SkinnedMesh | null {
     let headed = 0;
     for (let v = 0; v < count; v += 1) if (onHead(v) > 0.5) headed += 1;
     if (headed > 0.9 * count) {
-      // Linear, the texture is 0.023 on the shell and 0 on the visor; the
-      // step is halfway, and a mip that blends the two blends the colours.
-      const shell = step(0.012, texture(map).r);
-      const painted = new MeshStandardNodeMaterial({ name: 'helmet', metalness: 0 });
-      painted.colorNode = mix(color(OUTFIT.visor), color(OUTFIT.helmet), shell);
-      painted.roughnessNode = mix(float(0.18), float(0.5), shell);
-      mesh.material = painted;
+      const shell = new MeshStandardMaterial({ name: 'helmet', color: OUTFIT.helmet, roughness: 0.5 });
+      const visor = new MeshStandardMaterial({ name: 'visor', color: OUTFIT.visor, roughness: 0.15 });
+      splitVisor(mesh, texels(map.image));
+      mesh.material = [shell, visor];
       material.dispose();
+      map.dispose();
       helmet = mesh;
       continue;
     }
@@ -782,6 +812,38 @@ function recolour(skins: readonly SkinnedMesh[]): SkinnedMesh | null {
     map.dispose();
   }
   return helmet;
+}
+
+/**
+ * Sort the helmet's triangles into the shell (group 0) and the visor (group 1)
+ * by the texel under the middle of each. A visor texel is opaque and black; a
+ * texel off the painted islands is transparent and counts as shell. Without
+ * the texture's pixels every triangle is the shell.
+ */
+function splitVisor(mesh: SkinnedMesh, pixels: Texels | null): void {
+  const geometry = mesh.geometry;
+  const index = geometry.index;
+  const uv = geometry.attributes.uv as BufferAttribute | undefined;
+  if (!index) return;
+  const shell: number[] = [];
+  const visor: number[] = [];
+  for (let t = 0; t < index.count; t += 3) {
+    const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+    let isVisor = false;
+    if (pixels && uv) {
+      const u = (uv.getX(corners[0]!) + uv.getX(corners[1]!) + uv.getX(corners[2]!)) / 3;
+      const v = (uv.getY(corners[0]!) + uv.getY(corners[1]!) + uv.getY(corners[2]!)) / 3;
+      const x = Math.min(pixels.width - 1, Math.max(0, Math.floor(u * pixels.width)));
+      const y = Math.min(pixels.height - 1, Math.max(0, Math.floor(v * pixels.height)));
+      const at = (y * pixels.width + x) * 4;
+      isVisor = pixels.data[at + 3]! >= 128 && pixels.data[at]! < 20;
+    }
+    (isVisor ? visor : shell).push(...corners);
+  }
+  geometry.setIndex([...shell, ...visor]);
+  geometry.clearGroups();
+  geometry.addGroup(0, shell.length, 0);
+  geometry.addGroup(shell.length, visor.length, 1);
 }
 
 /**
@@ -965,7 +1027,13 @@ export async function loadAuthoredFigure(url: string = figureUrl): Promise<Autho
  * `body` is a scene holding a CMU-named skeleton. It is taken over, not
  * copied.
  */
-export function createAuthoredFigure(body: Object3D): AuthoredFigure {
+export function createAuthoredFigure(
+  body: Object3D,
+  opts: {
+    /** How to read a texture's pixels; the default draws it on a 2D canvas, which Node has none of. */
+    texels?: (image: unknown) => Texels | null;
+  } = {},
+): AuthoredFigure {
   const object = new Group();
   object.name = 'figure';
   // `YXZ`, the same order the flight's angles are written in, so the figure and
@@ -1152,7 +1220,7 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   weldSeams(skins);
   // What the figure wears. Before the bake, because the boots are meshes of
   // their own and have to be carried into the box with everything else.
-  const helmet = recolour(skins);
+  const helmet = recolour(skins, opts.texels ?? readTexels);
   const bare = dress(skins);
   for (const mesh of [helmet, bare]) if (mesh) smoothNormals(mesh);
   for (const boot of bare ? cobble(bare) : []) {
