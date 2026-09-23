@@ -644,6 +644,17 @@ export interface Avatar {
 
 > Garderoba (stroje, znaki, panel) została usunięta 2026-09-20 na życzenie
 > właściciela: postać ma jeden kombinezon w jednym kolorze (`avatar/Outfit.ts`).
+>
+> **Poprawka 2026-09-23: postać z pliku zamiast postaci proceduralnej.** Na
+> życzenie właściciela domyślną i jedyną postacią jest ciało narysowane w
+> Blenderze (`avatar/figure.glb`, `AuthoredFigure.ts`): kombinezon, kask i
+> ciało przycięte do dłoni, stóp i szyi, na szkielecie CMU z 31 kości.
+> `ProceduralHuman`, `Skin.ts`, `Flesh.ts` i bake w Blenderze zostały usunięte;
+> opis poniżej jest historią. Ruch został ten sam — `Posture.ts` steruje
+> kończynami, kręgosłupem, szyją i obojczykami. Przy wczytaniu kombinezon i
+> kask dostają kolory z `Outfit.ts`, dłonie są malowane na rękawice, a na
+> stopach silnik buduje buty. W FPP ukryta jest cała postać, bo skóry nie da się
+> ciąć na części. Szczegóły i pomiary: `docs/figure-notes.md`.
 
 `ProceduralHuman`: tułów, miednica, głowa z kaskiem i goglami, ramiona i
 przedramiona w pozycji pudełkowej (ramiona w bok i do przodu, łokieć zgięty

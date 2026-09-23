@@ -12,8 +12,8 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 `ramp` through its context, which is what lets the layer painter be read by a
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
-interface, procedural human, the outfit), `terrain/` (noise, base fields,
-heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
+interface, posture, the authored figure and its file, the outfit), `terrain/`
+(noise, base fields, heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
 ring, settlement lattice, pools, tree kit, structure kit, road kit, painted
 textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
@@ -35,7 +35,7 @@ page works under a Pages subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Skin.ts`, `avatar/Flesh.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
+  `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -180,30 +180,26 @@ page works under a Pages subdirectory.
   `Object3D.rotation` with order `'YXZ'` agree.
 - `applyCameraPose` is the only place the camera is moved; poses are computed
   in the world and written through `Origin.localX/localZ`.
-- The figure is **one surface on sixteen bones**, grown from a distance field:
-  `Skin.ts` says what a chain is (joints, a `profile` of half-widths in metres
-  at shares of its length, read through a monotone cubic, a section `flatten`
-  that may change along it, a `swatch` and a `patch`), and `Flesh.ts` turns the
-  chains of a region into a field -- each chain a tube of its own section,
-  rounded at its ends, the chains joined by a smooth minimum over `blend`
-  metres -- and pulls the surface out of it with surface nets on a grid of
-  `cell` metres. Both are pure CPU and tested in Node. Three regions: the body
-  (torso, arms, legs, boots, 2 cm, so an arm rounds into the chest instead of
-  standing in it), each hand (6 mm, because a finger is 25 mm across) laid over
-  the sleeve's end, and the head (7 mm) on its own so the first person can hide
-  it. A vertex's bones come from the nearest chain, and from the two nearest on
-  a fillet, so the join follows both and tears from neither; its normal is the
-  field's gradient; its swatch is voted over its cell, and a patch's edge is a
-  mix of the two swatches in proportion, or the visor is a stair at the grid's
-  pitch. 33 000 triangles and about 0.4 s to grow, once, behind the veil.
-  `ProceduralHuman.ts` builds the `Bone` tree and the two `SkinnedMesh`es; the
-  world's material needs no change: `setupPosition` adds `skinning(object)`
-  for a skinned mesh by itself. A `swatch` is a belt round the chain and
-  nothing else, which is why a visor is a `patch` -- a colour for one place,
-  taking the angle around the ring as well: a dark belt on a pale solid of
-  revolution reads as a face from every bearing at once, and the head appears
-  to turn to follow the camera. There was a ring sweep here before the field;
-  it went because a tube pushed into another tube is a seam.
+- The figure is **a file** (`avatar/figure.glb`, drawn in Blender) and
+  `AuthoredFigure.ts` is all of what the engine does to it: three skinned
+  meshes -- a suit, a helmet, and the body under them trimmed to hands, feet and
+  a neck -- on a 31-bone CMU skeleton, fetched on every start before the world
+  is built. The engine grew its own body from a distance field until the owner
+  retired it; the posture outlived it, and the history is in
+  `docs/figure-notes.md`. On load, in this order and only this one: the seams
+  where two meshes are drawn touching get one set of weights (`weldSeams`), the
+  suit and the helmet lose the file's near-black textures for `OUTFIT`'s
+  colours, the hands are painted into gloves off their own skin weights and a
+  **boot is grown over each foot** -- sections along the foot, each grown until
+  the whole slab of toes is inside it, skinned from the nearest vertex of the
+  foot -- because painted toes read as a sock; then the skin is re-cut into the
+  box (`rebind`), because a body modelled in a T and flown with its arms back is
+  a right angle from the only pose its skin is correct in. A limb's roll about
+  its own axis is invisible to every test that compares directions and is what
+  twists the skin, so `authoredFile.test.ts` loads the real file twice and
+  measures it; `tools/figure/look.mjs` photographs a corner of the envelope from
+  four sides in half a minute. The first person hides the whole figure: a skin
+  cannot be culled part by part.
 - The figure's motion is **five shapes and the air**: box, delta, track, climb,
   and a turn laid over any of the others rather than instead of it. A shape is
   five directions a side (upper arm, forearm, thigh, shin, foot) and nothing
@@ -221,13 +217,11 @@ page works under a Pages subdirectory.
   sprung per joint too, so a shape arrives shoulder first and ankle last.
   `dt <= 0` means "be there now" -- position and velocity both -- which is how
   the world places the figure before the first frame.
-- The figure wears **one suit in one colour** (`avatar/Outfit.ts`), painted
-  once at build. There was a wardrobe -- six suits, five markings, a panel --
-  and the owner removed it: a marking read as camouflage. What covers the
-  figure stays inside the palette envelope; the goggles, boots and gloves sit
-  under its floor on purpose, and a test holds both halves. `Skin.ts` still
-  writes `along` and `around` per vertex, which is what a UV map would be made
-  of.
+- The figure wears **one suit in one colour** (`avatar/Outfit.ts`), with a
+  helmet, boots and gloves. There was a wardrobe -- six suits, five markings, a
+  panel -- and the owner removed it: a marking read as camouflage. What covers
+  the figure stays inside the palette envelope; the boots and gloves sit under
+  its floor on purpose, and a test holds both halves.
 - The opening (`sim/Opening.ts`) is a pure function of how long it has been
   running: five acts, a title card and the pace of the day. It drives the
   flight with `fly(yaw, climb)`, which takes a **sign** as an arrow key does,

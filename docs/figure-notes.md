@@ -6,11 +6,40 @@ measurements and the reasoning that goes with them, not an approved design.
 The design is `docs/superpowers/specs/2026-09-14-dreamfall-design.md`, and the
 rules that bind every change are in `AGENTS.md`.
 
-There are **two figures**. The grown one (`ProceduralHuman.ts`) is what a
-player gets; the authored one (`AuthoredFigure.ts`, `figure.glb`) is behind
-`?figure=glb`. They share `Posture.ts`, and that sharing is the single most
-important fact in this directory: **a change to `Posture.ts` moves both, and a
-fault found in one is usually in the other.** Three faults in a row were.
+There is **one figure**: the one drawn in Blender (`AuthoredFigure.ts`,
+`figure.glb`), which every player gets. There used to be two -- the engine grew
+a body of its own from a distance field (`ProceduralHuman.ts`, `Skin.ts`,
+`Flesh.ts`), and the drawn one sat behind `?figure=glb` -- until the owner
+retired the grown one. What they shared is still here: `Posture.ts` is the
+figure's motion, written for the grown body and kept whole, and three faults in
+a row found in one body turned out to be in it.
+
+## What it wears
+
+The file's suit and helmet were near-black textures -- the suit a flat
+0x2a2a2a, the helmet black under 98 per cent of its vertices -- and the body
+under them is trimmed to hands, feet and a neck, all bare skin. So the figure
+was one dark silhouette with pale hands and feet, and barefoot. On load now
+(`recolour`, `dress`, `cobble`, all before the bake):
+
+- the suit and the helmet drop their textures for `OUTFIT.suit` and
+  `OUTFIT.helmet`;
+- the hands are painted `OUTFIT.gloves` off their own skin weights -- the
+  whole arm chain, or the rim at the wrist stays skin and shows as a pale line
+  round the cuff;
+- a boot is grown over each foot: eighteen sections along it, each a rounded
+  rectangle grown until the whole slab of toes is inside it, skinned from the
+  nearest vertex of the foot. Painting the toes instead read as a sock with
+  five toes in it.
+
+The suit shows a fine lattice from the side in a low sun. It was there on the
+black suit too and hid in the dark; the owner likes it, so it stays. It is
+_not_ z-fighting with a lining: a one-sided suit shows it just the same, and
+the suit has to stay two-sided anyway (`tools/figure/README.md`, `--two-sided`).
+
+The figure casts a shadow, as the grown one did, and costs every player two
+megabytes and about a fifth of a second behind the veil, where it used to cost
+only whoever asked for it.
 
 ## Where things stand
 
@@ -27,7 +56,7 @@ Done and measured, with the numbers that say so:
 | thigh twist wrung in by the bake         | 154°        | 26°         |
 | shin twist                               | 167°        | 11°         |
 
-The twist is now a test, `tests/unit/authoredTwist.test.ts`, and it reads a
+The twist is now a test, `tests/unit/authoredFile.test.ts`, and it reads a
 little differently from the two rows above because it takes the **worst frame**
 over the four corners of the envelope, flown on the controller, rather than one
 pose: thigh 6°, shin 18°, foot 24° against the file, and 6°, 3° and 21° for the
@@ -86,11 +115,11 @@ what `Torso`'s arch does when the flight is climbing rather than falling.
 
 ### 3. Things named and deliberately left
 
-- The authored figure's material does not go through the engine's
-  `SoftLighting`.
-- First person cannot hide the head: it is one mesh with the body, and a skin
-  cannot be culled part by part. The grown figure has the head as its own
-  region for exactly this reason.
+- The figure's materials do not go through the engine's `SoftLighting`.
+- First person cannot hide only the head: it is one mesh with the body, and a
+  skin cannot be culled part by part, so the first person hides the whole
+  figure. The grown figure had the head as its own region for exactly this
+  reason, and showed its own arms.
 - The pelvis and the finger bones are not driven. Ten joints a side are.
 
 ## Traps, each of which cost a day
@@ -102,7 +131,7 @@ a 154° wring baked straight into it. It reported the leg fix as a regression.
 The metric that sees a wring is the **twist against the authored file**: load
 the .glb twice, take each bone's rest orientation and direction from the
 untouched copy, and decompose `now · rest⁻¹` into swing and twist about the
-limb's axis. `tests/unit/authoredTwist.test.ts` is exactly that. The upper arm
+limb's axis. `tests/unit/authoredFile.test.ts` is exactly that. The upper arm
 and the forearm are left out of its bound on purpose: the box holds the forearm
 pointing at the head, which is a shoulder turned a right angle outward from the
 T, so about a hundred degrees of their roll is real and asked for.
@@ -151,7 +180,7 @@ Unit tests in Node cover the arithmetic: `tests/unit/posture.test.ts` and
 `tests/unit/authoredFigure.test.ts`, the latter over a fixture that is two
 skinned meshes on a CMU skeleton where every bone wears a rest rotation of its
 own — because on the real figure nothing starts at identity — and
-`tests/unit/authoredTwist.test.ts`, which is the one of them that loads the real
+`tests/unit/authoredFile.test.ts`, which is the one of them that loads the real
 .glb, because a roll is the one thing a fixture cannot say anything about.
 
 For anything you have to see, `tools/figure/look.mjs` does it in about half a
@@ -160,9 +189,8 @@ minute: with `npm run preview` running,
 controller to that corner of the envelope with `__world.step` behind a paused
 loop and photographs the figure from behind, the side, below and above. Stepping
 by hand is what makes it quick: waiting on `window.__world.frames` for a settle
-of 40 frames under SwiftShader takes minutes. By hand it is `?seed=42&webgl=1`
-and `?figure=glb` for the authored one, `window.__world.skipOpening()`, and a
-mouse drag orbits the chase camera. Never run two Chromiums at once, because a
+of 40 frames under SwiftShader takes minutes. By hand it is `?seed=42&webgl=1`,
+`window.__world.skipOpening()`, and a mouse drag orbits the chase camera. Never run two Chromiums at once, because a
 software rasteriser wants the whole machine.
 
 The container's Playwright browsers and `@playwright/test` can disagree about

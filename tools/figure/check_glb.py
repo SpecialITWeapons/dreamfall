@@ -19,11 +19,14 @@ import sys
 import zlib
 from pathlib import Path
 
-# Everything the engine's own figure is, for comparison. See
-# src/engine/avatar/ProceduralHuman.ts and tools/figure/figure.json.
-ENGINE_BONES = 16
+# What the engine expects of a figure. It drives a CMU skeleton by name
+# (src/engine/avatar/AuthoredFigure.ts), and the flight's clearance is written
+# for a body about this tall (HUMAN_BOUNDS in src/engine/avatar/Avatar.ts). The
+# triangle budget is what the body the engine used to grow for itself cost; the
+# file replaced it, and a re-export that costs more is a step backwards.
+ENGINE_BONES = 31
 ENGINE_HEIGHT = 1.7  # metres, nose to toe
-ENGINE_TRIANGLES = 33_000  # what Flesh.ts grows, per AGENTS.md
+ENGINE_TRIANGLES = 33_000
 # WebGPU gives a pipeline eight vertex buffers and three does not ask for more;
 # a pipeline over it fails validation quietly. See AGENTS.md.
 MAX_VERTEX_BUFFERS = 8
@@ -194,8 +197,8 @@ def main():
                 f'(export_leaf_bone=False).')
         if len(joints) != ENGINE_BONES:
             notes.append(
-                f'skin {si}: {len(joints)} joints against the engine\'s {ENGINE_BONES}. Not a fault -- '
-                f'but the pose system drives the engine\'s names, so a retarget has to exist somewhere.')
+                f'skin {si}: {len(joints)} joints against the CMU skeleton\'s {ENGINE_BONES}. Not a fault '
+                f'by itself -- but the engine drives bones by their CMU names, and a missing one throws.')
 
     # --- the meshes ---------------------------------------------------------
     for mi, mesh in enumerate(gltf.get('meshes', [])):
@@ -380,8 +383,8 @@ def main():
             warnings.append(f'figure: {height:.3f} m tall. The engine\'s own is about {ENGINE_HEIGHT} m.')
         if tris > ENGINE_TRIANGLES:
             warnings.append(
-                f'figure: {tris} tris against the {ENGINE_TRIANGLES} the engine grows for itself. '
-                f'An authored figure that costs more than the procedural one is not a saving.')
+                f'figure: {tris} tris against a budget of {ENGINE_TRIANGLES}, which is what the '
+                f'figure the engine used to grow cost. The boots the engine adds are on top.')
 
     for line in notes:
         print(f'  . {line}')

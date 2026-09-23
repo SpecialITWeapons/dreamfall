@@ -1,4 +1,5 @@
-// The authored figure's limbs, measured against the file they were drawn in.
+// The figure against the file it was drawn in: how its limbs are turned, and
+// what it wears that the file does not.
 //
 // `authoredFigure.test.ts` checks the retarget on a fixture, and a fixture can
 // say whether a bone points where the posture says. It cannot say whether a
@@ -11,10 +12,20 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Object3D, Quaternion, Vector3 } from 'three';
+import {
+  Box3,
+  Color,
+  Object3D,
+  Quaternion,
+  Vector3,
+  type BufferAttribute,
+  type MeshStandardMaterial,
+  type SkinnedMesh,
+} from 'three';
 import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
 import { createAuthoredFigure } from '../../src/engine/avatar/AuthoredFigure';
+import { OUTFIT } from '../../src/engine/avatar/Outfit';
 import { createFlightController } from '../../src/engine/flight/FlightController';
 
 // Enough of a browser for three's GLTFLoader to parse a .glb in Node: it wants
@@ -154,4 +165,71 @@ describe('the authored figure against its own file', () => {
         expect(deg(joint), `${bone} on the bone above it`).toBeLessThan(35);
     }
   }, 30_000);
+
+  it('wears boots over its feet, gloves on its hands, and the colours of the outfit', async () => {
+    const figure = createAuthoredFigure(await load());
+    const skins = figure.meshes as SkinnedMesh[];
+    const named = (name: string) => skins.find((m) => m.name === name);
+    const colour = (mesh: SkinnedMesh) => (mesh.material as MeshStandardMaterial).color.getHex();
+    const body = named('first_modelsMesh')!;
+    expect(colour(named('male_skinsuit_01Mesh')!)).toBe(OUTFIT.suit);
+    expect(colour(named('motorcyclehelmetMesh')!)).toBe(OUTFIT.helmet);
+
+    /** How much of vertex `v` of the body the named bones move. */
+    const share = (mesh: SkinnedMesh, bones: string[]) => {
+      const joints = mesh.geometry.attributes.skinIndex as BufferAttribute;
+      const weights = mesh.geometry.attributes.skinWeight as BufferAttribute;
+      return (v: number) => {
+        let sum = 0;
+        for (let k = 0; k < 4; k += 1) {
+          if (bones.includes(mesh.skeleton.bones[joints.getComponent(v, k)]!.name))
+            sum += weights.getComponent(v, k);
+        }
+        return sum;
+      };
+    };
+    const position = body.geometry.attributes.position as BufferAttribute;
+    const painted = body.geometry.attributes.color as BufferAttribute;
+    const gloves = new Color(OUTFIT.gloves);
+    const skin = new Color(OUTFIT.skin);
+    const onHand = share(body, ['LeftHand', 'LeftHandFinger1', 'RightHand', 'RightHandFinger1']);
+    const onHead = share(body, ['Head']);
+    // Stored as 32-bit floats, so a colour is itself to about seven digits.
+    const same = (a: Color, b: Color) =>
+      Math.max(...a.toArray().map((x, i) => Math.abs(x - b.toArray()[i]!))) < 1e-6;
+    let hands = 0;
+    for (let v = 0; v < position.count; v += 1) {
+      const c = new Color().fromBufferAttribute(painted, v);
+      // A hand is a glove all over, and the face under the helmet is still a face.
+      if (onHand(v) > 0.99) {
+        hands += 1;
+        expect(same(c, gloves)).toBe(true);
+      }
+      if (onHead(v) > 0.99) expect(same(c, skin)).toBe(true);
+    }
+    expect(hands).toBeGreaterThan(1000);
+
+    for (const side of ['Left', 'Right']) {
+      const boot = named(`${side}Boot`)!;
+      expect(boot, `${side} boot`).toBeDefined();
+      // Eight vertex buffers a pipeline, and WebGPU draws nothing past them.
+      expect(Object.keys(boot.geometry.attributes).length).toBeLessThanOrEqual(8);
+      // Carried by that leg and nothing else, or a boot follows the wrong foot.
+      const leg = [`${side}UpLeg`, `${side}Leg`, `${side}Foot`, `${side}ToeBase`];
+      const own = share(boot, leg);
+      for (let v = 0; v < boot.geometry.attributes.position!.count; v += 1) expect(own(v)).toBeCloseTo(1, 5);
+      // And over the whole foot: every vertex the foot bones hold is inside it.
+      // Both are stored in the pose the skin was cut in, by the same bones.
+      const box = new Box3().setFromBufferAttribute(boot.geometry.attributes.position as BufferAttribute);
+      box.expandByScalar(0.002);
+      const onFoot = share(body, [`${side}Foot`, `${side}ToeBase`]);
+      let feet = 0;
+      for (let v = 0; v < position.count; v += 1) {
+        if (onFoot(v) < 0.5) continue;
+        feet += 1;
+        expect(box.containsPoint(new Vector3().fromBufferAttribute(position, v))).toBe(true);
+      }
+      expect(feet).toBeGreaterThan(1000);
+    }
+  });
 });

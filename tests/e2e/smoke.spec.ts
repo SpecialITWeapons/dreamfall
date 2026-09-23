@@ -1819,15 +1819,14 @@ test('the dev panel jumps the flight to a settlement', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('the authored figure loads, flies, and costs nobody else a byte', async ({ page }) => {
-  const errors = await openWorld(page, 'seed=42&webgl=1&figure=glb');
+test('the figure loads from its file and flies', async ({ page }) => {
+  const errors = await openWorld(page, 'seed=42&webgl=1');
   await page.click('#beginBtn');
   await page.evaluate(() => window.__world!.skipOpening());
   await expect.poll(() => page.evaluate(() => window.__world!.running), { timeout: 15_000 }).toBe(true);
-  // The figure layer holds one object either way; what changed is which. The
-  // authored body is three meshes under a group, the grown one is three under
-  // its own, so counting objects proves nothing -- that the fetch happened and
-  // the flight is running on what it returned does.
+  // The figure is fetched before the world is built, on every start: its own
+  // line in the timings says the fetch happened, and a flight whose clock
+  // moves says the world was built on what it returned.
   expect(await page.evaluate(() => 'figure' in window.__world!.timings)).toBe(true);
   await expect
     .poll(() => page.evaluate(() => window.__world!.state.t), { timeout: 15_000 })

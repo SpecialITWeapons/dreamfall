@@ -1,7 +1,7 @@
 // Fly the figure somewhere and photograph it from four sides.
 //
 //     npm run build && npm run preview       # in another shell
-//     node tools/figure/look.mjs OUT_DIR [dive|climb|turn|level] [glb|grown]
+//     node tools/figure/look.mjs OUT_DIR [dive|climb|turn|level]
 //
 // A number can say a foot is wrung and cannot say whether it looks like a
 // foot; this is the other half. It opens the page on seed 42 under WebGL2,
@@ -18,9 +18,9 @@
 import { mkdirSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 
-const [out, shape = 'dive', body = 'glb'] = process.argv.slice(2);
+const [out, shape = 'dive'] = process.argv.slice(2);
 if (!out) {
-  console.error('usage: node tools/figure/look.mjs OUT_DIR [dive|climb|turn|level] [glb|grown]');
+  console.error('usage: node tools/figure/look.mjs OUT_DIR [dive|climb|turn|level]');
   process.exit(2);
 }
 
@@ -65,7 +65,7 @@ await page.addInitScript(() => {
   const camera = { yaw: 0, pitch: 0.15, dist: 3 };
   localStorage.setItem('dreamfall-settings', JSON.stringify({ volume: 0, muted: true, camera, view: 'tpp' }));
 });
-await page.goto(`http://localhost:4173/?seed=42&webgl=1${body === 'glb' ? '&figure=glb' : ''}`);
+await page.goto('http://localhost:4173/?seed=42&webgl=1');
 await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 600_000 });
 await page.click('#beginBtn');
 const flown = await page.evaluate(

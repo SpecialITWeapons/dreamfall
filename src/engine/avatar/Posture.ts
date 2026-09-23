@@ -1,13 +1,12 @@
 // What the figure is doing in the air, as five directions a side, and nothing
 // about what the figure is made of.
 //
-// This was inside `ProceduralHuman.ts`, where it was written, and it came out
-// when a second body turned up that had to move the same way. A pose is not a
-// property of a mesh: the shapes, the thresholds they are chosen on, the
+// It was written inside the procedural body the engine used to grow, and came
+// out when a second body turned up that had to move the same way; the grown
+// one has since gone and the body is the one drawn in Blender. A pose is still
+// not a property of a mesh: the shapes, the thresholds they are chosen on, the
 // spring in every joint and the flutter the air puts through it are the same
-// arithmetic whether the surface under them was grown from a distance field or
-// drawn by a person in Blender. One copy of it, and a skeleton that differs
-// only in what it is called.
+// arithmetic whatever surface is under them.
 //
 // Pure CPU, no DOM and no renderer: `Quaternion` and `Vector3` are arithmetic.
 import { Matrix4, Quaternion, Vector3 } from 'three';
@@ -452,9 +451,9 @@ export interface Posture {
   /** Where the head is looking this frame, relative to the chest. */
   readonly gaze: Gaze;
   /**
-   * The joint's rotation relative to the one above it. A skeleton built the
-   * way `ProceduralHuman` builds its own -- chest, then shoulder, then elbow,
-   * each bone along its own +Y -- wears these directly.
+   * The joint's rotation relative to the one above it. A skeleton whose
+   * chain is chest, then shoulder, then elbow, each bone along its own +Y,
+   * wears these directly; the authored one does below the shoulder and hip.
    */
   local(kind: Kind, side: 1 | -1): Quaternion;
   /**
