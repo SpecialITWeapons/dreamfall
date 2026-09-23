@@ -157,15 +157,23 @@ quarter of a second.
 ### The helmet and the normals
 
 The helmet read as a lump because it was painted one colour: its texture is
-two, the shell drawn 0x2a2a2a and the visor black, and one colour lost the
-visor. The texture now stays as a mask (`recolour`), shell in `OUTFIT.helmet`
-and visor in `OUTFIT.visor`, glossier. The full file the owner exported
-again (`first_model_v2.glb`, not committed) was looked at to see whether the
-trim went too far: the helmet in it is the same 1481 vertices, and what the
-trim took is the body under the suit, two eyeballs behind an opaque visor and
-a stray cube -- nothing that shows in flight, and the body under the suit
-would poke through it once posed. The same file's suit is 18 % opaque and
-three of its materials are glass; `check_glb.py` says so.
+two parts on a transparent ground, the shell drawn (39, 38, 37) and the visor
+black, and one colour lost the visor. The second answer read the texture in
+the shader as a mask, and on the owner's WebGPU the helmet came out a skull --
+the shell blotched, the visor striped -- where WebGL2 drew it clean at every
+distance, near and far. WebGPU in this container's Chromium cannot be driven
+(three asks a texture view for a `swizzle` it does not know), so the cause was
+never seen; the fix takes the question away instead. The texture is read once
+on the CPU at load (`splitVisor`, through a 2D canvas), each triangle is the
+shell or the visor by the texel under its middle, and the index is sorted into
+two groups wearing two plain materials. 347 of 2500 triangles are visor and
+113 straddle the painted edge, which is the resolution the edge now has. The
+full file the owner exported again (`first_model_v2.glb`, not committed) was
+looked at to see whether the trim went too far: the helmet in it is the same
+geometry, and what the trim took is the body under the suit, two eyeballs
+behind an opaque visor and a stray cube -- nothing that shows in flight, and
+the body under the suit would poke through it once posed. The same file's suit
+is 18 % opaque and three of its materials are glass; `check_glb.py` says so.
 
 About a fifth of every mesh's vertices carry a normal more than 60° off the
 surface, many turned clean round, each lighting as a dark shard. On the suit

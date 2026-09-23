@@ -10,6 +10,7 @@
 // only thing that sees it is the real body, loaded twice: once untouched, for
 // the pose the file draws each bone in, and once flown.
 import { readFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -57,6 +58,55 @@ const load = async (): Promise<Object3D> => {
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const gltf = await new GLTFLoader().parseAsync(buffer, '');
   return gltf.scene;
+};
+
+/**
+ * The helmet's texture, decoded from the file by hand: Node has no canvas to
+ * draw an image on, and the helmet is sorted into shell and visor by it. A PNG
+ * is zlib over filtered rows; this undoes the five filters for 8-bit RGBA,
+ * which is all the file holds.
+ */
+const helmetTexels = () => {
+  const bytes = readFileSync(FILE);
+  const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString('utf8')) as {
+    images: Array<{ name: string; bufferView: number }>;
+    bufferViews: Array<{ byteOffset?: number; byteLength: number }>;
+  };
+  const body = 20 + bytes.readUInt32LE(12) + 8;
+  const view = json.bufferViews[json.images.find((i) => i.name === 'motorcyclehelmet')!.bufferView]!;
+  const png = bytes.subarray(body + (view.byteOffset ?? 0), body + (view.byteOffset ?? 0) + view.byteLength);
+  let width = 0,
+    height = 0;
+  const chunks: Buffer[] = [];
+  for (let at = 8; at < png.length;) {
+    const length = png.readUInt32BE(at);
+    const type = png.subarray(at + 4, at + 8).toString('ascii');
+    if (type === 'IHDR') [width, height] = [png.readUInt32BE(at + 8), png.readUInt32BE(at + 12)];
+    if (type === 'IDAT') chunks.push(png.subarray(at + 8, at + 8 + length));
+    at += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  const stride = width * 4;
+  const data = new Uint8Array(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)]!;
+    for (let x = 0; x < stride; x++) {
+      const byte = raw[y * (stride + 1) + 1 + x]!;
+      const left = x >= 4 ? data[y * stride + x - 4]! : 0;
+      const up = y > 0 ? data[(y - 1) * stride + x]! : 0;
+      const corner = x >= 4 && y > 0 ? data[(y - 1) * stride + x - 4]! : 0;
+      const guess = left + up - corner;
+      const paeth =
+        Math.abs(guess - left) <= Math.abs(guess - up) && Math.abs(guess - left) <= Math.abs(guess - corner)
+          ? left
+          : Math.abs(guess - up) <= Math.abs(guess - corner)
+            ? up
+            : corner;
+      const add = [0, left, up, (left + up) >> 1, paeth][filter]!;
+      data[y * stride + x] = (byte + add) & 255;
+    }
+  }
+  return { data, width, height };
 };
 
 /** Each limb bone with the one above it and the one it points at. */
@@ -168,17 +218,23 @@ describe('the authored figure against its own file', () => {
   }, 30_000);
 
   it('wears boots over its feet, gloves on its hands, and the colours of the outfit', async () => {
-    const figure = createAuthoredFigure(await load());
+    const figure = createAuthoredFigure(await load(), { texels: () => helmetTexels() });
     const skins = figure.meshes as SkinnedMesh[];
     const named = (name: string) => skins.find((m) => m.name === name);
     const colour = (mesh: SkinnedMesh) => (mesh.material as MeshStandardMaterial).color.getHex();
     const body = named('first_modelsMesh')!;
     expect(colour(named('male_skinsuit_01Mesh')!)).toBe(OUTFIT.suit);
-    // The helmet is two parts told apart by the file's own texture, shell and
-    // visor, so it is painted by a node rather than by one colour.
+    // The helmet is two parts told apart by the file's own texture, read once
+    // on the CPU: its triangles sorted into a shell and a visor, each wearing a
+    // plain material, so no shader samples that texture on any backend.
     const helmet = named('motorcyclehelmetMesh')!;
-    expect((helmet.material as MeshStandardMaterial).name).toBe('helmet');
-    expect((helmet.material as MeshStandardMaterial & { colorNode?: unknown }).colorNode).toBeTruthy();
+    const [shellPaint, visorPaint] = helmet.material as MeshStandardMaterial[];
+    expect(shellPaint!.color.getHex()).toBe(OUTFIT.helmet);
+    expect(visorPaint!.color.getHex()).toBe(OUTFIT.visor);
+    const [shellFaces, visorFaces] = helmet.geometry.groups.map((g) => g.count / 3);
+    // Measured on the texture by hand: 347 triangles centred on the visor.
+    expect(visorFaces).toBe(347);
+    expect(shellFaces! + visorFaces!).toBe(2500);
 
     // The file's normals: a fifth of every mesh's point more than sixty degrees
     // off the surface. The suit keeps them -- that is the lattice the owner

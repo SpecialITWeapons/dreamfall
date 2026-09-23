@@ -52,6 +52,9 @@ mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM || undefined,
   args: [
+    // `WEBGPU=1`: the backend a machine with a GPU gets by default, which can
+    // draw what WebGL2 does not. SwiftShader has an adapter for it too.
+    ...(process.env.WEBGPU ? ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader'] : []),
     '--use-gl=angle',
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
@@ -67,7 +70,7 @@ await page.addInitScript(() => {
   const camera = { yaw: 0, pitch: 0.15, dist: 3 };
   localStorage.setItem('dreamfall-settings', JSON.stringify({ volume: 0, muted: true, camera, view: 'tpp' }));
 });
-await page.goto('http://localhost:4173/?seed=42&webgl=1');
+await page.goto(`http://localhost:4173/?seed=42${process.env.WEBGPU ? '' : '&webgl=1'}`);
 await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 600_000 });
 await page.click('#beginBtn');
 const flown = await page.evaluate(
@@ -100,7 +103,7 @@ const flown = await page.evaluate(
   },
   { key: KEYS[shape] ?? null, shape, day: process.env.DAY ? Number(process.env.DAY) : null },
 );
-console.log(shape, JSON.stringify(flown));
+console.log(shape, JSON.stringify(flown), await page.evaluate(() => window.__world?.backend));
 if (shape !== 'level' && !flown.reached)
   console.log(`never reached the ${shape}; these are of wherever it got to`);
 
