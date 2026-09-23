@@ -44,6 +44,8 @@ const SIDES = [
   ['side', -393, 0],
   ['below', -393, -200],
   ['above', 0, 200],
+  ['front', -785, 0],
+  ['frontlow', -785, -150],
 ];
 
 mkdirSync(out, { recursive: true });
@@ -69,10 +71,12 @@ await page.goto('http://localhost:4173/?seed=42&webgl=1');
 await page.waitForFunction(() => window.__world?.ready === true, null, { timeout: 600_000 });
 await page.click('#beginBtn');
 const flown = await page.evaluate(
-  ({ key, shape }) => {
+  ({ key, shape, day }) => {
     const w = /** @type {NonNullable<Window['__world']>} */ (window.__world);
     w.skipOpening();
     w.setPaused(true);
+    // `DAY=0.5` photographs at noon rather than wherever the clock has got to.
+    if (day !== null) w.dayPhase = day;
     // A climb from where the flight begins goes up into the cloud deck and
     // photographs fog; from low down it runs out of pitch long before that.
     if (shape === 'climb') w.jump(w.state.x, w.state.z, 120);
@@ -94,7 +98,7 @@ const flown = await page.evaluate(
     const s = w.state;
     return { reached, pitch: s.pitch, rush: s.speed / 40, bank: s.bank, clearance: w.clearance };
   },
-  { key: KEYS[shape] ?? null, shape },
+  { key: KEYS[shape] ?? null, shape, day: process.env.DAY ? Number(process.env.DAY) : null },
 );
 console.log(shape, JSON.stringify(flown));
 if (shape !== 'level' && !flown.reached)
