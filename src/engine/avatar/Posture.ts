@@ -496,7 +496,9 @@ const TORSO = { arch: 0.35, lean: 0.22, lag: 0.22 };
  * straight down the line of the spine in level flight, the helmet square on
  * the shoulders and the eyes on the ground under the figure's own chest, and
  * the owner saw it at once: a flyer on their belly holds the head up and looks
- * ahead, somewhere between the ground ahead and the horizon. `pitch` is how
+ * ahead. 0.65 was the first answer and read as still too low; at 1.0 the face
+ * is about 64 degrees off straight down in level flight, which is a flyer
+ * looking at the ground far ahead and the horizon above it. `pitch` is how
  * much more the arch adds, rather less than the arch, so a dive does not tip
  * the eyes off the ground they are diving at.
  *
@@ -504,25 +506,27 @@ const TORSO = { arch: 0.35, lean: 0.22, lag: 0.22 };
  * without moving their shoulders, and the shoulders here are busy flying.
  * `lag` is faster than any limb's, because a person looks first.
  *
- * `glance` is what the head does when nothing is asking anything of it: a
- * person gliding over a landscape looks at it. A glance is quick and a look
- * is held -- sprung at `lag`, held for about `every` seconds, a third of
- * them straight ahead -- as far as `yaw` either way and `down` toward the
- * ground under the figure. A turn takes the head over and the glances fade
- * with it.
- *
  * `lead` is the nod into a change of flight angle before the body has made
- * it: `rate` of pitch a second is a whole one. `buffet` is how much of the
- * limbs' flutter reaches the head, which the helmet catches like a sail.
+ * it: `rate` of pitch a second is a whole one.
+ *
+ * `glance` is what the head does when nothing is asking anything of it: a
+ * person gliding over a landscape looks at it. A look is held for about
+ * `every` seconds, a third of them straight ahead, as far as `yaw` either way
+ * and `down` toward the ground; a turn takes the head over and the glances
+ * fade with it. It was quick at first, a saccade in an eighth of a second, and
+ * together with the limbs' flutter reaching the helmet it read as a head that
+ * shakes. The owner kept the turn and took the shaking out: the flutter no
+ * longer reaches the head at all, a look now turns in about `lag` seconds, and
+ * every spring on the head is critically damped -- an overshoot on a limb is
+ * weight, and on a head it is a wobble.
  */
 const GAZE = {
-  lift: 0.65,
+  lift: 1.0,
   pitch: 0.24,
   yaw: 0.52,
   lag: 0.08,
-  glance: { yaw: 0.42, down: 0.3, every: 3.2, lag: 0.12, ahead: 0.35 },
-  lead: { pitch: 0.18, rate: 0.3, lag: 0.15 },
-  buffet: 0.35,
+  glance: { yaw: 0.32, down: 0.2, every: 4.5, lag: 0.4, ahead: 0.35 },
+  lead: { pitch: 0.12, rate: 0.3, lag: 0.2 },
 };
 
 /** A number in 0..1 for an integer, the same every time: a glance's dice. */
@@ -541,7 +545,7 @@ const dice = (n: number, salt: number) => {
  * `dt <= 0` at the start of a flight looks where it is going.
  */
 const glanceAt = (time: number) => {
-  const look = Math.floor((time + 0.9 * Math.sin(time * 0.37)) / GAZE.glance.every);
+  const look = Math.floor((time + 1.2 * Math.sin(time * 0.29)) / GAZE.glance.every);
   if (look <= 0 || dice(look, 1) < GAZE.glance.ahead) return { yaw: 0, pitch: 0 };
   return {
     yaw: (dice(look, 2) * 2 - 1) * GAZE.glance.yaw,
@@ -570,10 +574,10 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
   const rolling = { x: 0, v: 0 } satisfies Spring;
   const look = { x: 0, v: 0 } satisfies Spring;
   const lift = { x: 0, v: 0 } satisfies Spring;
-  const glanceYaw = { x: 0, v: 0 } satisfies Spring;
-  const glancePitch = { x: 0, v: 0 } satisfies Spring;
   // The flight angle a frame ago, for the head's nod into a change of it.
   let lastPitch = 0;
+  const glanceYaw = { x: 0, v: 0 } satisfies Spring;
+  const glancePitch = { x: 0, v: 0 } satisfies Spring;
   const nodding = { x: 0, v: 0 } satisfies Spring;
   const joints = JOINTS.map(({ kind, side }): Joint => {
     const aims = {} as Record<Slot, Vector3>;
@@ -674,27 +678,25 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
       // head reads. It leans the other way from the sign of the bank for the
       // same reason the inner side of the body does: a roll about +z takes the
       // left side down, and down is the way round.
-      const turning = clamp01(Math.abs(pose.bank) / POSE.bank);
       // Nose coming up or going down, smoothed: the head nods into it first.
       const nod = dt > 0 && flown ? (pose.pitch - lastPitch) / dt : 0;
       lastPitch = pose.pitch;
       settle(nodding, nod, 1 / GAZE.lead.lag, DAMPING.pose, dt);
-      settle(look, -clamp01(pose.bank / POSE.bank, -1) * GAZE.yaw, 1 / GAZE.lag, DAMPING.joint, dt);
+      settle(look, -clamp01(pose.bank / POSE.bank, -1) * GAZE.yaw, 1 / GAZE.lag, DAMPING.pose, dt);
       settle(
         lift,
         GAZE.lift + arch * GAZE.pitch + clamp01(nodding.x / GAZE.lead.rate, -1) * GAZE.lead.pitch,
         1 / GAZE.lag,
-        DAMPING.joint,
+        DAMPING.pose,
         dt,
       );
       // What caught its eye, less of it the harder the turn.
       const idle = glanceAt(time);
-      settle(glanceYaw, idle.yaw * (1 - turning), 1 / GAZE.glance.lag, DAMPING.joint, dt);
-      settle(glancePitch, idle.pitch * (1 - turning), 1 / GAZE.glance.lag, DAMPING.joint, dt);
-      // And the air on the helmet, on top of all of it.
-      const buffet = flutter * GAZE.buffet;
-      gaze.yaw = look.x + glanceYaw.x + Math.sin(w * 1.9) * buffet;
-      gaze.pitch = lift.x + glancePitch.x + Math.sin(w * 2.3 + 1.3) * buffet * 0.7;
+      const calm = 1 - clamp01(Math.abs(pose.bank) / POSE.bank);
+      settle(glanceYaw, idle.yaw * calm, 1 / GAZE.glance.lag, DAMPING.pose, dt);
+      settle(glancePitch, idle.pitch * calm, 1 / GAZE.glance.lag, DAMPING.pose, dt);
+      gaze.yaw = look.x + glanceYaw.x;
+      gaze.pitch = lift.x + glancePitch.x;
 
       // ---- what shape the figure is holding --------------------------------
       const dive = clamp01(-pose.pitch / POSE.dive);

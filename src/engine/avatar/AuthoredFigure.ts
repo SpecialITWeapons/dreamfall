@@ -24,6 +24,8 @@ import {
   type BufferAttribute,
   type Object3D,
 } from 'three';
+import { color, float, mix, step, texture } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
 import { SPEED } from '../flight/FlightController';
@@ -740,17 +742,20 @@ function cobble(body: SkinnedMesh): SkinnedMesh[] {
 /**
  * Give the suit and the helmet the outfit's colours instead of the file's.
  *
- * Both come out of the file textured, and both textures are one colour: the
- * suit's a flat 0x2a2a2a, the helmet's black under 98 per cent of its
- * vertices. Together with the bare body that made the figure one dark
- * silhouette with a pale neck in it. So each loses its texture and takes a
- * colour from `OUTFIT`, and a change of colour is one line there.
+ * The suit's texture is a flat 0x2a2a2a, so it loses it and takes
+ * `OUTFIT.suit`. The helmet's texture is two colours, and they are two parts:
+ * the shell drawn in 0x2a2a2a and the visor in black. Painted one colour, as
+ * it first was here, the helmet lost its visor and read as a lump; so the
+ * texture stays, as a mask, and says which texel is which -- the shell takes
+ * `OUTFIT.helmet` and the visor `OUTFIT.visor`, glossier than the shell,
+ * because a visor is glass. A change of colour is one line in `Outfit.ts`.
  *
  * Found by what they are rather than what Blender called them: of the textured
  * meshes, the one that rides the head -- nine in ten of its vertices mostly on
  * that bone -- is the helmet, and the other is the suit.
  */
-function recolour(skins: readonly SkinnedMesh[]): void {
+function recolour(skins: readonly SkinnedMesh[]): SkinnedMesh | null {
+  let helmet: SkinnedMesh | null = null;
   for (const mesh of skins) {
     const material = mesh.material as MeshStandardMaterial;
     const map = material.map;
@@ -759,11 +764,70 @@ function recolour(skins: readonly SkinnedMesh[]): void {
     const count = mesh.geometry.attributes.position!.count;
     let headed = 0;
     for (let v = 0; v < count; v += 1) if (onHead(v) > 0.5) headed += 1;
+    if (headed > 0.9 * count) {
+      // Linear, the texture is 0.023 on the shell and 0 on the visor; the
+      // step is halfway, and a mip that blends the two blends the colours.
+      const shell = step(0.012, texture(map).r);
+      const painted = new MeshStandardNodeMaterial({ name: 'helmet', metalness: 0 });
+      painted.colorNode = mix(color(OUTFIT.visor), color(OUTFIT.helmet), shell);
+      painted.roughnessNode = mix(float(0.18), float(0.5), shell);
+      mesh.material = painted;
+      material.dispose();
+      helmet = mesh;
+      continue;
+    }
     material.map = null;
-    material.color.set(headed > 0.9 * count ? OUTFIT.helmet : OUTFIT.suit);
+    material.color.set(OUTFIT.suit);
     material.needsUpdate = true;
     map.dispose();
   }
+  return helmet;
+}
+
+/**
+ * Give a mesh normals that follow its surface.
+ *
+ * The file's do not: about a fifth of the vertices of every mesh carry a normal
+ * more than sixty degrees off the surface they sit on, many of them turned
+ * clean round, and each one lights as a dark shard. On the suit that is a
+ * lattice the owner likes and it stays. On the helmet it made a shell into a
+ * lump, and on the gloves and the neck it is dirt; those two get normals from
+ * the surface itself -- the area-weighted mean of the faces round every place
+ * a vertex is drawn, so a seam in the UVs is not a crease in the light.
+ */
+function smoothNormals(mesh: SkinnedMesh): void {
+  const position = mesh.geometry.attributes.position as BufferAttribute;
+  const index = mesh.geometry.index;
+  if (!index) return;
+  const key = (v: number) =>
+    `${Math.round(position.getX(v) * 1e4)},${Math.round(position.getY(v) * 1e4)},${Math.round(position.getZ(v) * 1e4)}`;
+  const place = Array.from({ length: position.count }, (_, v) => key(v));
+  const sum = new Map<string, Vector3>();
+  const a = new Vector3(),
+    b = new Vector3(),
+    c = new Vector3();
+  for (let t = 0; t < index.count; t += 3) {
+    const corners = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+    a.fromBufferAttribute(position, corners[0]!);
+    b.fromBufferAttribute(position, corners[1]!).sub(a);
+    c.fromBufferAttribute(position, corners[2]!).sub(a);
+    // The cross product's length is twice the area, which is the weight.
+    const face = new Vector3().crossVectors(b, c);
+    for (const v of corners) {
+      const at = sum.get(place[v]!);
+      if (at) at.add(face);
+      else sum.set(place[v]!, face.clone());
+    }
+  }
+  const normal = new Float32Array(position.count * 3);
+  for (let v = 0; v < position.count; v += 1) {
+    const n = sum.get(place[v]!);
+    if (n && n.lengthSq() > 0)
+      n.clone()
+        .normalize()
+        .toArray(normal, v * 3);
+  }
+  mesh.geometry.setAttribute('normal', new Float32BufferAttribute(normal, 3));
 }
 
 /**
@@ -1088,8 +1152,9 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   weldSeams(skins);
   // What the figure wears. Before the bake, because the boots are meshes of
   // their own and have to be carried into the box with everything else.
-  recolour(skins);
+  const helmet = recolour(skins);
   const bare = dress(skins);
+  for (const mesh of [helmet, bare]) if (mesh) smoothNormals(mesh);
   for (const boot of bare ? cobble(bare) : []) {
     meshes.push(boot);
     skins.push(boot);

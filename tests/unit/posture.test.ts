@@ -134,8 +134,8 @@ describe('createPosture', () => {
     // `toBeCloseTo`, not `toBe`: a bank of zero comes out of the arithmetic as
     // negative zero, and `Object.is(-0, 0)` is false.
     expect(ahead.gaze.yaw).toBeCloseTo(0, 10);
-    expect(ahead.gaze.pitch).toBeGreaterThan(0.5);
-    expect(ahead.gaze.pitch).toBeLessThan(0.8);
+    expect(ahead.gaze.pitch).toBeGreaterThan(0.9);
+    expect(ahead.gaze.pitch).toBeLessThan(1.1);
   });
 
   it('the chin comes up further with the descent, and by less than the back bends', () => {
@@ -150,28 +150,38 @@ describe('createPosture', () => {
     expect(more).toBeLessThan(posture.torso.arch);
   });
 
-  it('an idle head looks about, the same way every time, and a turn takes it over', () => {
-    // A minute of level flight, sampled: the head goes somewhere, and goes
-    // there again on a second flight flown the same.
+  it('an idle head looks about calmly, the same way every time, and never shakes', () => {
+    // A minute of level flight in gusty air with the wind's phase running.
     const fly = (bank: number) => {
       const posture = createPosture({ spine: true });
       posture.update(pose({ bank }), 0);
       const seen: number[] = [];
       for (let i = 0; i < 3600; i++) {
-        posture.update(pose({ bank, windPhase: i / 60 }), 1 / 60);
-        if (i % 30 === 0) seen.push(posture.gaze.yaw);
+        posture.update(pose({ bank, windPhase: i / 20, gust: 1, speed: SPEED * 1.3 }), 1 / 60);
+        seen.push(posture.gaze.yaw);
       }
       return seen;
     };
     const idle = fly(0);
     expect(fly(0)).toEqual(idle);
-    const spread = Math.max(...idle) - Math.min(...idle);
-    expect(spread).toBeGreaterThan(0.3);
-    // No glance past what a neck turns without the shoulders.
-    expect(Math.max(...idle.map(Math.abs))).toBeLessThan(0.6);
+    // It does look about...
+    expect(Math.max(...idle) - Math.min(...idle)).toBeGreaterThan(0.2);
+    expect(Math.max(...idle.map(Math.abs))).toBeLessThan(0.4);
+    // ...and calmly: the owner saw the flutter reach the helmet and a glance
+    // snap round in an eighth of a second, and read both as a head that
+    // shakes. No frame turns the head more than a degree, and it never swings
+    // back on itself within a quarter of a second.
+    const steps = idle.slice(1).map((y, i) => y - idle[i]!);
+    expect(Math.max(...steps.map(Math.abs))).toBeLessThan(0.0175);
+    let reversals = 0;
+    for (let i = 15; i < steps.length; i++) {
+      const moving = Math.abs(steps[i]!) > 1e-4 && Math.abs(steps[i - 15]!) > 1e-4;
+      if (moving && Math.sign(steps[i]!) !== Math.sign(steps[i - 15]!)) reversals += 1;
+    }
+    expect(reversals).toBe(0);
     // In a hard turn the head is on the turn, and the glances are gone.
-    const turn = fly(-POSE.bank).slice(20);
-    expect(Math.max(...turn) - Math.min(...turn)).toBeLessThan(0.1);
+    const turn = fly(-POSE.bank).slice(120);
+    expect(Math.max(...turn) - Math.min(...turn)).toBeLessThan(0.05);
   });
 
   it('the head nods into a climb before the body has made it', () => {
@@ -180,7 +190,7 @@ describe('createPosture', () => {
     const still = posture.gaze.pitch;
     // The nose coming up at a brisk rate, for a fifth of a second.
     for (let i = 1; i <= 12; i++) posture.update(pose({ pitch: 0.02 * i }), 1 / 60);
-    expect(posture.gaze.pitch).toBeGreaterThan(still + 0.05);
+    expect(posture.gaze.pitch).toBeGreaterThan(still + 0.03);
   });
 
   it('the head arrives before the shoulder does, because a person looks first', () => {
