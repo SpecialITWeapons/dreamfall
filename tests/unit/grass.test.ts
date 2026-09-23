@@ -396,21 +396,21 @@ describe('tuftTint', () => {
             }
   });
 
-  it('moves the green about 0.03 of a turn either way, a tenth lighter or darker, and a dry tuft towards straw', () => {
+  it('moves the green about 0.04 of a turn either way, a quarter darker or a tenth lighter, and a dry tuft towards straw', () => {
     const own = new Color();
     const blade = GRASS_BLADES[1]!,
       base = hsl(new Color(blade));
     const at = (hue: number, light: number, dry: number) =>
       hsl(seen(blade, 0xffffff, tuftTint(hue, light, dry, own)));
     // Hue is a turn from red: warmer is toward yellow, which is smaller.
-    expect(base.h - at(1, 0.5, 1).h).toBeGreaterThan(0.02);
-    expect(base.h - at(1, 0.5, 1).h).toBeLessThan(0.04);
-    expect(at(0, 0.5, 1).h - base.h).toBeGreaterThan(0.02);
-    expect(at(0, 0.5, 1).h - base.h).toBeLessThan(0.04);
+    expect(base.h - at(1, 0.5, 1).h).toBeGreaterThan(0.03);
+    expect(base.h - at(1, 0.5, 1).h).toBeLessThan(0.07);
+    expect(at(0, 0.5, 1).h - base.h).toBeGreaterThan(0.03);
+    expect(at(0, 0.5, 1).h - base.h).toBeLessThan(0.07);
     expect(at(0.5, 1, 1).l / base.l).toBeGreaterThan(1.08);
     expect(at(0.5, 1, 1).l / base.l).toBeLessThan(1.14);
-    expect(at(0.5, 0, 1).l / base.l).toBeGreaterThan(0.86);
-    expect(at(0.5, 0, 1).l / base.l).toBeLessThan(0.92);
+    expect(at(0.5, 0, 1).l / base.l).toBeGreaterThan(0.68);
+    expect(at(0.5, 0, 1).l / base.l).toBeLessThan(0.78);
     // Dry: warmer than the warmest green tuft, and duller than the blade.
     const dry = at(0.5, 0.5, 0);
     expect(base.h - dry.h).toBeGreaterThan(base.h - at(1, 0.5, 1).h);
@@ -432,8 +432,8 @@ describe('tuftTint', () => {
       for (let i = 0; i < mesh.count; i++) {
         mesh.getColorAt(i, colour);
         seenColours.add(colour.getHexString());
-        // Straw lifts red over green by more than any green tuft's hue can.
-        if (colour.r / tint.r / (colour.g / tint.g) > 1 + TUFT_TINT.hue + 0.2) dry++;
+        // Straw lifts blue over green, which no green tuft's hue does by as much.
+        if (colour.b / tint.b / (colour.g / tint.g) > 1 + TUFT_TINT.hue * TUFT_TINT.blue + 0.2) dry++;
         all++;
       }
     }
