@@ -27,6 +27,13 @@ Done and measured, with the numbers that say so:
 | thigh twist wrung in by the bake         | 154°        | 26°         |
 | shin twist                               | 167°        | 11°         |
 
+The twist is now a test, `tests/unit/authoredTwist.test.ts`, and it reads a
+little differently from the two rows above because it takes the **worst frame**
+over the four corners of the envelope, flown on the controller, rather than one
+pose: thigh 6°, shin 18°, foot 24° against the file, and 6°, 3° and 21° for the
+forearm, the shin and the foot turned on the bone above them. Handed the old
+fault back (`ROLL.hip` at `1`), it reads the thigh at 177° and fails.
+
 Load cost of the authored figure: about 192 ms, once, behind the veil — 165 ms
 of it the seam weld, 88 ms the rebind, before the weld's grid was made cheaper.
 
@@ -57,15 +64,25 @@ Three ways out, in increasing order of cost:
   in whenever the pilot is not doing something. Do not re-derive this; change
   `BAKE` in `AuthoredFigure.ts` if you want to see it again.
 
-### 2. The foot's remaining 120° of twist
+### 2. The foot in a steep dive — looked at, and nothing there
 
-Thigh and shin came down to 26° and 11°; the foot did not. It is inherited
-through the chain rather than introduced at the ankle — the ankle's aim sits
-4° to 35° off its own axis, nowhere near the degenerate case, so this is not a
-`setFromUnitVectors` antipodal accident. It does not show in a glide or from
-behind. **Nobody has looked at it in a steep dive**, which is where the legs
-work hardest, and that is the next thing to do rather than the next thing to
-change.
+The earlier version of this file carried a foot at 120° of twist and said
+nobody had looked at it in a steep dive. Both have now been done, and the 120°
+does not come back: measured against the file with the metric under Traps, over
+the dive the controller can actually hold (`pitch -0.42` near `rush 1.48`), the
+foot reads **10°**, and its worst anywhere in the envelope is 24°, in the box. Where
+the 120° came from is not known; it was never committed as code, which is why
+the metric is a test now.
+
+The pictures agree with the number. `tools/figure/look.mjs` flies the dive and
+photographs it from four sides: the toes are pointed along the leg, the soles
+face the sky, and the big toe is on the inside of each foot, from above and from
+the side. The climb and the turn look the same way. One thing from those
+pictures that is not a fault and will look like one: from the side, at three
+metres, the climb reads as a body broken at the hips. It is the lens. Measured
+in the figure's frame, hips to neck sits 6° under the body's axis and the thigh
+1° over it, where level flight holds the neck 11° over — a slight pike, which is
+what `Torso`'s arch does when the flight is climbing rather than falling.
 
 ### 3. Things named and deliberately left
 
@@ -85,7 +102,10 @@ a 154° wring baked straight into it. It reported the leg fix as a regression.
 The metric that sees a wring is the **twist against the authored file**: load
 the .glb twice, take each bone's rest orientation and direction from the
 untouched copy, and decompose `now · rest⁻¹` into swing and twist about the
-limb's axis.
+limb's axis. `tests/unit/authoredTwist.test.ts` is exactly that. The upper arm
+and the forearm are left out of its bound on purpose: the box holds the forearm
+pointing at the head, which is a shoulder turned a right angle outward from the
+T, so about a hundred degrees of their roll is real and asked for.
 
 **Direction is not orientation.** The retarget puts every bone exactly where
 the posture says — measured at 0.0° of error on all ten joints. The legs were
@@ -130,18 +150,24 @@ does not set. Finish one change before measuring the next.
 Unit tests in Node cover the arithmetic: `tests/unit/posture.test.ts` and
 `tests/unit/authoredFigure.test.ts`, the latter over a fixture that is two
 skinned meshes on a CMU skeleton where every bone wears a rest rotation of its
-own — because on the real figure nothing starts at identity.
+own — because on the real figure nothing starts at identity — and
+`tests/unit/authoredTwist.test.ts`, which is the one of them that loads the real
+.glb, because a roll is the one thing a fixture cannot say anything about.
 
-For anything you have to see, drive a real browser: `?seed=42&webgl=1` and
-`?figure=glb` for the authored one, `window.__world.skipOpening()`, then wait
-on `window.__world.frames` rather than on a timer. A mouse drag orbits the
-chase camera. Under SwiftShader a settle of 40 frames takes minutes, so put the
-render in the background and do something else — and never run two Chromiums at
-once, because a software rasteriser wants the whole machine.
+For anything you have to see, `tools/figure/look.mjs` does it in about half a
+minute: with `npm run preview` running,
+`node tools/figure/look.mjs OUT dive` (or `climb`, `turn`, `level`) flies the
+controller to that corner of the envelope with `__world.step` behind a paused
+loop and photographs the figure from behind, the side, below and above. Stepping
+by hand is what makes it quick: waiting on `window.__world.frames` for a settle
+of 40 frames under SwiftShader takes minutes. By hand it is `?seed=42&webgl=1`
+and `?figure=glb` for the authored one, `window.__world.skipOpening()`, and a
+mouse drag orbits the chase camera. Never run two Chromiums at once, because a
+software rasteriser wants the whole machine.
 
 The container's Playwright browsers and `@playwright/test` can disagree about
 version (it wanted `chrome-headless-shell-1243` against an installed `-1194`).
 That fails at browser launch, before any test code runs. A config that extends
 `playwright.config.ts` and sets `launchOptions.executablePath` to the chromium
 that is actually in `/opt/pw-browsers/` runs the suite; do not run `playwright
-install`.
+install`. `look.mjs` takes the same path from `CHROMIUM`.
