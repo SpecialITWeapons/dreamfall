@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import {
   Box3,
   Color,
+  Matrix4,
   Object3D,
   Quaternion,
   Vector3,
@@ -26,7 +27,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlightPose } from '../../src/engine/avatar/Avatar';
 import { createAuthoredFigure } from '../../src/engine/avatar/AuthoredFigure';
 import { OUTFIT } from '../../src/engine/avatar/Outfit';
-import { createFlightController } from '../../src/engine/flight/FlightController';
+import { SPEED, createFlightController } from '../../src/engine/flight/FlightController';
 
 // Enough of a browser for three's GLTFLoader to parse a .glb in Node: it wants
 // `self`, and it hands every embedded image to an <img> whose load event
@@ -231,5 +232,84 @@ describe('the authored figure against its own file', () => {
       }
       expect(feet).toBeGreaterThan(1000);
     }
+  });
+
+  it('skins its limbs from the file, not from the box, in the shapes furthest from the box', async () => {
+    // The skin is cut in the box and corrected per shape. In each corrected
+    // shape it must come out where skinning straight from the file puts it --
+    // the whole of what the correction is for -- and in the box it must not
+    // move at all.
+    const file = await load();
+    file.updateMatrixWorld(true);
+    const drawn = file.getObjectByName('male_skinsuit_01Mesh') as SkinnedMesh;
+    const fromFile = new Map(
+      drawn.skeleton.bones.map((b) => [
+        b.name,
+        new Matrix4().copy(drawn.matrixWorld).invert().multiply(b.matrixWorld),
+      ]),
+    );
+    const figure = createAuthoredFigure(await load());
+    const suit = figure.meshes.find((m) => m.name === 'male_skinsuit_01Mesh') as SkinnedMesh;
+    const joints = suit.geometry.attributes.skinIndex as BufferAttribute;
+    const weights = suit.geometry.attributes.skinWeight as BufferAttribute;
+    const names = suit.skeleton.bones.map((b) => b.name);
+    const pose = (over: Partial<FlightPose>): FlightPose => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      heading: 0,
+      bank: 0,
+      pitch: 0,
+      vy: 0,
+      speed: SPEED,
+      windPhase: 0,
+      gust: 0,
+      view: 'tpp',
+      ...over,
+    });
+    for (const [name, flown] of [
+      ['track', pose({ pitch: -0.42, vy: -16, speed: SPEED * 1.48 })],
+      ['climb', pose({ pitch: 0.56, vy: 12, speed: SPEED * 0.75 })],
+    ] as const) {
+      figure.update(flown, 0);
+      figure.object.updateMatrixWorld(true);
+      suit.skeleton.update();
+      const moved = new Map(
+        suit.skeleton.bones.map((b) => [
+          b.name,
+          new Matrix4()
+            .copy(suit.matrixWorld)
+            .invert()
+            .multiply(b.matrixWorld)
+            .multiply(fromFile.get(b.name)!.clone().invert()),
+        ]),
+      );
+      let worst = 0,
+        corrected = 0;
+      const at = new Vector3();
+      for (let v = 0; v < joints.count; v += 1) {
+        const want = new Vector3();
+        at.fromBufferAttribute(drawn.geometry.attributes.position as BufferAttribute, v);
+        for (let k = 0; k < 4; k += 1) {
+          const w = weights.getComponent(v, k);
+          if (w)
+            want.addScaledVector(at.clone().applyMatrix4(moved.get(names[joints.getComponent(v, k)]!)!), w);
+        }
+        const got = suit.getVertexPosition(v, new Vector3());
+        const cut = suit.applyBoneTransform(
+          v,
+          new Vector3().fromBufferAttribute(suit.geometry.attributes.position!, v),
+        );
+        worst = Math.max(worst, got.distanceTo(want));
+        corrected = Math.max(corrected, got.distanceTo(cut));
+      }
+      // The welded seams moved some weights after the file was drawn, and a
+      // tenth of a millimetre is float32 over a metre and a half of body.
+      expect(worst, `${name}: from the file`).toBeLessThan(1e-4);
+      // And the correction is doing something: without it the skin is centimetres away.
+      expect(corrected, `${name}: the correction`).toBeGreaterThan(0.01);
+    }
+    figure.update(pose({}), 0);
+    expect(suit.morphTargetInfluences!.every((w) => w < 1e-6)).toBe(true);
   });
 });

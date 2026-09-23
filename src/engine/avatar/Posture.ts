@@ -244,7 +244,7 @@ const poseAims = (pose: Pose, side: 1 | -1, inner: boolean): Record<Kind, Vector
 };
 
 const SLOTS = ['box', 'delta', 'track', 'climb', 'turnIn', 'turnOut'] as const;
-type Slot = (typeof SLOTS)[number];
+export type Slot = (typeof SLOTS)[number];
 /** Which pose each slot wears, and whether this side is the inner one in it. */
 const SLOT_POSE: Record<Slot, { pose: Pose; inner: boolean }> = {
   box: { pose: POSES.box, inner: false },
@@ -464,6 +464,13 @@ export interface Posture {
    * its own parent.
    */
   world(kind: Kind, side: 1 | -1): Quaternion;
+  /**
+   * How much of each shape the joint is wearing this frame, adding to one: the
+   * same shares its direction was blended with. A body that corrects its skin
+   * per shape reads its corrections' weights here, so the skin changes shape
+   * exactly as fast as the limb does.
+   */
+  shape(kind: Kind, side: 1 | -1): Readonly<Record<Slot, number>>;
 }
 
 /**
@@ -566,6 +573,14 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
     gaze,
     local: (kind, side) => at(kind, side).local,
     world: (kind, side) => at(kind, side).world,
+    shape(kind, side) {
+      const j = at(kind, side);
+      let sum = 0;
+      for (const slot of SLOTS) sum += j.weight[slot].x;
+      const out = {} as Record<Slot, number>;
+      for (const slot of SLOTS) out[slot] = sum > 0 ? j.weight[slot].x / sum : slot === 'box' ? 1 : 0;
+      return out;
+    },
     update(pose, dt) {
       time += dt;
       // The air, as a limb feels it. `rush` is the airspeed over the nominal and

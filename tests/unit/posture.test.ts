@@ -315,4 +315,21 @@ describe('createPosture', () => {
       expect(points(posture.world(kind, 1)).angleTo(want), name).toBeLessThan(0.026);
     }
   });
+
+  it('says how much of each shape a joint wears, adding to one, and a pure shape is all of it', () => {
+    const posture = createPosture({ spine: true });
+    for (const [slot, flown] of [
+      ['box', pose()],
+      ['delta', pose({ pitch: -0.2, vy: -8, speed: SPEED * 1.14 })],
+      ['track', pose({ pitch: -0.42, vy: -16, speed: SPEED * 1.48 })],
+      ['climb', pose({ pitch: 0.56, vy: 12, speed: SPEED * 0.75 })],
+    ] as const) {
+      posture.update(flown, 0);
+      for (const { kind, side } of JOINTS) {
+        const shape = posture.shape(kind, side);
+        expect(Object.values(shape).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+        expect(shape[slot], `${slot} ${kind}`).toBeCloseTo(1, 9);
+      }
+    }
+  });
 });

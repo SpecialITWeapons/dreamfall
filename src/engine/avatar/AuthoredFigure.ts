@@ -28,7 +28,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
 import { SPEED } from '../flight/FlightController';
 import { OUTFIT } from './Outfit';
-import { createPosture, type Kind } from './Posture';
+import { createPosture, type Kind, type Slot } from './Posture';
 import figureUrl from './figure.glb?url';
 
 /**
@@ -766,6 +766,113 @@ function recolour(skins: readonly SkinnedMesh[]): void {
   }
 }
 
+/**
+ * The shapes the skin carries a correction for, each with a flight that holds
+ * it purely -- every one of them inside the controller's envelope, and pure by
+ * `POSE`'s own thresholds: the delta is half a dive at half the extra speed,
+ * the track the steepest dive at its fastest, the climb the steepest climb.
+ * The box needs none, because the skin is cut in it; the turn needs none,
+ * because its arms are the box's and it is never worn whole.
+ */
+const CORRECTED: ReadonlyArray<{ slot: Slot; pose: FlightPose }> = [
+  { slot: 'delta', pose: { ...BAKE, pitch: -0.2, vy: -8, speed: SPEED * 1.14 } },
+  { slot: 'track', pose: { ...BAKE, pitch: -0.42, vy: -16, speed: SPEED * 1.48 } },
+  { slot: 'climb', pose: { ...BAKE, pitch: 0.56, vy: 12, speed: SPEED * 0.75 } },
+];
+
+/** A correction smaller than this anywhere on a mesh is not worth a morph target, m. */
+const CORRECTION_FLOOR = 0.0005;
+
+/** A mesh as the file drew it, kept from before the bake to correct the skin against. */
+interface Drawn {
+  position: BufferAttribute;
+  normal?: BufferAttribute;
+  bindMatrix: Matrix4;
+  boneInverses: Matrix4[];
+}
+
+const drawnOf = (mesh: SkinnedMesh): Drawn => ({
+  position: (mesh.geometry.attributes.position as BufferAttribute).clone(),
+  normal: (mesh.geometry.attributes.normal as BufferAttribute | undefined)?.clone(),
+  bindMatrix: mesh.bindMatrix.clone(),
+  boneInverses: mesh.skeleton.boneInverses.map((m) => m.clone()),
+});
+
+/**
+ * How far every vertex has to move, in the pose the skin is cut in, for the
+ * skin to come out in the bones' current pose where the file itself would
+ * have put it.
+ *
+ * The skin is cut in the box, and linear blend skinning is only good near the
+ * pose it is cut in. The track and the climb take the upper arm 120 and 102
+ * degrees away from the box and straighten an elbow the box holds bent at 116,
+ * and the result is what the owner saw from the chase camera: a shoulder like
+ * an epaulette and an elbow like a telescope, the forearm stepping out of the
+ * upper arm where the bent elbow's fold was unfolded. The file is drawn with
+ * straight arms held out, which is much nearer every one of those shapes, so
+ * skinning straight from the file is better there -- measured on the suit
+ * around the shoulder, the worst twentieth of its triangles keeps 0.56 of its
+ * area in the track instead of 0.38, and the worst stretch goes from 2.2 to 1.6.
+ *
+ * So the difference is kept as a morph target per shape and worn in the
+ * proportion the posture wears the shape: pose-space correction, computed
+ * rather than sculpted. In the box nothing changes, because there the two
+ * skinnings agree by construction. Between shapes the corrections blend with
+ * the shapes, which is not exact and does not need to be: it is exact at each
+ * shape and smooth between them.
+ *
+ * A normal goes the same way, through the linear part only, which is the
+ * arithmetic three's own skinning does to it.
+ */
+function correction(
+  mesh: SkinnedMesh,
+  drawn: Drawn,
+): { position: Float32Array; normal?: Float32Array; most: number } {
+  const bones = mesh.skeleton.bones;
+  const fromFile = bones.map((b, i) =>
+    new Matrix4().multiplyMatrices(b.matrixWorld, drawn.boneInverses[i]!).multiply(drawn.bindMatrix),
+  );
+  const fromCut = bones.map((b, i) =>
+    new Matrix4().multiplyMatrices(b.matrixWorld, mesh.skeleton.boneInverses[i]!).multiply(mesh.bindMatrix),
+  );
+  const cut = mesh.geometry.attributes.position as BufferAttribute;
+  const cutNormal = mesh.geometry.attributes.normal as BufferAttribute | undefined;
+  const joints = mesh.geometry.attributes.skinIndex as BufferAttribute;
+  const weights = mesh.geometry.attributes.skinWeight as BufferAttribute;
+  const position = new Float32Array(cut.count * 3);
+  const normal = cutNormal && drawn.normal ? new Float32Array(cut.count * 3) : undefined;
+  const a = new Matrix4(),
+    b = new Matrix4(),
+    back = new Matrix4();
+  const p = new Vector3(),
+    n = new Vector3(),
+    was = new Vector3();
+  let most = 0;
+  for (let v = 0; v < cut.count; v += 1) {
+    a.elements.fill(0);
+    b.elements.fill(0);
+    for (let k = 0; k < 4; k += 1) {
+      const w = weights.getComponent(v, k);
+      if (w === 0) continue;
+      const i = joints.getComponent(v, k);
+      for (let e = 0; e < 16; e += 1) {
+        a.elements[e]! += w * fromFile[i]!.elements[e]!;
+        b.elements[e]! += w * fromCut[i]!.elements[e]!;
+      }
+    }
+    back.copy(b).invert();
+    p.fromBufferAttribute(drawn.position, v).applyMatrix4(a).applyMatrix4(back);
+    p.sub(was.fromBufferAttribute(cut, v));
+    p.toArray(position, v * 3);
+    most = Math.max(most, p.length());
+    if (!normal || !cutNormal || !drawn.normal) continue;
+    n.fromBufferAttribute(drawn.normal, v).transformDirection(a).transformDirection(back);
+    n.sub(was.fromBufferAttribute(cutNormal, v));
+    n.toArray(normal, v * 3);
+  }
+  return { position, normal, most };
+}
+
 export interface AuthoredFigure extends Avatar {
   /** Every mesh of the figure, for a layer switch and for counting triangles. */
   readonly meshes: Object3D[];
@@ -991,6 +1098,9 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   // what the flight actually asks for.
   place(BAKE, 0);
   object.updateMatrixWorld(true);
+  // The meshes as the file drew them, for the corrections below. Taken after
+  // the weld, which changed the weights both skinnings will read.
+  const drawn = new Map(skins.map((mesh) => [mesh, drawnOf(mesh)]));
   rebind(skins);
   for (const [i, joint] of collar.entries()) {
     bindArm[i]!.copy(joint.arm.getWorldQuaternion(spineTop));
@@ -1002,6 +1112,40 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
     // girdle did, swung the same amount the other way to cover it.
     joint.rest.copy(joint.bone.quaternion);
   }
+
+  // The corrections, taken last, once the collarbone reads the pose the skin
+  // is cut in -- so each shape is posed exactly as it will be flown.
+  const found = CORRECTED.map(({ pose }) => {
+    place(pose, 0);
+    object.updateMatrixWorld(true);
+    return skins.map((mesh) => correction(mesh, drawn.get(mesh)!));
+  });
+  place(BAKE, 0);
+  object.updateMatrixWorld(true);
+  const corrected: SkinnedMesh[] = [];
+  for (const [m, mesh] of skins.entries()) {
+    if (found.every((shape) => shape[m]!.most < CORRECTION_FLOOR)) continue;
+    mesh.geometry.morphAttributes.position = found.map(
+      (shape) => new Float32BufferAttribute(shape[m]!.position, 3),
+    );
+    if (found.every((shape) => shape[m]!.normal)) {
+      mesh.geometry.morphAttributes.normal = found.map(
+        (shape) => new Float32BufferAttribute(shape[m]!.normal!, 3),
+      );
+    }
+    mesh.geometry.morphTargetsRelative = true;
+    mesh.updateMorphTargets();
+    corrected.push(mesh);
+  }
+  /** Each correction worn as much as the shoulders wear its shape. */
+  const wear = () => {
+    const left = posture.shape('shoulder', 1),
+      right = posture.shape('shoulder', -1);
+    for (const mesh of corrected) {
+      for (const [k, { slot }] of CORRECTED.entries())
+        mesh.morphTargetInfluences![k] = (left[slot] + right[slot]) / 2;
+    }
+  };
 
   return {
     object,
@@ -1016,6 +1160,7 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
       object.position.set(pose.x, pose.y, pose.z);
       object.rotation.set(-pose.pitch, pose.heading, pose.bank);
       place(pose, dt);
+      wear();
       // The first person draws none of the figure: this is one surface on one
       // skeleton, and a skin cannot be culled part by part to leave the arms.
       if (pose.view !== view) {
