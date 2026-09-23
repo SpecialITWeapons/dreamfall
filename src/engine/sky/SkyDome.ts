@@ -35,14 +35,30 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
+import { CLOUD_SEA_DROP } from './CloudSea';
+import { cloudCoverAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
+import { DECK_Y } from '../terrain/WorldSampler';
 
 const VENUS = vec3(0.86, 0.46, 0.52);
 const SPARSE_STAR_AXIS = normalize(vec3(0.36, 0.5, -0.79));
 export const SKY_RADIUS = 12_000;
 /** Units of the sky projection per meter the wind carries the field. */
 export const CLOUD_DRIFT = 0.0012;
+/**
+ * The deck's underside as the dome paints it, m along the ray: its banks read
+ * whole out to `near[0]` and close up by `near[1]` -- seen that flat, the gaps
+ * between banks hide behind the banks in front of them, and a texel of the
+ * field is smaller than a pixel and would only shimmer -- and the air takes
+ * them into the horizon between `far[0]` and `far[1]`.
+ */
+export const DECK_UNDERSIDE = {
+  near: [4000, 11000],
+  far: [3000, 15000],
+  closed: 0.9,
+  opacity: 0.95,
+} as const;
 
 export function createSkyDome(
   u: SkyUniforms,
@@ -179,6 +195,40 @@ export function createSkyDome(
     light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(anti, 1.5)).mul(0.6)));
     light.addAssign(vec3(0.5, 0.55, 0.7).mul(pow(m, 6)).mul(u.uMoonLight).mul(0.35));
     col.assign(mix(col, mix(light, shade, smoothstep(0.02, 0.36, mass)), mask.mul(mix(0.6, 0.94, u.uNight))));
+    // The deck from under it. The painted clouds above are a layer of their
+    // own and higher; the deck is the one field the sea, its fog, the puffs and
+    // the shadows read, so a flyer under it sees the banks and the gaps it will
+    // look down on once it has climbed through -- in parallax, because this is
+    // where the view ray meets the sea's own plane and not a direction.
+    const rise = float(DECK_Y - CLOUD_SEA_DROP).sub(cameraPosition.y);
+    const along = rise.div(y.max(0.0005));
+    const hit = cameraPosition.xz.add(u.uWorldOrigin).add(dir.xz.mul(along));
+    // The field is 80 m a texel and its banks a kilometre across, which from
+    // under them is a soft stain; a finer noise carried with them rags their
+    // edges and breaks up their bellies, and a narrower edge than the sea's
+    // makes them read as cloud rather than as haze.
+    const closing = smoothstep(DECK_UNDERSIDE.near[0], DECK_UNDERSIDE.near[1], along);
+    const rag = mx_noise_float(hit.sub(u.uWind.mul(u.time)).mul(0.006))
+      .mul(0.35)
+      .add(mx_noise_float(hit.sub(u.uWind.mul(u.time)).mul(0.019)).mul(0.15));
+    const bank = mix(
+      smoothstep(0.3, 0.55, cloudCoverAt(u, hit).add(rag.mul(float(1).sub(closing)))),
+      float(DECK_UNDERSIDE.closed),
+      closing,
+    )
+      .mul(step(0.0, rise))
+      .mul(step(0.0, y));
+    // Flat grey bellies, lighter where a bank thins to its edge, and the air in
+    // front of them as they go further off. A belly is the cloud's own white in
+    // its own shadow: the sky's blue in it read as haze rather than as cloud.
+    const belly = mix(light, mix(u.uCloudWhite.mul(0.74), horizonColor, 0.2), smoothstep(0.25, 0.9, bank));
+    col.assign(
+      mix(
+        col,
+        mix(belly, horizonColor, smoothstep(DECK_UNDERSIDE.far[0], DECK_UNDERSIDE.far[1], along)),
+        bank.mul(DECK_UNDERSIDE.opacity),
+      ),
+    );
     const edge = smoothstep(-0.18, 0.08, mass).mul(float(1).sub(smoothstep(0.08, 0.24, mass)));
     col.addAssign(
       sunCol
