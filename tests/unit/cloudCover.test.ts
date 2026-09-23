@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COVER, createCloudCover } from '../../src/engine/sky/CloudCover';
+import { COVER, bankAt, createCloudCover } from '../../src/engine/sky/CloudCover';
 
 const share = (data: Uint8Array) => data.reduce((sum, b) => sum + (b >= 128 ? 1 : 0), 0) / data.length;
 
@@ -93,5 +93,37 @@ describe('createCloudCover', () => {
       const next = cover.data[j * n + ((i + 1) % n)]! / 255;
       expect(cover.at((i + 1) * m, (j + 0.5) * m)).toBeCloseTo((cover.data[j * n + i]! / 255 + next) / 2, 9);
     }
+  });
+
+  it('says how solid the deck is where the wind has carried it, on the edge the GPU draws', () => {
+    // The whiteout reads this: a clear sky has none, a bank has all of it.
+    const cover = createCloudCover(42);
+    const wind = { x: 3, z: -2 };
+    let clear = 0,
+      solid = 0;
+    for (let i = 0; i < 400; i++) {
+      const x = i * 97.3,
+        z = i * -41.9,
+        t = i * 11;
+      const b = bankAt(cover, x, z, t, wind),
+        v = cover.at(x - wind.x * t, z - wind.z * t);
+      expect(b).toBeGreaterThanOrEqual(0);
+      expect(b).toBeLessThanOrEqual(1);
+      if (v <= COVER.bank[0]) {
+        expect(b).toBe(0);
+        clear++;
+      }
+      if (v >= COVER.bank[1]) {
+        expect(b).toBe(1);
+        solid++;
+      }
+    }
+    expect(clear).toBeGreaterThan(40);
+    expect(solid).toBeGreaterThan(40);
+    // and moves with the wind: after t seconds it stands wind * t further on
+    expect(bankAt(cover, 500 + 3 * 60, 800 - 2 * 60, 60, wind)).toBeCloseTo(
+      bankAt(cover, 500, 800, 0, wind),
+      12,
+    );
   });
 });
