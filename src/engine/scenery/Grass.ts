@@ -42,11 +42,11 @@ import type { SceneryMaterials } from './Painted';
  * that is a hitch twice a second on a low pass, and the window reaches 260 m
  * with the blades faded out by 190, so nobody can see it lag half a cell.
  */
-const STEP = CELL * 4;
+export const STEP = CELL * 4;
 /** The side of one placement tile, m. */
 const TILE = 64;
-/** Tiles either side of the flyer's own, so nineteen by nineteen of them. */
-const SPAN = 9;
+/** Tiles either side of the flyer's own, so twenty-three by twenty-three of them. */
+const SPAN = 11;
 /**
  * A tile whose centre is further than this from the flyer is not written, m.
  *
@@ -54,23 +54,25 @@ const SPAN = 9;
  * may stand up to half a tile's diagonal (45 m) beyond it, and a tile that was
  * taken is left again once the flyer has moved `STEP`. Everything in that band
  * appears and disappears between rebuilds, so the fade has to have finished
- * before it: `GRASS_FADE[1] <= REACH - STEP - 45`. At 480, 64 and 45 that puts
- * the last visible blade at 371 and the fade ends at 360.
+ * before it: `GRASS_FADE[1] <= REACH - STEP - 45`. At 650, 64 and 45 that puts
+ * the last visible blade at 541 and the fade ends at 540. It was 480 until the
+ * owner, flying low, still saw grass appear in front of the figure.
  */
-const REACH = 480;
+export const REACH = 650;
 /** Attempts per tile at full thickness; each survives with the tile's own. */
 const ROLLS = 256;
 /**
  * Baked tuft forms, and the tufts of one form its own mesh may hold. Sized
  * against what the world actually asks for rather than against the geometry:
  * ten minutes of a low flight over seed 42 peaked at 45 308 tufts standing at
- * this reach, and a tile whose turn comes once the ceiling has arrived is a
- * tile left out of the window until the flyer moves -- the same silent
- * truncation the ring's own tree ceiling is set high to avoid. Four MB of
- * instance data, and the window is full of it about a fifth of the time.
+ * a reach of 480, which is about 83 000 at 650 -- the window's area goes with
+ * the square of its reach -- and a tile whose turn comes once the ceiling has
+ * arrived is a tile left out of the window until the flyer moves, the same
+ * silent truncation the ring's own tree ceiling is set high to avoid. Seven MB
+ * of instance data.
  */
 export const FORMS = 4;
-export const PER_FORM = 16000;
+export const PER_FORM = 24000;
 /**
  * Tufts the window may hold at once. The forms share it in equal parts, which
  * is what lets a full form hand a tuft on to one with room instead of dropping
@@ -132,11 +134,11 @@ const MIN_GROUND = 2,
  * Height over the ground past which there is no grass at all, m. It has to
  * clear the far end of the fade, or crossing it hides a window that still had
  * visible blades in it -- which is the same pop this reach was widened to get
- * rid of, moved from the horizon to the altimeter. The flight is under 380 m of
- * clearance 68 % of the time against 59 % under 250, and `STEP` doubled, so the
- * window is written less often than it was despite being awake more.
+ * rid of, moved from the horizon to the altimeter. At 560 it sits just over the
+ * fade's far end at 540; the window is awake more of a flight than at 380, and
+ * a window over a flight that is not low costs one rim of tiles a `STEP`.
  */
-const CEILING = 380;
+export const CEILING = 560;
 /** This window's own salt: it shares its stream with nothing the ring sows. */
 const GRASS_SALT = 0x6a455;
 

@@ -591,6 +591,30 @@ Thinning the **placement** by distance was tried and reverted for exactly that
 reason: the number of attempts a tile gets would depend on where the flyer was,
 so flying toward a meadow would thicken it in the middle of the visible band.
 
+### Further again: 650 m, and the fade at 400 to 540
+
+The owner, flying as low as the flight allows, still watched grass grow in
+front of the figure with the fade at 260 to 360. The same machinery reaches
+further with the same three ties kept (a test now holds them): `REACH` 650,
+`GRASS_FADE` 400 to 540, `CEILING` 560, `SPAN` 11, and 24 000 tufts a form.
+The window's area goes with the square of its reach, so what stands goes up
+by about 1.8. Measured in this container, low over x -44 584, z 14 294:
+
+|                               | 480 m     | 650 m          |
+| ----------------------------- | --------- | -------------- |
+| tufts standing                | ~22 000   | 41 000--44 000 |
+| whole rebuild (origin jump)   | 22 ms     | 32 ms          |
+| a rim rebuild                 | 0.6--5 ms | 0.8--5.3 ms    |
+| most a full-density window    | 44 032    | 84 992         |
+| tufts the meshes hold         | 64 000    | 96 000         |
+| triangles at the meshes' most | 384 000   | 576 000        |
+| instance data held            | 4.9 MB    | 7.3 MB         |
+
+A rim costs about what it did, because a rim is what the flyer crossed and not
+what the window holds. What rose is what a GPU draws; at 540 m a tuft is one or
+two pixels, so the fill it adds is small, and whether that holds on the owner's
+hardware is theirs to say.
+
 ### The measurement that was wrong for an hour
 
 `Heightfield.fillAll(cx, cz)` takes **cell indices**, not metres; `update(x, z)`

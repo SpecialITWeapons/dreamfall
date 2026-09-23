@@ -56,14 +56,17 @@ const GRASS_ALPHA_TEST = 0.08;
  * Blades fade out over this band of camera distance, meters. Tied to the grass
  * window's own reach, not chosen: a tuft may stand half a tile's diagonal past
  * `REACH` and is dropped once the flyer has moved `STEP`, so the far end has to
- * sit under `REACH - STEP - 45` or the window's rim is visible. At 480, 64 and
- * 45 the ceiling is 371.
+ * sit under `REACH - STEP - 45` or the window's rim is visible. At 650, 64 and
+ * 45 the ceiling is 541.
  *
  * It ended at 190 until the owner said grass was still appearing in front of a
- * low pass, which it was: two seconds of warning at this world's speeds. Now it
- * is nearer six, and what that cost is in `docs/perf-notes.md`.
+ * low pass, which it was: two seconds of warning at this world's speeds. Then
+ * at 360, and the owner, flying as low as the flight allows, still watched it
+ * grow in front of the figure. At 540 a tuft coming in is one or two pixels
+ * tall, and a low pass has about thirteen seconds before it is under the
+ * figure. What that costs is in `docs/perf-notes.md`.
  */
-const GRASS_FADE: [number, number] = [260, 360];
+export const GRASS_FADE: [number, number] = [400, 540];
 
 const BARK_GROOVES = ['#4f5b43', '#8d906a', '#656c50', '#a2a07b', '#596347'];
 const GRASS_BLADES = ['#638c37', '#7ca448', '#8cae50', '#a2bb61'];
