@@ -299,8 +299,15 @@ export function createGrass(deps: GrassDeps): Grass {
   });
 
   const standing = new Int32Array(FORMS);
-  /** Which tile each written slot belongs to, so a tile that leaves can take its own tufts with it. */
-  const owner = Array.from({ length: FORMS }, () => new Int32Array(PER_FORM));
+  /**
+   * Which tile each written slot belongs to, so a tile that leaves can take its
+   * own tufts with it. A Float64Array, because a tile's key is not a 32-bit
+   * number: it was an Int32Array, and 16 km out from the middle of the world
+   * the keys wrapped, no standing tuft matched a tile the window wanted, and
+   * the first rim rebuild threw the whole meadow away -- grass for a moment,
+   * then only the new rim, 400 m out and faded.
+   */
+  const owner = Array.from({ length: FORMS }, () => new Float64Array(PER_FORM));
   /** The tiles the window holds, and the ones it wants; the two swap at the end of a rebuild. */
   let live = new Set<number>(),
     wanted = new Set<number>();
@@ -311,8 +318,10 @@ export function createGrass(deps: GrassDeps): Grass {
   /**
    * A tile's name. The window is nineteen tiles a side and the flight covers
    * the world, so the key has to survive tile coordinates in the millions:
-   * multiplying keeps it a small integer where a string would be a small
-   * allocation, once a tile, every rebuild.
+   * multiplying keeps it an integer where a string would be a small
+   * allocation, once a tile, every rebuild. Not a small one: past 256 tiles
+   * out it is beyond 2^31, which is exact in a double and nowhere narrower,
+   * so everything that holds a key holds a double (`owner`).
    */
   const keyOf = (tx: number, tz: number) => tx * 8388608 + tz;
 
