@@ -109,8 +109,13 @@ export function createSkyDome(
     const warmUpper = mix(u.uUpper, u.uUpperWarm, pow(align, 3.5).mul(0.8).add(pow(s, 5).mul(0.2)));
     const skyUp = mix(warmUpper, u.uZenith, smoothstep(0.1, 0.85, y));
     const aboveH = mix(horizonColor, skyUp, smoothstep(0.0, 0.4, y));
-    const belowH = mix(horizonColor, u.uBelow, smoothstep(0.0, -0.25, y));
-    const col = select(y.greaterThan(0.0), aboveH, belowH).toVar();
+    // Under the horizon the dome is only ever seen past the edge of the terrain
+    // window, where the fog has already covered the ground whole, so it is the
+    // fog's colour and nothing else. It was a colour of its own a quarter of the
+    // way down, which nobody saw while a cloud sea covered the whole world; with
+    // gaps in the sea, from over the deck, the window's edge stood out as a pale
+    // square on it.
+    const col = select(y.greaterThan(0.0), aboveH, horizonColor).toVar();
     // dawn and dusk: a thin saturated band along the sun-side horizon
     const band = pow(align, 3)
       .mul(exp(abs(y).div(0.07).negate()))
