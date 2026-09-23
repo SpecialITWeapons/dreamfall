@@ -141,6 +141,48 @@ const MIN_GROUND = 2,
 export const CEILING = 560;
 /** This window's own salt: it shares its stream with nothing the ring sows. */
 const GRASS_SALT = 0x6a455;
+/**
+ * Each tuft's own shade of its tile's green, drawn from a stream of the tile's
+ * own beside the one that places it: the placement draws exactly what it drew
+ * before, so the meadow stands where it stood and is only coloured.
+ */
+const TINT_SALT = 0x3e1d7;
+/**
+ * How far one tuft strays from its tile's green. A tile's tint is one colour
+ * over 64 m, and a meadow of one green reads as a carpet; one tuft in `dry`
+ * goes over towards straw instead, which is what a real meadow has in it. It
+ * is a multiplier over the painted blades and the biome's tint alike, so it
+ * works on a `white` tint as well as a gold one: `hue` warms a tuft (more red,
+ * less blue) or cools it the other way, about 0.03 of a turn either side on
+ * the painted greens. Blue moves `blue` as far as red does: taking as much
+ * blue as it adds red, a warm dark tuft on a gold tint came out more saturated
+ * than the envelope allows. `light` scales it, about a tenth either side once
+ * the eye's curve is applied. A dry tuft only darkens, never lightens: dry and
+ * light together on the brightest blade run a channel past one, and a clipped
+ * channel is a neon one. `grass.test.ts` holds every corner of it inside the
+ * palette envelope.
+ */
+export const TUFT_TINT = {
+  hue: 0.18,
+  light: 0.25,
+  dry: 0.12,
+  blue: 0.6,
+  straw: [0.7, 0.1, 0.8] as const,
+};
+
+/**
+ * One tuft's multiplier on its tile's tint, from three draws in 0..1: which
+ * way its hue goes, how light it is, and whether it has dried.
+ */
+export function tuftTint(hue: number, light: number, dry: number, out: Color): Color {
+  const { straw } = TUFT_TINT;
+  if (dry < TUFT_TINT.dry)
+    return out
+      .setRGB(1 + straw[0], 1 + straw[1], 1 + straw[2])
+      .multiplyScalar(1 + TUFT_TINT.light * Math.min(light * 2 - 1, 0));
+  const h = TUFT_TINT.hue * (hue * 2 - 1);
+  return out.setRGB(1 + h, 1, 1 - h * TUFT_TINT.blue).multiplyScalar(1 + TUFT_TINT.light * (light * 2 - 1));
+}
 
 /** One baked form, as the plain numbers a geometry is made of. */
 export interface TuftForm {
@@ -260,7 +302,8 @@ export function createGrass(deps: GrassDeps): Grass {
   const up = new Vector3(0, 1, 0),
     foot = new Vector3(),
     size = new Vector3();
-  const tint = new Color();
+  const tint = new Color(),
+    own = new Color();
   const slotIds = new Uint8Array(4);
   const slotWeights = new Float32Array(4);
 
@@ -399,7 +442,8 @@ export function createGrass(deps: GrassDeps): Grass {
           tint.g += weight * grass.color.g;
           tint.b += weight * grass.color.b;
         }
-        const roll = mulberry32(hash2(tx, tz, salt));
+        const roll = mulberry32(hash2(tx, tz, salt)),
+          colour = mulberry32(hash2(tx, tz, salt ^ TINT_SALT));
         for (let i = 0; i < ROLLS; i++) {
           // Every attempt draws its six numbers before anything is tested, so
           // a tile looks the same however thick its neighbours turned out. The
@@ -415,6 +459,8 @@ export function createGrass(deps: GrassDeps): Grass {
             yaw = roll() * Math.PI * 2,
             pick = roll() * FORMS,
             keep = roll() < thickness;
+          // And the colour's own three, drawn here for the same reason.
+          tuftTint(colour(), colour(), colour(), own);
           // The original measured the ground before this test; the ground does
           // not answer differently for being asked later, and most attempts
           // die here.
@@ -441,7 +487,7 @@ export function createGrass(deps: GrassDeps): Grass {
           const mesh = meshes[f]!,
             at = standing[f]!++;
           mesh.setMatrixAt(at, matrix);
-          mesh.setColorAt(at, tint);
+          mesh.setColorAt(at, own.multiply(tint));
           owner[f]![at] = key;
           placed++;
           written++;
