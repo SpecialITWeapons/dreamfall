@@ -33,7 +33,6 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uHorizon: uniform(new Color(0)),
     uHorizonWarm: uniform(new Color(0)),
     uUpperWarm: uniform(new Color(0)),
-    uBelow: uniform(new Color(0)),
     uSunColor: uniform(new Color(0)),
     /** The true sun, even below the horizon. */
     uSunDir: uniform(new Vector3(0, 1, 0)),

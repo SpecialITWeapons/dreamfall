@@ -57,7 +57,6 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
         .copy(u.cloudWhite)
         .lerp(pal.glow, u.uLowSun.value * 0.45)
         .lerp(pal.horizon, night * 0.97);
-      u.uBelow.value.copy(pal.below);
       u.uSunColor.value.copy(pal.sun);
       lights.update({ palette: pal, sunDir, moonDir, sunUp, moonLight, follow });
       // cloud sea and whiteout follow the camera's altitude relative to the deck
