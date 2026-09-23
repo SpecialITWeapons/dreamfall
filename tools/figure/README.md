@@ -19,6 +19,14 @@ photographs the figure from behind, the side, below and above, in about half a
 minute under SwiftShader. `CHROMIUM=/path/to/chrome` when Playwright's own idea
 of a browser is a version the machine does not have.
 
+And the file on its own, with nothing of the engine's done to it -- which is
+how the helmet's visor turned out to be in the texture all along:
+
+```sh
+npx vite                                         # then open:
+# /tools/figure/view/?file=/src/engine/avatar/figure.glb&yaw=30&dist=0.9&target=1.52
+```
+
 ## Reading and trimming it
 
 These three read the file, and none of them needs Blender. `export_authored.py`

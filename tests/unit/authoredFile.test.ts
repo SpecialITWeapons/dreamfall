@@ -174,7 +174,41 @@ describe('the authored figure against its own file', () => {
     const colour = (mesh: SkinnedMesh) => (mesh.material as MeshStandardMaterial).color.getHex();
     const body = named('first_modelsMesh')!;
     expect(colour(named('male_skinsuit_01Mesh')!)).toBe(OUTFIT.suit);
-    expect(colour(named('motorcyclehelmetMesh')!)).toBe(OUTFIT.helmet);
+    // The helmet is two parts told apart by the file's own texture, shell and
+    // visor, so it is painted by a node rather than by one colour.
+    const helmet = named('motorcyclehelmetMesh')!;
+    expect((helmet.material as MeshStandardMaterial).name).toBe('helmet');
+    expect((helmet.material as MeshStandardMaterial & { colorNode?: unknown }).colorNode).toBeTruthy();
+
+    // The file's normals: a fifth of every mesh's point more than sixty degrees
+    // off the surface. The suit keeps them -- that is the lattice the owner
+    // likes -- and the helmet and the bare body get the surface's own.
+    const offSurface = (mesh: SkinnedMesh) => {
+      const position = mesh.geometry.attributes.position as BufferAttribute;
+      const normal = mesh.geometry.attributes.normal as BufferAttribute;
+      const index = mesh.geometry.index!;
+      const key = (v: number) =>
+        [position.getX(v), position.getY(v), position.getZ(v)].map((x) => Math.round(x * 1e4)).join();
+      const sum = new Map<string, Vector3>();
+      for (let t = 0; t < index.count; t += 3) {
+        const [a, b, c] = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+        const pa = new Vector3().fromBufferAttribute(position, a);
+        const face = new Vector3()
+          .fromBufferAttribute(position, b)
+          .sub(pa)
+          .cross(new Vector3().fromBufferAttribute(position, c).sub(pa));
+        for (const v of [a, b, c]) sum.set(key(v), (sum.get(key(v)) ?? new Vector3()).add(face));
+      }
+      let off = 0;
+      for (let v = 0; v < position.count; v += 1) {
+        const n = new Vector3().fromBufferAttribute(normal, v);
+        if (n.angleTo(sum.get(key(v))!) > Math.PI / 3) off += 1;
+      }
+      return off / position.count;
+    };
+    expect(offSurface(helmet)).toBeLessThan(0.01);
+    expect(offSurface(named('first_modelsMesh')!)).toBeLessThan(0.01);
+    expect(offSurface(named('male_skinsuit_01Mesh')!)).toBeGreaterThan(0.1);
 
     /** How much of vertex `v` of the body the named bones move. */
     const share = (mesh: SkinnedMesh, bones: string[]) => {
@@ -350,13 +384,14 @@ describe('the authored figure against its own file', () => {
       return faceInHead.clone().applyQuaternion(head);
     };
     const deg = (r: number) => (r * 180) / Math.PI;
-    // Level flight: the eyes ahead of the chest, somewhere between the ground
-    // ahead and the horizon -- not on the ground under the figure, where a face
-    // pointed down the spine had them.
+    // Level flight: the eyes well ahead of the chest, on the ground far ahead
+    // and the horizon over it -- not on the ground under the figure, where a
+    // face pointed down the spine had them, nor halfway, which read as still
+    // looking down.
     const level = face(0);
     const up = deg(Math.atan2(level.z, -level.y));
-    expect(up).toBeGreaterThan(30);
-    expect(up).toBeLessThan(60);
+    expect(up).toBeGreaterThan(55);
+    expect(up).toBeLessThan(75);
     expect(Math.abs(level.x)).toBeLessThan(0.05);
     // A turn: the face goes round toward the inner side. A negative bank takes
     // the left side down, and left is +x. The turn used to tip an ear and leave

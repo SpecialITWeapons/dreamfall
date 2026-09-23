@@ -217,9 +217,11 @@ page works under a Pages subdirectory.
   sweeps the arms back like the track and is told from it by the knees.
 - The head holds its chin up always and more in a dive, turns about the line
   of the spine (for a body face down that is what turns a face, and the normal
-  of the back only tips an ear), looks into a turn, and glances about when
-  nothing asks anything of it -- a pure function of the flight's clock, faded
-  out by a turn (`GAZE`).
+  of the back only tips an ear), looks into a turn, and glances about calmly
+  when nothing asks anything of it -- a pure function of the flight's clock,
+  faded out by a turn (`GAZE`). **The head never shakes**: the limbs' flutter
+  does not reach it and every spring on it is critically damped; the owner
+  read a quick glance plus the flutter as an unnatural tremor.
 - Every joint is a spring-damper the air pushes, substepped so `omega * h` stays
   under a half, slower the further it is from the chest; the shape weights are
   sprung per joint too, so a shape arrives shoulder first and ankle last.

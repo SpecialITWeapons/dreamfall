@@ -138,18 +138,39 @@ It was there and could not be seen, for two reasons. It turned into a turn
 about the figure's up, which for a body lying face down tips an ear toward a
 shoulder and leaves the face on the ground; and it held the face straight
 down the line of the spine in level flight, lifting the chin only in a dive.
-Measured on the file, the face pointed at the ground under the chest in a
-level glide and at exactly the same place in a hard turn either way.
 
 Now (`GAZE` in `Posture.ts`, `flex` in `AuthoredFigure.ts`): the chin is held
-up all the time, the face about 44° off straight down in level flight, more in
-a dive and less in a climb, whose nose is already up; the head turns about the
-line of the spine, about 35° into a hard turn; when nothing asks anything of
-it, it glances about — a quick look, a hold, a third of them straight ahead,
-all a pure function of the flight's clock — and a turn fades the glances out;
-it nods into a change of flight angle before the body has made it; and the
-flutter reaches the helmet. The skin is cut with the chin up, because `BAKE`
-is level flight and level flight now has one.
+up all the time -- the face about 64° off straight down in level flight, more
+in a dive and less in a climb, whose nose is already up (44° was the first
+answer and read as still looking down); the head turns about the line of the
+spine, about 35° into a hard turn; it glances about when nothing asks
+anything of it, a pure function of the flight's clock, and a turn fades the
+glances out; and it nods into a change of flight angle.
+
+The first version also let the limbs' flutter reach the helmet and snapped a
+glance round in an eighth of a second on an underdamped spring. The owner
+read that as a head that shakes. Now nothing but the flight moves the head,
+a glance takes about 0.4 s, and every spring on the head is critically
+damped; a test holds every frame under a degree and no swing back within a
+quarter of a second.
+
+### The helmet and the normals
+
+The helmet read as a lump because it was painted one colour: its texture is
+two, the shell drawn 0x2a2a2a and the visor black, and one colour lost the
+visor. The texture now stays as a mask (`recolour`), shell in `OUTFIT.helmet`
+and visor in `OUTFIT.visor`, glossier. The full file the owner exported
+again (`first_model_v2.glb`, not committed) was looked at to see whether the
+trim went too far: the helmet in it is the same 1481 vertices, and what the
+trim took is the body under the suit, two eyeballs behind an opaque visor and
+a stray cube -- nothing that shows in flight, and the body under the suit
+would poke through it once posed. The same file's suit is 18 % opaque and
+three of its materials are glass; `check_glb.py` says so.
+
+About a fifth of every mesh's vertices carry a normal more than 60° off the
+surface, many turned clean round, each lighting as a dark shard. On the suit
+that is the lattice the owner likes and it stays; the helmet and the bare
+body (gloves, neck) get normals from the surface itself (`smoothNormals`).
 
 ## Traps, each of which cost a day
 
