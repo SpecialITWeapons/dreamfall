@@ -427,7 +427,10 @@ page works under a Pages subdirectory.
 
 ## Checking
 
-`npm run check` (types, lint, format, tests, build) and `npm run test:e2e`.
+`npm run check` (types, lint, format, tests, build) and `npm run test:e2e`. CI
+runs the first on every push and pull request; the browser tests run on CI only
+when started by hand (Actions, CI, Run workflow), so run them locally before a
+change that touches what the page draws.
 Close any browser tab left open for testing when you're done.
 
 ## Maintaining this file
