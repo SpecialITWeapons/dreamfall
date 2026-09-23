@@ -27,8 +27,8 @@ if (!out) {
 /**
  * Which arrow flies each shape. The vertical is a stick's, so `ArrowUp` is the
  * nose going down. Where each one stops is in the page below, and is the
- * controller's own corner as `Posture.ts` measured it: pitch -0.42 at 1.48 of
- * the nominal airspeed, +0.56 at 0.75, and a bank of 0.47.
+ * controller's own corner as `Posture.ts` measured it: pitch -0.54 at 1.47 of
+ * the nominal airspeed, +0.71 at 0.75, and a bank of 0.47.
  * @type {Record<string, string | null>}
  */
 const KEYS = { dive: 'ArrowUp', climb: 'ArrowDown', turn: 'ArrowLeft', level: null };
@@ -109,9 +109,9 @@ const flown = await page.evaluate(
     /** @param {{ pitch: number, speed: number, bank: number }} s */
     const there = (s) =>
       shape === 'dive'
-        ? s.pitch < -0.41 && s.speed > 58
+        ? s.pitch < -0.53 && s.speed > 58
         : shape === 'climb'
-          ? s.pitch > 0.54
+          ? s.pitch > 0.7
           : shape === 'turn' && Math.abs(s.bank) > 0.46;
     // Up to twenty seconds of flight, and no further than the corner asked for:
     // held any longer, a dive meets the ground and pulls out of itself.

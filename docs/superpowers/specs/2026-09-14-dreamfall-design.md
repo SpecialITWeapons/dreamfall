@@ -716,6 +716,14 @@ strojenia pod odczucie postaci), `CLIMB 11`, `DESCENT 16`, `minClearance 25
 m` nad ziemią i przeszkodami, `minAltitude` bezwzględne domyślnie brak,
 `maxAltitude 1 400 m`.
 
+> **Poprawka 2026-09-23: szybciej w pionie i wyższy sufit.** Na prośbę
+> właściciela `CLIMB` i `DESCENT` urosły o jedną trzecią (14,3 i 20,8 m/s), a
+> `AIRSPEED.perVy` spadło z 1,2 do 0,92, więc skrajne prędkości lotu są jak
+> dawniej, a postać nurkuje i wznosi się stromiej (róg koperty: `pitch
+> -0,54..+0,71`). Sufit podniesiony z 1 400 do 2 000 m, bo pokład wisi teraz
+> na 800 m. Wyżej nie ma sensu bez większego okna terenu: mgła domyka świat
+> 4,1 km od oka, więc na 2 600 m poziome spojrzenie to już sama mgła.
+
 - Kurs: wolny szum plus przyciągania do wschodu, zachodu, księżyca i jądra
   galaktyki (port `SKY_EVENTS`, `updateSunward`, `updateNightward`);
   sterowanie zwalnia przyciągania.
@@ -1017,12 +1025,12 @@ osady; razem z mostami w M6.
 | --- | --- |
 | `CELL`, `N`, `TERRAIN_CELLS` | 16 m, 560, 528 |
 | `WATER_CELLS`, `WATER_CELL` | 132, 64 m |
-| `SEA_LEVEL`, `DECK_Y` | 0, 520 m |
+| `SEA_LEVEL`, `DECK_Y` | 0, 800 m |
 | `DAY_SECONDS`, `NIGHT_SHARE` | 600 s, 0,25 |
-| `SPEED`, `CLIMB`, `DESCENT` | 40, 11, 16 m/s |
-| `AIRSPEED` (min, max, na m/s wznoszenia) | 30, 62, 1,2 |
+| `SPEED`, `CLIMB`, `DESCENT` | 40; 14,3; 20,8 m/s |
+| `AIRSPEED` (min, max, na m/s wznoszenia) | 30, 62, 0,92 |
 | `MANUAL.turn`, `ESCAPE` (margines, sonda) | 0,35 rad/s; 120 m, 0,7 rad |
-| `minClearance`, `maxAltitude` | 25 m, 1 400 m |
+| `minClearance`, `maxAltitude` | 25 m, 2 000 m |
 | `TREE_CELL`, `TREE_RADIUS` | 96 m, 1 900 m |
 | `CROWN_FADE`, `RING_FADE` | 540..680 m, 1 680..1 850 m |
 | `MAX_HEIGHT_DELTA` | 300 m |

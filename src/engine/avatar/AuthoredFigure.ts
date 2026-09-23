@@ -902,8 +902,8 @@ function smoothNormals(mesh: SkinnedMesh): void {
  */
 const CORRECTED: ReadonlyArray<{ slot: Slot; pose: FlightPose }> = [
   { slot: 'delta', pose: { ...BAKE, pitch: -0.2, vy: -8, speed: SPEED * 1.14 } },
-  { slot: 'track', pose: { ...BAKE, pitch: -0.42, vy: -16, speed: SPEED * 1.48 } },
-  { slot: 'climb', pose: { ...BAKE, pitch: 0.56, vy: 12, speed: SPEED * 0.75 } },
+  { slot: 'track', pose: { ...BAKE, pitch: -0.54, vy: -20.8, speed: SPEED * 1.47 } },
+  { slot: 'climb', pose: { ...BAKE, pitch: 0.71, vy: 14.3, speed: SPEED * 0.75 } },
 ];
 
 /** A correction smaller than this anywhere on a mesh is not worth a morph target, m. */

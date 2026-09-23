@@ -14,7 +14,7 @@ import { DECK_Y } from '../terrain/WorldSampler';
 /**
  * The five acts, in seconds, and the numbers around them. The climb is the
  * long one because it is the one with something to see, and it is as long as
- * it is because the flight's own 11 m/s has to cover the deck inside it with
+ * it is because the flight's own 14.3 m/s has to cover the deck inside it with
  * room to spare -- a test holds those two numbers against each other.
  */
 export const OPENING = {

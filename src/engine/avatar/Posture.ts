@@ -139,7 +139,7 @@ const POSES = {
   },
   /**
    * Nose up and slow, which in this world is one state and not two: a climb is
-   * paid for in airspeed, so `speed 30` and `pitch +0.56` arrive together and
+   * paid for in airspeed, so `speed 30` and `pitch +0.71` arrive together and
    * the same shape answers both. Everything trails: the arms lie **down the
    * flanks** and the legs sweep back behind them, the chest leading and the
    * rest of the figure following it, the way a bird pulling up out of a dive
@@ -260,11 +260,13 @@ const SLOT_POSE: Record<Slot, { pose: Pose; inner: boolean }> = {
  * what the flight can actually produce**, which is the first thing a threshold
  * like this gets wrong. Measured against the controller, flying each corner of
  * its envelope for a minute with room under it: the steepest sustained dive is
- * `pitch -0.42` at `rush 1.48`, the steepest climb `+0.56` at `rush 0.75`, and
+ * `pitch -0.54` at `rush 1.47`, the steepest climb `+0.71` at `rush 0.75`, and
  * a hard turn rolls to `0.47`. `dive` was written as 0.5 first, from a picture
  * of a skydiver rather than from the figure's own envelope -- which put the
- * track a fifth of the way past the fastest dive this world has, so the pose
- * existed and could never be reached.
+ * track a fifth of the way past the fastest dive this world had then (-0.42),
+ * so the pose existed and could never be reached. The corners moved out when
+ * the climb and the descent went up by a third; the thresholds were inside the
+ * old ones and so are inside these, the shapes simply arrive before the corner.
  *
  * `lean` is the most of the figure a turn is allowed to take over: a turn is a
  * shape laid over whatever it was doing, not one instead of it, which is why a
@@ -660,8 +662,10 @@ export function createPosture(opts: { spine?: boolean } = {}): Posture {
       const drag = press - 1;
       // A dive arches the back. Where that arch is worn is the one thing this
       // module lets a body differ about, because it is the one thing a body
-      // can differ about: a spine or no spine.
-      const arch = clamp01(-pose.vy / 20, -1);
+      // can differ about: a spine or no spine. Per 26 m/s of descent, which was
+      // 20 until the descent went up by a third: a full dive arches as far as it
+      // did before, rather than further.
+      const arch = clamp01(-pose.vy / 26, -1);
       settle(bend, spine ? arch * TORSO.arch : 0, 1 / TORSO.lag, DAMPING.joint, dt);
       settle(
         sway,

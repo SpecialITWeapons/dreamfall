@@ -210,7 +210,7 @@ page works under a Pages subdirectory.
   built with, so a pose cannot drift out of step with the bones. Which one is
   worn is read off three axes -- flight angle, airspeed, bank -- and **every
   threshold in `POSE` has to be inside what the controller can actually fly**:
-  it reaches `pitch -0.42..+0.56`, `rush 0.75..1.48` and `bank 0.47`, a test
+  it reaches `pitch -0.54..+0.71`, `rush 0.75..1.47` and `bank 0.47`, a test
   asks the controller itself, and a number written from a picture of a skydiver
   instead was a pose that existed and could not be reached. Nose up and slow are
   one state and not two, because a climb is paid for in airspeed; the climb
