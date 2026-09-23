@@ -1,7 +1,7 @@
 // The figure seen from the flight's side: whatever flies gets a pose every
 // frame and reports where its eye is and how far it hangs under its center.
-// A procedural body implements it now; a skinned model can later, without a
-// change to the engine.
+// The body drawn in Blender implements it (`AuthoredFigure.ts`); another could,
+// without a change to the engine.
 import type { Object3D, Vector3 } from 'three';
 import type { View } from '../flight/Steering';
 
@@ -23,12 +23,10 @@ export interface FlightPose {
 
 /**
  * How far a human figure hangs under the flight's centre and how far it
- * reaches sideways, in metres. It lives here rather than with the grown body
- * because the flight reads it to keep the ground clear, and that has to mean
- * the same thing whichever figure is flying -- and because a value imported
- * from `ProceduralHuman` by the authored figure, which is behind a dynamic
- * import, splits 38 kB of body-growing out of the main bundle and charges
- * every player a second request for it.
+ * reaches sideways, in metres. It lives here rather than with the body because
+ * the flight reads it to keep the ground clear -- `World.ts` writes the
+ * clearance against these numbers -- and that has to mean the same thing
+ * whatever body is flying.
  */
 export const HUMAN_BOUNDS = { below: 0.3, radius: 1.1 } as const;
 

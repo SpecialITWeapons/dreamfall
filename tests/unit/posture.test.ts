@@ -110,7 +110,7 @@ describe('createPosture', () => {
     boned.update(dive, 0);
     boneless.update(dive, 0);
     // A body with vertebrae bends them; one without keeps the arch in its
-    // hips, which is where `ProceduralHuman` has always put it.
+    // hips, which is where an arch is felt anyway.
     expect(boned.torso.arch).toBeGreaterThan(0.2);
     expect(boneless.torso.arch).toBe(0);
     const hip = (p: ReturnType<typeof createPosture>) =>

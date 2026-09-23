@@ -1,30 +1,33 @@
-// The figure as someone drew it, rather than as the engine grows it.
+// The figure, as someone drew it in Blender.
 //
 // This implements `Avatar` and nothing else: it is handed a flight pose every
 // frame, puts the whole body where the flight says, and drives the joints off
-// the same `Posture` the grown figure uses. The authored skeleton is 31 CMU
-// bones against the engine's 16; `DRIVEN` is the whole of which is which, and
-// the spine, the neck and the collarbones -- which the grown figure has no
-// bones for -- are driven here and nowhere else.
+// `Posture`. The skeleton is 31 CMU bones, of which the posture speaks to ten
+// limbs; `DRIVEN` is the whole of which is which, and the spine, the neck and
+// the collarbones are driven here from the posture's torso and gaze.
 //
 // The one thing done to the file that is not driving it: `rebind` re-cuts the
 // skin into the pose the figure flies in, because a body modelled in a T and
 // flown with its arms back is a right angle away from the only pose its skin
 // is correct in, and linear blend skinning does not survive that.
-//
-// `?figure=glb` picks it. Without that the procedural body is unchanged.
 import {
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
   Group,
   Matrix4,
+  MeshStandardMaterial,
   Quaternion,
+  SkinnedMesh,
+  Uint16BufferAttribute,
   Vector3,
   type BufferAttribute,
   type Object3D,
-  type SkinnedMesh,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './Avatar';
 import { SPEED } from '../flight/FlightController';
+import { OUTFIT } from './Outfit';
 import { createPosture, type Kind } from './Posture';
 import figureUrl from './figure.glb?url';
 
@@ -474,6 +477,295 @@ function rebind(meshes: readonly SkinnedMesh[]): void {
   for (const mesh of meshes) mesh.bind(mesh.skeleton);
 }
 
+/**
+ * Which bones carry a glove and which a boot: the whole of each limb, not just
+ * the hand and the foot. The body under the suit ends in a rim at the wrist
+ * and the ankle weighted to the forearm and the shin, and painting only the
+ * hand's bones left that rim skin-coloured -- a pale line round every cuff.
+ */
+const GEAR: ReadonlyArray<{ swatch: 'gloves' | 'boots'; bones: ReadonlySet<string> }> = [
+  {
+    swatch: 'gloves',
+    bones: new Set(
+      ['Left', 'Right'].flatMap((side) => [
+        `${side}Arm`,
+        `${side}ForeArm`,
+        `${side}Hand`,
+        `${side}FingerBase`,
+        `${side}HandFinger1`,
+        `${side[0]}Thumb`,
+      ]),
+    ),
+  },
+  {
+    swatch: 'boots',
+    bones: new Set(
+      ['Left', 'Right'].flatMap((side) => [`${side}UpLeg`, `${side}Leg`, `${side}Foot`, `${side}ToeBase`]),
+    ),
+  },
+];
+
+/** How much of vertex `v` the bones in `bones` move, 0..1. */
+const shareOf = (mesh: SkinnedMesh, bones: ReadonlySet<string>) => {
+  const joints = mesh.geometry.attributes.skinIndex as BufferAttribute;
+  const weights = mesh.geometry.attributes.skinWeight as BufferAttribute;
+  const names = mesh.skeleton.bones.map((bone) => bone.name);
+  return (v: number) => {
+    let share = 0;
+    for (let k = 0; k < 4; k += 1) {
+      if (bones.has(names[joints.getComponent(v, k)] ?? '')) share += weights.getComponent(v, k);
+    }
+    return share;
+  };
+};
+
+/**
+ * Put gloves on the bare body, and paint the feet the boots' colour under the
+ * boots `cobble` builds over them.
+ *
+ * The file is three meshes: a suit, a helmet, and the body under them -- and
+ * of the body only what the suit does not cover survived the trim, which is
+ * two hands, two feet and a neck. Left as they were drawn, a flyer in a black
+ * suit went barefoot and bare-handed, and from the chase camera the soles were
+ * the palest thing on the figure. So the body is painted per vertex, off its
+ * own skin weights; the neck stays the skin it was. A glove is not
+ * re-modelled, because a glove has fingers where a hand does. A boot is, see
+ * `cobble`: painted toes read as a sock with five toes in it.
+ *
+ * The body is found by what it is rather than by what Blender called it: the
+ * mesh with the most vertices on the hands and feet. Its material's own colour
+ * goes to white, because a vertex colour multiplies it, and the skin's colour
+ * moves into the vertices with everything else.
+ */
+function dress(skins: readonly SkinnedMesh[]): SkinnedMesh | null {
+  let body: SkinnedMesh | null = null;
+  let most = 0;
+  for (const mesh of skins) {
+    const of = GEAR.map(({ bones }) => shareOf(mesh, bones));
+    let count = 0;
+    for (let v = 0; v < mesh.geometry.attributes.position!.count; v += 1) {
+      if (of.some((share) => share(v) > 0.5)) count += 1;
+    }
+    if (count > most) [body, most] = [mesh, count];
+  }
+  if (!body) return null;
+
+  const skin = new Color(OUTFIT.skin);
+  const gear = GEAR.map(({ swatch }) => new Color(OUTFIT[swatch]));
+  const of = GEAR.map(({ bones }) => shareOf(body, bones));
+  const count = body.geometry.attributes.position!.count;
+  const colors = new Float32Array(count * 3);
+  const paint = new Color();
+  for (let v = 0; v < count; v += 1) {
+    paint.copy(skin);
+    // A limb's share is everything that is not the neck, so a vertex is gear
+    // almost everywhere and skin only where the neck's bones hold it. Shares
+    // of the two kinds cannot overlap: an arm and a leg share no vertex.
+    for (const [i, share] of of.entries()) paint.lerp(gear[i]!, Math.min(1, share(v)));
+    paint.toArray(colors, v * 3);
+  }
+  body.geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  const material = body.material as MeshStandardMaterial;
+  material.vertexColors = true;
+  material.color.set(0xffffff);
+  material.needsUpdate = true;
+  return body;
+}
+
+/**
+ * The boot's shape: how many sections along the foot, how many points round
+ * each, how far it stands off the foot in metres, and how square a section is
+ * -- two is an ellipse, and a boot is squarer than that across the toe box.
+ */
+const BOOT = { sections: 18, around: 24, clear: 0.005, square: 3 };
+
+/**
+ * Build a boot over each foot, as a skinned mesh of its own.
+ *
+ * A painted foot is a foot: from above, the chase camera's usual place, its
+ * outline is five toes. So the boot is grown over it instead. The foot is
+ * measured in its own frame -- origin at the ankle, `ahead` level toward the
+ * toe joint, `up` the file's own -- and cut into sections along its length;
+ * each section is a rounded rectangle (a superellipse of power `square`) set on
+ * the middle of what the foot has in that slab and grown until every vertex of
+ * the slab is inside it, then `clear` more. Taking the extent across every toe
+ * at once is what turns five toes into a toe box. The two ends are closed with
+ * a fan, and the top is left to the suit's cuff, which comes down over it.
+ *
+ * A boot vertex wears the skin weights of the nearest vertex of the foot, so
+ * the boot bends at the ankle the way the foot under it does and cannot slide
+ * off it. It is built in the pose the file was drawn in, before the bake, which
+ * then carries it into the box like every other mesh.
+ */
+function cobble(body: SkinnedMesh): SkinnedMesh[] {
+  const position = body.geometry.attributes.position as BufferAttribute;
+  const joints = body.geometry.attributes.skinIndex as BufferAttribute;
+  const weights = body.geometry.attributes.skinWeight as BufferAttribute;
+  const toLocal = body.matrixWorld.clone().invert();
+  const where = (name: string) => {
+    const bone = body.skeleton.bones.find((b) => b.name === name);
+    if (!bone) throw new Error(`the figure has no bone called ${name}; it is not a CMU skeleton`);
+    return bone.getWorldPosition(new Vector3()).applyMatrix4(toLocal);
+  };
+  const material = new MeshStandardMaterial({ color: OUTFIT.boots, roughness: 0.62, name: 'boots' });
+  const boots: SkinnedMesh[] = [];
+  const p = new Vector3();
+
+  for (const side of ['Left', 'Right']) {
+    // A body with no bare foot on this side has nothing to put a boot on.
+    const onFoot = shareOf(body, new Set([`${side}Foot`, `${side}ToeBase`]));
+    const bare: number[] = [];
+    for (let v = 0; v < position.count; v += 1) if (onFoot(v) >= 0.5) bare.push(v);
+    if (bare.length === 0) continue;
+    const ankle = where(`${side}Foot`);
+    const up = new Vector3(0, 1, 0);
+    const ahead = where(`${side}ToeBase`).sub(ankle).setY(0).normalize();
+    const across = new Vector3().crossVectors(up, ahead).normalize();
+    const foot = bare.map((v) => {
+      p.fromBufferAttribute(position, v).sub(ankle);
+      return { v, a: p.dot(ahead), s: p.dot(across), h: p.dot(up) };
+    });
+    const heel = Math.min(...foot.map((f) => f.a));
+    const tip = Math.max(...foot.map((f) => f.a));
+    const step = (tip - heel) / (BOOT.sections - 1);
+    const n = BOOT.square;
+
+    // One section per step, each over a slab a step wide either side, so
+    // neighbouring sections overlap and a toe between two is in both.
+    const sections = Array.from({ length: BOOT.sections }, (_, i) => {
+      const a = heel + i * step;
+      const slab = foot.filter((f) => Math.abs(f.a - a) <= step);
+      const s0 = Math.min(...slab.map((f) => f.s)),
+        s1 = Math.max(...slab.map((f) => f.s));
+      const h0 = Math.min(...slab.map((f) => f.h)),
+        h1 = Math.max(...slab.map((f) => f.h));
+      const s = (s0 + s1) / 2,
+        h = (h0 + h1) / 2;
+      let rs = Math.max((s1 - s0) / 2, 0.005),
+        rh = Math.max((h1 - h0) / 2, 0.005);
+      // Grown until the whole slab is inside: a superellipse through the
+      // corners of the slab's box would cut them, so it is sized by the
+      // vertex that sticks out furthest rather than by the box.
+      let reach = 1;
+      for (const f of slab) {
+        reach = Math.max(reach, (Math.abs(f.s - s) / rs) ** n + (Math.abs(f.h - h) / rh) ** n);
+      }
+      reach **= 1 / n;
+      rs = rs * reach + BOOT.clear;
+      rh = rh * reach + BOOT.clear;
+      return { a, s, h, rs, rh };
+    });
+
+    const vertices: number[] = [];
+    const ring = (i: number, j: number) => 1 + i * BOOT.around + (j % BOOT.around);
+    const point = (a: number, s: number, h: number) =>
+      vertices.push(
+        ...ankle
+          .clone()
+          .addScaledVector(ahead, a)
+          .addScaledVector(across, s)
+          .addScaledVector(up, h)
+          .toArray(),
+      );
+    // The heel's cap centre first, then the rings, then the toe's cap centre.
+    point(heel - BOOT.clear, sections[0]!.s, sections[0]!.h);
+    for (const { a, s, h, rs, rh } of sections) {
+      for (let j = 0; j < BOOT.around; j += 1) {
+        const t = (j / BOOT.around) * Math.PI * 2;
+        const c = Math.cos(t),
+          d = Math.sin(t);
+        point(
+          a,
+          s + rs * Math.sign(c) * Math.abs(c) ** (2 / n),
+          h + rh * Math.sign(d) * Math.abs(d) ** (2 / n),
+        );
+      }
+    }
+    const last = sections[sections.length - 1]!;
+    point(tip + BOOT.clear, last.s, last.h);
+    const toe = vertices.length / 3 - 1;
+
+    // `across`, `up`, `ahead` is right-handed and a ring runs counter-clockwise
+    // seen from ahead, so these windings face out.
+    const index: number[] = [];
+    for (let j = 0; j < BOOT.around; j += 1) {
+      index.push(0, ring(0, j + 1), ring(0, j));
+      for (let i = 0; i + 1 < BOOT.sections; i += 1) {
+        index.push(ring(i, j), ring(i, j + 1), ring(i + 1, j));
+        index.push(ring(i, j + 1), ring(i + 1, j + 1), ring(i + 1, j));
+      }
+      index.push(toe, ring(BOOT.sections - 1, j), ring(BOOT.sections - 1, j + 1));
+    }
+
+    // Each boot vertex takes the weights of the nearest vertex of the foot.
+    const count = vertices.length / 3;
+    const skinIndex = new Uint16Array(count * 4);
+    const skinWeight = new Float32Array(count * 4);
+    const at = new Vector3();
+    for (let v = 0; v < count; v += 1) {
+      at.fromArray(vertices, v * 3);
+      let nearest = foot[0]!.v,
+        best = Infinity;
+      for (const f of foot) {
+        const d = p.fromBufferAttribute(position, f.v).distanceToSquared(at);
+        if (d < best) [nearest, best] = [f.v, d];
+      }
+      for (let k = 0; k < 4; k += 1) {
+        skinIndex[v * 4 + k] = joints.getComponent(nearest, k);
+        skinWeight[v * 4 + k] = weights.getComponent(nearest, k);
+      }
+    }
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndex, 4));
+    geometry.setAttribute('skinWeight', new Float32BufferAttribute(skinWeight, 4));
+    geometry.setIndex(index);
+    geometry.computeVertexNormals();
+    const boot = new SkinnedMesh(geometry, material);
+    boot.name = `${side}Boot`;
+    boot.position.copy(body.position);
+    boot.quaternion.copy(body.quaternion);
+    boot.scale.copy(body.scale);
+    boot.frustumCulled = false;
+    boot.castShadow = true;
+    body.parent?.add(boot);
+    boot.updateMatrixWorld(true);
+    boot.bind(body.skeleton, body.bindMatrix);
+    boots.push(boot);
+  }
+  return boots;
+}
+
+/**
+ * Give the suit and the helmet the outfit's colours instead of the file's.
+ *
+ * Both come out of the file textured, and both textures are one colour: the
+ * suit's a flat 0x2a2a2a, the helmet's black under 98 per cent of its
+ * vertices. Together with the bare body that made the figure one dark
+ * silhouette with a pale neck in it. So each loses its texture and takes a
+ * colour from `OUTFIT`, and a change of colour is one line there.
+ *
+ * Found by what they are rather than what Blender called them: of the textured
+ * meshes, the one that rides the head -- nine in ten of its vertices mostly on
+ * that bone -- is the helmet, and the other is the suit.
+ */
+function recolour(skins: readonly SkinnedMesh[]): void {
+  for (const mesh of skins) {
+    const material = mesh.material as MeshStandardMaterial;
+    const map = material.map;
+    if (!map) continue;
+    const onHead = shareOf(mesh, new Set(['Head']));
+    const count = mesh.geometry.attributes.position!.count;
+    let headed = 0;
+    for (let v = 0; v < count; v += 1) if (onHead(v) > 0.5) headed += 1;
+    material.map = null;
+    material.color.set(headed > 0.9 * count ? OUTFIT.helmet : OUTFIT.suit);
+    material.needsUpdate = true;
+    map.dispose();
+  }
+}
+
 export interface AuthoredFigure extends Avatar {
   /** Every mesh of the figure, for a layer switch and for counting triangles. */
   readonly meshes: Object3D[];
@@ -666,6 +958,9 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
     // A figure seen from every side of a chase camera is never culled by its
     // own bounding sphere usefully, and a skinned mesh's is the bind pose's.
     (mesh as Object3D & { frustumCulled: boolean }).frustumCulled = false;
+    // The flyer's shadow on the ground is most of how its height reads from the
+    // chase camera; the body the engine used to grow cast one, and this does.
+    mesh.castShadow = true;
   });
 
   // The seams first and the bake second, in that order and not the other one.
@@ -677,6 +972,15 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
   // `BAKE` every bone matrix is the identity and changing a weight moves
   // nothing at all.
   weldSeams(skins);
+  // What the figure wears. Before the bake, because the boots are meshes of
+  // their own and have to be carried into the box with everything else.
+  recolour(skins);
+  const bare = dress(skins);
+  for (const boot of bare ? cobble(bare) : []) {
+    meshes.push(boot);
+    skins.push(boot);
+    triangles += boot.geometry.index!.count / 3;
+  }
   // Then re-cut the skin in the pose it flies in. `dt = 0` is the posture's "be
   // there now", so what is baked is the shape itself and not a spring on its
   // way to it, and the bake happens before a frame has been asked for, so no
@@ -704,18 +1008,16 @@ export function createAuthoredFigure(body: Object3D): AuthoredFigure {
     meshes,
     triangles,
     eye: EYE,
-    // The same envelope the procedural figure flies in. The authored body is
-    // 1.67 m against its 1.7 m and the flight's clearance is written against
-    // these numbers in `World.ts`, so sharing them is what keeps a swap of the
-    // figure from also being a change to how it is allowed to fly.
+    // The envelope the flight's clearance is written against in `World.ts`,
+    // measured for a 1.7 m body; this one is 1.67 m. Keeping them apart is what
+    // keeps a change of body from also being a change to how it may fly.
     bounds: HUMAN_BOUNDS,
     update(pose: FlightPose, dt: number) {
       object.position.set(pose.x, pose.y, pose.z);
       object.rotation.set(-pose.pitch, pose.heading, pose.bank);
       place(pose, dt);
-      // The first person draws none of the figure, for the same reason the
-      // grown one draws none of itself: this is one surface on one skeleton and
-      // a skin cannot be culled part by part.
+      // The first person draws none of the figure: this is one surface on one
+      // skeleton, and a skin cannot be culled part by part to leave the arms.
       if (pose.view !== view) {
         view = pose.view;
         for (const mesh of meshes) mesh.visible = view === 'tpp';

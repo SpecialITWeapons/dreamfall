@@ -1,59 +1,29 @@
-# The figure, baked
+# The figure's file
 
-`Skin.ts` sweeps a tube along each chain of the figure and merges the buffers.
-That is cheap, it is tested in Node, and it has one fault no amount of tuning
-removes: an arm is a tube standing inside the slab of the chest, so a shoulder
-is where two surfaces intersect rather than a place on one surface. From above
-it reads as limbs plugged into a body.
+The figure is `src/engine/avatar/figure.glb`, a rigged body the owner brought
+out of Blender, and the engine flies it (`AuthoredFigure.ts`). The engine used
+to grow a body of its own from a distance field, and this directory used to
+bake that one in Blender too; both are gone, and `docs/figure-notes.md` has the
+history. What is left here reads the file, trims it, and looks at it flying.
+None of it ships: `tools/` is not in the bundle.
 
-This bakes the same figure -- the same numbers, the same rest pose -- as **one
-continuous skin**, using Blender's skin modifier, and writes it as a `.glb`.
-
-Blender is a **build-time** tool. It is not a dependency of the page, it is not
-in `package.json`, and CI never runs it: the bake is committed and the page
-loads the result. The scripts exist so that the figure can be changed in one
-place -- the engine -- and rebaked, rather than being drawn a second time by
-hand somewhere else.
-
-## Baking
+## Looking at it
 
 ```sh
-npm run figure:dump                     # the engine writes figure.json
-python3 -m venv .venv && .venv/bin/pip install bpy   # Blender as a module, ~1 GB
-.venv/bin/python tools/figure/bake.py               # figure.json -> figure.glb
-.venv/bin/python tools/figure/bake.py --preview /tmp/look   # and three pictures of it
+npm run build && npm run preview                 # in another shell
+node tools/figure/look.mjs OUT_DIR dive          # or climb, turn, level
 ```
 
-`bpy` is Blender itself, headless, with no window and no GUI; the wheel wants
-the Python it was built for (5.0 wants 3.11). `bake.py` never touches the
-engine's source and `figure.dump.ts` never touches Blender: `figure.json` is
-the whole of what passes between them.
+Flies the controller to that corner of the envelope behind a paused loop and
+photographs the figure from behind, the side, below and above, in about half a
+minute under SwiftShader. `CHROMIUM=/path/to/chrome` when Playwright's own idea
+of a browser is a version the machine does not have.
 
-## What is in figure.json
+## Reading and trimming it
 
-Bones with their rest positions and parents, in the order the skeleton keeps
-them -- which is the order the glTF's joints come out in, so the engine can bind
-the baked mesh to the skeleton it builds itself -- and every chain sampled along
-its length: where it runs, how thick it is there, and which swatch it wears.
-
-## What the bake is worth watching for
-
-- **Branch smoothing** is how a shoulder stops being a corner and also how a
-  shoulder stops being a shoulder. At 0.3 the girdle and the waist were both
-  gone and the figure was a sausage; 0.1 keeps them.
-- **Colour** in Blender is linear and an outfit is written in sRGB. Handed over
-  as one another, a navy suit renders as a pale blue ghost.
-- **A vertex belongs to the chain whose surface reaches it**, not to the nearest
-  point of the skeleton: the head is a fat chain on a short axis and by plain
-  distance it claimed the top of both shoulders, so the figure wore a white
-  yoke.
-- Catmull-Clark pulls a square section in by about a third, so the engine's own
-  half-widths are scaled up by 1.45 before they are handed to the modifier.
-
-## The other figure: one somebody drew
-
-The owner brought a rigged body out of Blender, and these three read it. None
-of them needs Blender, and none of them ships: `tools/` is not in the bundle.
+These three read the file, and none of them needs Blender. `export_authored.py`
+is the one that does: it exports a `.blend` with the settings the engine can
+read, and says why each is set.
 
 ```sh
 python3 tools/figure/check_glb.py FIGURE.glb        # what would stop it working

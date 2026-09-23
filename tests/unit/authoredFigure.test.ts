@@ -37,9 +37,11 @@ const TREE: Record<string, readonly string[]> = {
   LHipJoint: ['LeftUpLeg'],
   LeftUpLeg: ['LeftLeg'],
   LeftLeg: ['LeftFoot'],
+  LeftFoot: ['LeftToeBase'],
   RHipJoint: ['RightUpLeg'],
   RightUpLeg: ['RightLeg'],
   RightLeg: ['RightFoot'],
+  RightFoot: ['RightToeBase'],
 };
 
 const skeleton = () => {

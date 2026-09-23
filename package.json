@@ -16,8 +16,6 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "figure:dump": "vitest run --config tools/figure/vitest.config.ts",
-    "figure:bake": "python3 tools/figure/bake.py",
     "bench": "vite build && playwright test --config tools/bench/bench.config.ts",
     "parity": "vite build && playwright test --config tools/parity/parity.config.ts",
     "parity:write": "vite build && playwright test --config tools/parity/parity.config.ts --update-snapshots",

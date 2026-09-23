@@ -11,8 +11,6 @@
     npm run bench          what a frame costs at five vantages (tools/bench/README.md)
     npm run parity         the same five vantages as pictures, against references
     npm run parity:write   write those references
-    npm run figure:dump    the figure's description, for the Blender bake
-    npm run figure:bake    bake it (python3 + Blender; tools/figure/README.md)
 
 First run of the browser tests: `npx playwright install chromium`.
 

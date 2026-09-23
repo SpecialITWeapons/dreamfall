@@ -11,9 +11,6 @@ test-results/
 # the agent tooling's own directory: worktrees, scratch, local state
 .claude/
 
-# Baked by tools/figure/bake.py; committed only once the page loads it.
-tools/figure/figure.glb
-
 # Written by `npm run bench`: a measurement of one machine on one evening.
 tools/bench/last.json
 
