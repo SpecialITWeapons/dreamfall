@@ -153,20 +153,23 @@ const TINT_SALT = 0x3e1d7;
  * goes over towards straw instead, which is what a real meadow has in it. It
  * is a multiplier over the painted blades and the biome's tint alike, so it
  * works on a `white` tint as well as a gold one: `hue` warms a tuft (more red,
- * less blue) or cools it the other way, about 0.03 of a turn either side on
+ * less blue) or cools it the other way, about 0.04 of a turn either side on
  * the painted greens. Blue moves `blue` as far as red does: taking as much
  * blue as it adds red, a warm dark tuft on a gold tint came out more saturated
- * than the envelope allows. `light` scales it, about a tenth either side once
- * the eye's curve is applied. A dry tuft only darkens, never lightens: dry and
+ * than the envelope allows. `light` scales it, darker by up to `light[0]` and
+ * lighter by up to `light[1]` in linear light -- about a quarter darker and a
+ * tenth lighter once the eye's curve is applied; lighter by as much as darker
+ * clipped the brightest blade. Half these numbers was the first try, and the
+ * owner could barely see it from the air. A dry tuft only darkens: dry and
  * light together on the brightest blade run a channel past one, and a clipped
  * channel is a neon one. `grass.test.ts` holds every corner of it inside the
  * palette envelope.
  */
 export const TUFT_TINT = {
-  hue: 0.18,
-  light: 0.25,
-  dry: 0.12,
-  blue: 0.6,
+  hue: 0.36,
+  light: [0.5, 0.3] as const,
+  dry: 0.18,
+  blue: 0.1,
   straw: [0.7, 0.1, 0.8] as const,
 };
 
@@ -176,12 +179,13 @@ export const TUFT_TINT = {
  */
 export function tuftTint(hue: number, light: number, dry: number, out: Color): Color {
   const { straw } = TUFT_TINT;
+  const l = light * 2 - 1;
   if (dry < TUFT_TINT.dry)
     return out
       .setRGB(1 + straw[0], 1 + straw[1], 1 + straw[2])
-      .multiplyScalar(1 + TUFT_TINT.light * Math.min(light * 2 - 1, 0));
+      .multiplyScalar(1 + TUFT_TINT.light[0] * Math.min(l, 0));
   const h = TUFT_TINT.hue * (hue * 2 - 1);
-  return out.setRGB(1 + h, 1, 1 - h * TUFT_TINT.blue).multiplyScalar(1 + TUFT_TINT.light * (light * 2 - 1));
+  return out.setRGB(1 + h, 1, 1 - h * TUFT_TINT.blue).multiplyScalar(1 + TUFT_TINT.light[l < 0 ? 0 : 1] * l);
 }
 
 /** One baked form, as the plain numbers a geometry is made of. */
