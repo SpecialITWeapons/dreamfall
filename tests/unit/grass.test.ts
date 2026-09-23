@@ -3,7 +3,18 @@ import { uniform } from 'three/tsl';
 import { describe, expect, it } from 'vitest';
 import { defineBiome, type GroundHook, type Library } from '../../library/contract';
 import type { GroundShade } from '../../src/engine/scenery/GroundShade';
-import { CARDS, FORMS, PER_FORM, TUFTS, createGrass, tuftForm } from '../../src/engine/scenery/Grass';
+import {
+  CARDS,
+  CEILING,
+  FORMS,
+  PER_FORM,
+  REACH,
+  STEP,
+  TUFTS,
+  createGrass,
+  tuftForm,
+} from '../../src/engine/scenery/Grass';
+import { GRASS_FADE } from '../../src/engine/scenery/Painted';
 import type { SceneryMaterials } from '../../src/engine/scenery/Painted';
 import type { SkyUniforms } from '../../src/engine/sky/SkyUniforms';
 import { createOrigin } from '../../src/engine/sim/Origin';
@@ -37,7 +48,7 @@ const seenFrom = (form: ReturnType<typeof tuftForm>, angle: number) => {
 };
 
 describe('tuftForm', () => {
-  it('bakes three crossed cards: twelve vertices and six triangles to a tuft, so a full window is 384k triangles', () => {
+  it('bakes three crossed cards: twelve vertices and six triangles to a tuft, so a full window is 576k triangles', () => {
     for (let f = 0; f < FORMS; f++) {
       const form = tuftForm(f);
       expect(form.position).toHaveLength(VERTICES * 3);
@@ -46,7 +57,7 @@ describe('tuftForm', () => {
       expect(form.index).toHaveLength(TRIANGLES * 3);
       for (const i of form.index) expect(i).toBeLessThan(VERTICES);
     }
-    expect(TUFTS * TRIANGLES).toBe(384000);
+    expect(TUFTS * TRIANGLES).toBe(576000);
   });
 
   it('stands every card on the ground and names the root 0 and the tip 1, which is where the shade is mixed out', () => {
@@ -257,14 +268,25 @@ describe('createGrass', () => {
     jumped.dispose();
   });
 
+  it('fades its blades out before the rim of the window, and sleeps only above the fade', () => {
+    // Three numbers that move together or the pop comes back. A tile is taken
+    // by its centre, so a tuft stands up to 45 m past REACH, and a taken tile
+    // is dropped once the flyer has moved STEP: the fade has to be done before
+    // that band. And the window sleeps above CEILING, which has to clear the
+    // fade's far end, or crossing it hides blades that were still visible.
+    expect(GRASS_FADE[1]).toBeLessThanOrEqual(REACH - STEP - 45);
+    expect(CEILING).toBeGreaterThanOrEqual(GRASS_FADE[1]);
+    expect(GRASS_FADE[0]).toBeLessThan(GRASS_FADE[1]);
+  });
+
   it('never fills a form past its share -- the window cannot reach the ceiling in one rebuild', () => {
     const grass = grassOver(1);
     grass.update(0, 0, 120, createOrigin(), false);
-    // 172 of the 361 tiles are within REACH from the origin, and each is 256
-    // attempts: the most a rebuild can write is 44032, under the 64000 the
+    // 332 of the 529 tiles are within REACH from the origin, and each is 256
+    // attempts: the most a rebuild can write is 84992, under the 96000 the
     // meshes hold. The margin is what keeps a tile from being left out of the
     // window for want of room, which is a wood with one side missing.
-    expect(grass.count).toBe(44032);
+    expect(grass.count).toBe(84992);
     expect(grass.count).toBeLessThan(TUFTS);
     for (const c of standing(grass)) expect(c).toBeLessThanOrEqual(PER_FORM);
     grass.dispose();
