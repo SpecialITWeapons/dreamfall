@@ -31,7 +31,8 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     get exposure() {
       return exposure;
     },
-    update(cameraY: number, follow: Vector3) {
+    /** `cloud` is how solid the deck is over the camera, 0..1 (`bankAt`). */
+    update(cameraY: number, follow: Vector3, cloud: number) {
       const pal = clock.palette;
       clock.skyBodies(clock.phase, sunDir, moonDir);
       const sy = sunDir.y;
@@ -66,7 +67,11 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       exposure = LOOK.exposure * (1 - 0.25 * night) * (1 - 0.12 * above);
       u.uFogDensity.value = u.fogDensity * (1 - 0.28 * sstep(0.1, 0.65, sy)) * (1 + 0.35 * night);
       u.uCloudBodies.value = sstep(-240, -80, rel);
-      u.uWhiteout.value = (1 - sstep(0, 80, Math.abs(rel + 20))) * 0.996;
+      // Inside the deck is white only where the deck has cloud: the band is the
+      // deck's height, the cloud is the field's over the camera. It was the band
+      // alone, so a climb through a clear sky met a wall of fog at 800 m and
+      // came out over the deck into a white haze on every side.
+      u.uWhiteout.value = (1 - sstep(0, 80, Math.abs(rel + 20))) * 0.996 * cloud;
     },
   };
 }

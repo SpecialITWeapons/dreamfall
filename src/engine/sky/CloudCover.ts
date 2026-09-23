@@ -34,7 +34,23 @@ export const COVER = {
   range: [0.3, 0.6] as const,
   /** How soft a bank's edge is, in the bank field's own units. */
   soft: 0.06,
+  /**
+   * Where a bank stands solid, over the field's 0..1: the sea, its fog and the
+   * whiteout all read this one edge, so the fog under a bank and the fog inside
+   * it end where the bank does.
+   */
+  bank: [0.15, 0.6] as const,
 };
+
+/**
+ * How solid the deck is over a world point at time `t`, 0..1: the CPU's half
+ * of `cloudBankAt`, carried by the same wind.
+ */
+export function bankAt(cover: CloudCover, x: number, z: number, t: number, wind: { x: number; z: number }) {
+  const [a, b] = COVER.bank;
+  const v = Math.min(1, Math.max(0, (cover.at(x - wind.x * t, z - wind.z * t) - a) / (b - a)));
+  return v * v * (3 - 2 * v);
+}
 
 /** A square of 0..1 that repeats: the bank field and the regional share are both built on it. */
 function periodicNoise(cells: number, seed: number) {

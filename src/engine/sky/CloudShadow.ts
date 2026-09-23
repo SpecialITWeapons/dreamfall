@@ -6,6 +6,7 @@
 // under none of them.
 import type { Node } from 'three/webgpu';
 import { Fn, float, smoothstep, texture } from 'three/tsl';
+import { COVER } from './CloudCover';
 import type { SkyUniforms } from './SkyUniforms';
 
 export const CLOUD_SHADOW = { depth: 0.3 };
@@ -24,7 +25,7 @@ export function cloudCoverAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float
  * straight off the field their rims were a kilometre of haze over the ground.
  */
 export function cloudBankAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float'> {
-  return smoothstep(0.15, 0.6, cloudCoverAt(u, worldXZ));
+  return smoothstep(COVER.bank[0], COVER.bank[1], cloudCoverAt(u, worldXZ));
 }
 
 /** Light reaching a world point through the clouds, 1 - depth .. 1. */

@@ -26,7 +26,7 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { createCloudCover } from './sky/CloudCover';
+import { bankAt, createCloudCover } from './sky/CloudCover';
 import { createCloudSea } from './sky/CloudSea';
 import { createClouds } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
@@ -369,7 +369,11 @@ export function createWorld(opts: WorldOptions): World {
     cloudSea.update(origin.localX(state.x), origin.localZ(state.z));
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
-    atmosphere.update(camera.position.y, follow);
+    atmosphere.update(
+      camera.position.y,
+      follow,
+      bankAt(cloudCover, origin.worldX(camera.position.x), origin.worldZ(camera.position.z), state.t, wind),
+    );
     // The biome's own air, over the palette's. It goes on after the atmosphere
     // because the atmosphere copies the palette every frame, so this is a tint
     // and never an accumulation -- and it goes on `uHorizon`, which in this
