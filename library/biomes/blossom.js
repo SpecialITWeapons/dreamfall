@@ -6,7 +6,7 @@ import { defineBiome } from '../contract';
 export default defineBiome({
   id: 'blossom',
   name: 'Blossom grove',
-  params: { base: 'paleGreen', alt: 'meadow', rock: 'rockPale' },
+  params: { base: 'paleGreen', alt: 'meadow', rock: 'rockPale', road: 'clay' },
   presence: { type: 'climatePoint', point: [0.62, 0.56, 0.92] },
   ground: {
     type: 'layers',

@@ -416,7 +416,8 @@ describe('the library itself', () => {
       expect(biome.name.length).toBeGreaterThan(2);
       // an entry standing in a country paints nothing, so it has nothing to paint with
       if (biome.inherit) expect(biome.params).toEqual({});
-      else expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock']);
+      // the road's colour is the country's too, chosen against its own ground
+      else expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock', 'road']);
     }
   });
   it('ships nine species and two props, and names only ids it baked', () => {

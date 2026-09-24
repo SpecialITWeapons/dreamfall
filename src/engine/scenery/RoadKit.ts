@@ -52,6 +52,15 @@ export interface RoadDeps {
    * rather than a rebuild. Defaults to the world origin.
    */
   at?: [number, number];
+  /** The colour of the country's road at a world point; overrides the road's own colour, per vertex. */
+  colorAt?: (x: number, z: number, out: Color) => Color;
+  /**
+   * Adds `spread` -- which way each rim lies from the centre line, in the
+   * ground's plane, and the half width it was built at -- so a material can
+   * widen a far road to stay a line instead of dissolving into the pixels
+   * between its rims.
+   */
+  spread?: boolean;
 }
 
 /** One sample along a polyline: where it is, and which way the ribbon spreads from it. */
@@ -176,12 +185,16 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
   const positions: number[] = [],
     normals: number[] = [],
     colors: number[] = [],
-    uvs: number[] = [];
-  const push = (rim: Rim, color: Color) => {
+    uvs: number[] = [],
+    spreads: number[] = [];
+  const tint = new Color();
+  const push = (rim: Rim, color: Color, sx: number, sz: number, half: number) => {
     positions.push(rim.x, rim.y, rim.z);
     normals.push(rim.nx, rim.ny, rim.nz);
-    colors.push(color.r, color.g, color.b);
+    const c = deps.colorAt ? deps.colorAt(rim.x + ox, rim.z + oz, tint) : color;
+    colors.push(c.r, c.g, c.b);
     uvs.push(rim.u, rim.v);
+    if (deps.spread) spreads.push(sx, sz, half);
   };
   const rimAt = (x: number, z: number, u: number, v: number): Rim => {
     const gx = (deps.heightAt(x + NORMAL_PROBE, z) - deps.heightAt(x - NORMAL_PROBE, z)) / (2 * NORMAL_PROBE);
@@ -203,22 +216,26 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
     const color = new Color(swatchColor(road.color ?? ROAD_COLOR));
     const half = road.width / 2;
     // the texture runs as far along as the road is wide, so it is never stretched
-    const rims = samples.map((s): [Rim, Rim] => [
+    // Each rim keeps the direction it was spread along, mitre included, so a
+    // road widened at a distance widens round its corners as it was built.
+    const rims = samples.map((s): [Rim, Rim, number, number] => [
       rimAt(s.x + s.ox * half, s.z + s.oz * half, 0, s.along / road.width),
       rimAt(s.x - s.ox * half, s.z - s.oz * half, 1, s.along / road.width),
+      s.ox,
+      s.oz,
     ]);
     for (let i = 0; i + 1 < rims.length; i++) {
-      const [a0, b0] = rims[i]!,
-        [a1, b1] = rims[i + 1]!;
+      const [a0, b0, ax, az] = rims[i]!,
+        [a1, b1, cx, cz] = rims[i + 1]!;
       // Six vertices a quad, the near rim pair first and both triangles facing
       // the sky: the order is what lets a test read the width of the ribbon
       // straight out of the buffer.
-      push(a0, color);
-      push(b0, color);
-      push(a1, color);
-      push(b0, color);
-      push(b1, color);
-      push(a1, color);
+      push(a0, color, ax, az, half);
+      push(b0, color, -ax, -az, half);
+      push(a1, color, cx, cz, half);
+      push(b0, color, -ax, -az, half);
+      push(b1, color, -cx, -cz, half);
+      push(a1, color, cx, cz, half);
     }
   }
 
@@ -227,6 +244,7 @@ export function buildRoads(roads: RoadSpec[], deps: RoadDeps): BufferGeometry | 
   geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
   geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
   geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
+  if (deps.spread) geometry.setAttribute('spread', new Float32BufferAttribute(spreads, 3));
   // Measured like every other baked geometry. The count is already known; what
   // this catches is the colour, which came from a site's build hook and has met
   // no validator on the way here.

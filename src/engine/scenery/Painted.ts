@@ -10,7 +10,9 @@ import {
   cameraPosition,
   float,
   length,
+  max,
   mix,
+  modelWorldMatrix,
   normalLocal,
   positionLocal,
   positionWorld,
@@ -51,6 +53,15 @@ const LEAF_ALPHA_TEST = 0.04,
  * higher test would cut the last of it off in one step instead of thinning it.
  */
 const FADE_ALPHA_TEST = 0.02;
+/**
+ * How wide a far road between settlements is kept, as half its width per
+ * metre of distance. 0.0015 is about three pixels across at 1080p face on, and
+ * one and a half at the grazing angle of a flight at 1 400 m looking 2.5 km
+ * out; nearer than 1 700 m the road's own 2.5 m is the wider and nothing moves.
+ */
+const ROAD_WIDEN = 0.0015;
+/** How far a far road is lifted per metre of distance, so a widened rim does not sink into the slope it overhangs. */
+const ROAD_RISE = 0.0005;
 const GRASS_ALPHA_TEST = 0.08;
 /**
  * Blades fade out over this band of camera distance, meters. Tied to the grass
@@ -421,6 +432,24 @@ export function createSceneryMaterials(deps: {
         basic: { alphaTest: FADE_ALPHA_TEST, alphaToCoverage: true },
       });
       m.opacityNode = fade;
+      return m;
+    },
+    /**
+     * A road between settlements. Near, it is its own width; far, it widens so
+     * that it never falls under about a pixel and a half across, because a road
+     * the flight is meant to follow from altitude is a line or it is nothing.
+     * It fades out at the edge of the ring with the trees it runs between.
+     */
+    road(fade: readonly [number, number]) {
+      const spread = attribute<'vec3'>('spread', 'vec3');
+      const world = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz;
+      const distance = length(world.sub(cameraPosition));
+      const out = max(spread.z, distance.mul(ROAD_WIDEN)).sub(spread.z);
+      const m = litMaterial(attribute<'vec3'>('color', 'vec3'), {
+        basic: { alphaTest: FADE_ALPHA_TEST, alphaToCoverage: true },
+      });
+      m.positionNode = positionLocal.add(vec3(spread.x.mul(out), distance.mul(ROAD_RISE), spread.y.mul(out)));
+      m.opacityNode = float(1).sub(smoothstep(fade[0], fade[1], distance));
       return m;
     },
     /**

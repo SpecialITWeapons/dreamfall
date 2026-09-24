@@ -47,13 +47,16 @@ import {
   type Library,
   type Prop,
   type PropKit,
+  type SceneryColor,
   type SitePlan,
 } from '../../../library/contract';
 import type { Origin } from '../sim/Origin';
+import { countryOf, standingOf } from '../terrain/Country';
 import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32, sstep } from '../terrain/noise';
 import { buildLines } from './LineKit';
 import { buildRoads } from './RoadKit';
+import { ROUTE_WIDTH, chunksOf } from './Roads';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { SceneryMaterials, PaintedTextures } from './Painted';
 import {
@@ -83,7 +86,7 @@ const CROWN_FADE = [540, 680] as const;
  * half to four seconds of it, at the speeds this world flies. A tree stands at
  * its own height here and dissolves instead.
  */
-const RING_FADE = [2300, 2560] as const;
+export const RING_FADE = [2300, 2560] as const;
 /**
  * Which crown a tree is given at a rebuild. The margins are the original's,
  * and they are generous on purpose: a rebuild happens at most one cell after
@@ -158,8 +161,10 @@ export interface Pools {
   /** What a prop's bake() and place() are handed; the ring passes it on. */
   readonly propKit: PropKit;
   readonly meshes: InstancedMesh[];
-  /** The road ribbons of the sites the ring is covering, one child per plan. */
+  /** The road ribbons of the sites the ring is covering, one child per plan, and the roads between them. */
   readonly roads: Group;
+  /** Kilometre pieces of roads between settlements standing in the ring. */
+  readonly routePieces: number;
   dispose(): void;
 }
 
@@ -383,11 +388,49 @@ export function createPools(deps: {
   const ribbons = new Map<string, Mesh[]>();
   const offered = new Set<string>();
 
+  // The roads between settlements, a kilometre a mesh: a route is ten of them,
+  // and only the ones inside the ring are built. Keyed by route, piece and the
+  // piece's own two ends, so a route whose end moves -- its village's plan
+  // arrived and it now runs into the street -- rebuilds that piece and no other.
+  const routeMaterial = materials.road(RING_FADE);
+  materialsMade.push(routeMaterial);
+  const pieces = new Map<string, Mesh>();
+  const offeredPieces = new Set<string>();
+  // The country's own road colour, the way the ground under it is the country's.
+  const roadColor = library.biomes.map(
+    (biome) => new Color(swatchColor((biome.params?.road as SceneryColor | undefined) ?? 'clay')),
+  );
+  const stands = standingOf(library.biomes);
+  const slotIds = new Uint8Array(4),
+    slotWeights = new Float32Array(4),
+    countryIds = new Uint8Array(4),
+    countryWeights = new Float32Array(4);
+  const colorAt = (x: number, z: number, out: Color) => {
+    heightfield.weightsAt(x, z, slotIds, slotWeights);
+    countryOf(slotIds, slotWeights, stands, countryIds, countryWeights);
+    let r = 0,
+      g = 0,
+      b = 0;
+    for (let s = 0; s < 3; s++) {
+      const w = countryWeights[s]!,
+        c = roadColor[countryIds[s]!];
+      if (w > 0 && c) {
+        r += c.r * w;
+        g += c.g * w;
+        b += c.b * w;
+      }
+    }
+    return out.setRGB(r, g, b);
+  };
+  /** A piece further than this from the flight is not built, m: the ring's reach and a margin. */
+  const PIECE_REACH = RING_FADE[1] + 240;
+
   const sink: ScenerySink = {
     begin(x, z) {
       flyerX = x;
       flyerZ = z;
       offered.clear();
+      offeredPieces.clear();
       for (const record of species.values()) record.count = record.near = record.far = 0;
       for (const record of props.values()) record.count = 0;
       for (const record of structures.values()) record.count = 0;
@@ -417,6 +460,34 @@ export function createPools(deps: {
       // Written every rebuild rather than once: a rebuild is what an origin
       // jump forces, and the jump is the only thing that moves this.
       for (const mesh of built) mesh.position.set(origin.localX(plan.x), 0, origin.localZ(plan.z));
+    },
+    route(id, points) {
+      chunksOf(points).forEach((piece, k) => {
+        let near = Infinity;
+        for (const [x, z] of piece) near = Math.min(near, Math.hypot(x - flyerX, z - flyerZ));
+        if (near > PIECE_REACH) return;
+        const first = piece[0]!,
+          last = piece.at(-1)!;
+        const key = `${id}#${k}:${first[0].toFixed(1)},${first[1].toFixed(1)}:${last[0].toFixed(1)},${last[1].toFixed(1)}`;
+        offeredPieces.add(key);
+        let mesh = pieces.get(key);
+        if (!mesh) {
+          const geometry = buildRoads([{ points: piece, width: ROUTE_WIDTH }], {
+            heightAt: (x: number, z: number) => heightfield.heightAt(x, z),
+            site: id,
+            at: [first[0], first[1]],
+            colorAt,
+            spread: true,
+          });
+          if (!geometry) return;
+          mesh = new Mesh(geometry, routeMaterial);
+          mesh.receiveShadow = true;
+          roads.add(mesh);
+          pieces.set(key, mesh);
+        }
+        // Written every rebuild, as a site's ribbon is: an origin jump moves it.
+        mesh.position.set(origin.localX(first[0]), 0, origin.localZ(first[1]));
+      });
     },
     tree(tree: TreeInstance) {
       const record = species.get(tree.species);
@@ -513,6 +584,12 @@ export function createPools(deps: {
           }
           ribbons.delete(id);
         }
+      for (const [key, mesh] of pieces)
+        if (!offeredPieces.has(key)) {
+          roads.remove(mesh);
+          mesh.geometry.dispose();
+          pieces.delete(key);
+        }
     },
   };
 
@@ -534,6 +611,9 @@ export function createPools(deps: {
     propKit,
     meshes,
     roads,
+    get routePieces() {
+      return pieces.size;
+    },
     dispose() {
       for (const mesh of meshes) {
         mesh.geometry.dispose();
@@ -541,6 +621,8 @@ export function createPools(deps: {
       }
       for (const meshes of ribbons.values()) for (const mesh of meshes) mesh.geometry.dispose();
       ribbons.clear();
+      for (const mesh of pieces.values()) mesh.geometry.dispose();
+      pieces.clear();
       roads.clear();
       for (const material of new Set(materialsMade)) material.dispose();
       meshes.length = 0;
