@@ -26,6 +26,7 @@ import {
   TREE_RADIUS,
   createRing,
   type PropInstance,
+  type RingDeps,
   type SceneryMetrics,
   type ScenerySink,
   type StructureInstance,
@@ -86,7 +87,8 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
   const trees: TreeInstance[] = [],
     props: PropInstance[] = [],
     buildings: StructureInstance[] = [],
-    plans: SitePlan[] = [];
+    plans: SitePlan[] = [],
+    routes: Array<{ id: string; points: Array<[number, number]> }> = [];
   let begun = 0,
     ended = 0;
   const sink: ScenerySink = {
@@ -96,6 +98,7 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
       props.length = 0;
       buildings.length = 0;
       plans.length = 0;
+      routes.length = 0;
     },
     tree(t) {
       if (trees.length >= capacity) return false;
@@ -115,11 +118,14 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
     site(plan) {
       plans.push(plan);
     },
+    route(id, points) {
+      routes.push({ id, points });
+    },
     end() {
       ended++;
     },
   };
-  return { sink, trees, props, buildings, plans, counts: () => ({ begun, ended }) };
+  return { sink, trees, props, buildings, plans, routes, counts: () => ({ begun, ended }) };
 };
 
 /** A biome that asks instead of planting: what does the ground say about these points? */
@@ -240,6 +246,7 @@ const ring = (
     maxTrees?: number;
     radius?: number;
     sites?: Sites;
+    roads?: RingDeps['roads'];
     /** What the pools will take before they start turning things away. */
     houses?: number;
     standings?: number;
@@ -263,6 +270,7 @@ const ring = (
       overrides: createOverrides(opts.overrides),
       metrics,
       sites: opts.sites,
+      roads: opts.roads,
       sink: sink.sink,
       propKit: {
         sstep: (a: number, b: number, x: number) => Math.max(0, Math.min(1, (x - a) / (b - a || 1))),
@@ -437,6 +445,41 @@ describe('the streamed ring', () => {
     expect(scattered.length).toBeGreaterThan(10);
     expect(scattered.filter((p) => toRoad(road, p.x, p.z) <= road.width / 2)).toEqual([]);
     expect(r.props.some((p) => p.x === well.x && p.z === well.z)).toBe(true);
+  });
+  it('offers a road between settlements to the pools, and keeps the wood off it', () => {
+    const a: Site = {
+      id: 'village:0,0',
+      biome: 'village',
+      x: -900,
+      z: 0,
+      radius: 150,
+      yaw: 0,
+      fields: {} as Fields,
+      random: () => 0.5,
+    };
+    const b: Site = { ...a, id: 'village:1,0', x: 900 };
+    const route = {
+      id: 'village:0,0|village:1,0',
+      a,
+      b,
+      points: Array.from({ length: 76 }, (_, i) => [-900 + i * 24, 0] as [number, number]),
+    };
+    const roads: RingDeps['roads'] = {
+      near: (_x, _z, _reach, out) => {
+        out.length = 0;
+        out.push(route);
+        return out;
+      },
+    };
+    const r = ring(library([everywhere('woods', 10)]), { roads });
+    r.ring.update(0, 0, false);
+    expect(r.routes.map((x) => x.id)).toEqual([route.id]);
+    // no plan at either end: the road stops at both edges
+    const drawn = r.routes[0]!.points;
+    expect(drawn[0]![0]).toBeGreaterThanOrEqual(-900 + 150);
+    expect(drawn.at(-1)![0]).toBeLessThanOrEqual(900 - 150);
+    expect(r.trees.length).toBeGreaterThan(10);
+    expect(r.trees.filter((t) => Math.abs(t.z) <= 2.5 + 5 && Math.abs(t.x) < 700)).toEqual([]);
   });
   it('keeps the scatter off a plan: nothing in a reservation, nothing on a road', () => {
     const plain = ring(library([everywhere('woods', 10)]));

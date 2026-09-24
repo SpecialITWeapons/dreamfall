@@ -24,6 +24,12 @@ export const GRASS_ROAD_MARGIN = 0.5;
 export const GRASS_WALL_MARGIN = 1;
 /** What a prop a plan asked for -- a well, a trough -- keeps clear, m. */
 export const PROP_CLAIM = 2;
+/**
+ * Metres a tree keeps from a road between settlements, past its edge: a
+ * crown's reach, so a wood the road runs through does not close over it and
+ * the road reads from the air as the ride it cuts.
+ */
+export const ROUTE_CLEARING = 5;
 const CELL = OBSTACLE_CELL;
 
 /** What the baked geometry says of a building: its reach, and its plan at ground level. */
@@ -44,6 +50,8 @@ export interface Claims {
   /** Forgets every plan: the ring refills the index from nothing at every rebuild. */
   clear(): void;
   add(plan: SitePlan, shapes: ClaimShapes): void;
+  /** A road between settlements: a ride through the trees, a strip off the grass. */
+  addRoute(id: string, points: Array<[number, number]>, width: number): void;
   /** Is (x, z) ground a tree or a scattered prop may not stand on? */
   trees(x: number, z: number): boolean;
   /** Is (x, z) ground a tuft of grass may not stand on? */
@@ -191,6 +199,24 @@ export function createClaims(): Claims {
             shape.footprint[0] / 2 + GRASS_WALL_MARGIN,
             shape.footprint[1] / 2 + GRASS_WALL_MARGIN,
           );
+      }
+      if (bounds.x0 <= bounds.x1) plans.push(bounds);
+    },
+    addRoute(id, points, width) {
+      const half = width / 2,
+        reach = half + ROUTE_CLEARING;
+      const bounds: PlanBounds = { id, x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity };
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!,
+          b = points[i]!;
+        trees.capsule(a[0], a[1], b[0], b[1], reach);
+        grass.capsule(a[0], a[1], b[0], b[1], half + GRASS_ROAD_MARGIN);
+        for (const [x, z] of [a, b]) {
+          bounds.x0 = Math.min(bounds.x0, x - reach);
+          bounds.z0 = Math.min(bounds.z0, z - reach);
+          bounds.x1 = Math.max(bounds.x1, x + reach);
+          bounds.z1 = Math.max(bounds.z1, z + reach);
+        }
       }
       if (bounds.x0 <= bounds.x1) plans.push(bounds);
     },

@@ -29,6 +29,7 @@ import { hash2, mulberry32 } from '../terrain/noise';
 import { SLOTS, type WorldSampler } from '../terrain/WorldSampler';
 import { createClaims, type ClaimShapes, type Claims } from './Claims';
 import type { Obstacles } from './Obstacles';
+import { ROUTE_WIDTH, stretchOf, type RoadRoute } from './Roads';
 import { cellKey, type Overrides } from './Overrides';
 import type { Site, Sites } from './Sites';
 
@@ -120,6 +121,12 @@ export interface ScenerySink {
    * mesh per plan and drops the ones a rebuild stopped offering.
    */
   site(plan: SitePlan): void;
+  /**
+   * A road between settlements, as much of it as is drawn: offered whole every
+   * rebuild that covers it, after the plans, and dropped by the pools the
+   * rebuild it is not offered. Optional: a sink that draws no roads needs none.
+   */
+  route?(id: string, points: Array<[number, number]>): void;
   end(): void;
 }
 
@@ -165,6 +172,8 @@ export interface RingDeps {
   sites?: Sites;
   /** The ground the plans speak for; shared with the grass. The ring fills it. */
   claims?: Claims;
+  /** The roads between settlements. Without them the settlements stand alone. */
+  roads?: { near(x: number, z: number, reach: number, out: RoadRoute[]): RoadRoute[] };
   sink: ScenerySink;
   /** What a prop's place() is handed; the baking half of it is never called here. */
   propKit: PropKit;
@@ -244,6 +253,9 @@ export function createRing(deps: RingDeps): Ring {
   // shape, as its obstacle does, never by what its plan says.
   const claims = deps.claims ?? createClaims();
   const nearby: Site[] = [];
+  const routesNear: RoadRoute[] = [];
+  /** What of each road in reach is drawn this rebuild, by route. */
+  const drawn = new Map<string, Array<[number, number]>>();
   const footprints = new Map((library.structures ?? []).map((entry) => [entry.id, entry.footprint] as const));
   const shapes: ClaimShapes = {
     building(id, floors) {
@@ -257,12 +269,24 @@ export function createRing(deps: RingDeps): Ring {
   /** Reads the plans in reach into the index, from nothing, at every rebuild. */
   const indexPlans = (x: number, z: number) => {
     claims.clear();
-    if (!sites) return;
-    for (const site of sites.near(x, z, radius, nearby)) {
-      // A site still in the queue has no plan yet, so it speaks for no ground:
-      // the same frame has nothing of it to build either.
-      const plan = sites.planFor(site);
-      if (plan) claims.add(plan, shapes);
+    drawn.clear();
+    if (sites)
+      for (const site of sites.near(x, z, radius, nearby)) {
+        // A site still in the queue has no plan yet, so it speaks for no ground:
+        // the same frame has nothing of it to build either.
+        const plan = sites.planFor(site);
+        if (plan) claims.add(plan, shapes);
+      }
+    // The roads between them, as far as each is drawn: into a street where the
+    // settlement's plan is built, to its edge where it is not. The claim is
+    // named by how much is drawn, so the grass rewrites its tiles when a plan
+    // arriving moves an end.
+    if (!deps.roads) return;
+    for (const route of deps.roads.near(x, z, radius, routesNear)) {
+      const points = stretchOf(route, sites?.planFor(route.a) ?? null, sites?.planFor(route.b) ?? null);
+      if (points.length < 2) continue;
+      drawn.set(route.id, points);
+      claims.addRoute(`${route.id}#${points.length}`, points, ROUTE_WIDTH);
     }
   };
 
@@ -403,6 +427,7 @@ export function createRing(deps: RingDeps): Ring {
    * that was built in the queue, or it reads nothing.
    */
   const raise = (x: number, z: number) => {
+    for (const [id, points] of drawn) sink.route?.(id, points);
     if (!sites) return;
     for (const site of sites.near(x, z, radius, nearby)) {
       const plan = sites.planFor(site);

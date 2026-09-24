@@ -4,6 +4,7 @@ import {
   GRASS_ROAD_MARGIN,
   GRASS_WALL_MARGIN,
   PROP_CLAIM,
+  ROUTE_CLEARING,
   TREE_MARGIN,
   createClaims,
   type ClaimShapes,
@@ -119,5 +120,22 @@ describe('createClaims', () => {
     claims.clear();
     expect(claims.plans).toEqual([]);
     expect(claims.trees(100, 50)).toBe(false);
+  });
+
+  it('cuts a ride through the trees along a road between settlements, and keeps the grass off the road', () => {
+    const claims = createClaims();
+    claims.addRoute(
+      'a|b',
+      [
+        [0, 0],
+        [1000, 0],
+      ],
+      5,
+    );
+    expect(claims.trees(500, 2.5 + ROUTE_CLEARING - 0.1)).toBe(true);
+    expect(claims.trees(500, 2.5 + ROUTE_CLEARING + 0.1)).toBe(false);
+    expect(claims.grass(500, 2.9)).toBe(true);
+    expect(claims.grass(500, 3.1)).toBe(false);
+    expect(claims.plans.map((p) => p.id)).toEqual(['a|b']);
   });
 });
