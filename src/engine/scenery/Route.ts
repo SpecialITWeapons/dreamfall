@@ -3,10 +3,17 @@
 // so the road is the same whichever way the flight came to it: a road that
 // depended on the approach would move under a flyer who turned round.
 //
-// The cost is the road's own: the run, a grade that costs its square and is
-// refused past `maxGrade` so a hillside is climbed in turns, and on the flat a
-// slow noise that stands for everything the terrain does not say -- a wet
-// meadow, somebody's field -- without which a road on a plain is a ruler.
+// The cost is the road's own: the run, a grade that costs its square and
+// costs a great deal more past `maxGrade`, so a hillside is climbed in turns
+// where turns are cheaper than the climb; and on the flat a slow noise that
+// stands for everything the terrain does not say -- a wet meadow, somebody's
+// field -- without which a road on a plain is a ruler.
+//
+// Past `maxGrade` is a cost and not a wall, and that is measured: this world
+// tilts 10 % over the median 48 m step and 23 % over one step in four, and a
+// wall at 12 % joined one pair in fourteen on seed 42 where nine have a land
+// way at all. With the cost, the sea is what decides which pairs are joined,
+// and the road climbs 15 to 18 % at nineteen steps in twenty.
 // Pure CPU: no three, no DOM; the worker runs it off the main thread.
 import { fbm, hash2, sstep } from '../terrain/noise';
 
@@ -17,10 +24,14 @@ export const ROUTE = {
   pad: 3000,
   /** Ground under this is sea, and a wall. */
   sea: 3,
-  /** The steepest grade a road takes; a hillside past it is climbed in turns. */
+  /** The grade a road takes without complaint; past it every step costs `steepCost`. */
   maxGrade: 0.12,
   /** What a grade costs, on top of the run: `run * gradeCost * grade^2`. */
   gradeCost: 40,
+  /** What each step past `maxGrade` costs: `run * steepCost * (grade - maxGrade)^2`. */
+  steepCost: 400,
+  /** A grade no road takes: a cliff, and a wall. */
+  cliff: 0.6,
   /**
    * The flat's own reasons to bend. `weight` is the most it adds to a metre;
    * it fades out between the two grades of `flat`, where the terrain starts to
@@ -68,7 +79,7 @@ export function pathBetween(
   seed: number,
 ): Array<[number, number]> | null {
   const [a, b] = first.id < second.id ? [first, second] : [second, first];
-  const { grid, pad, sea, maxGrade, gradeCost, wander } = ROUTE;
+  const { grid, pad, sea, maxGrade, gradeCost, steepCost, cliff, wander } = ROUTE;
   const salt = pairSalt(a, b, seed);
   // The grid is the world's, not the pair's: its nodes sit on multiples of the
   // step, so two roads out of one village share their first metres of lattice.
@@ -154,12 +165,15 @@ export function pathBetween(
         grade = Math.abs(hj - hi) / run;
       // The first and last steps leave and enter a settlement, whose plateau is
       // not in the base height: they may take any grade.
-      if (grade > maxGrade && i !== start && j !== goal) continue;
+      if (grade > cliff && i !== start && j !== goal) continue;
+      const over = Math.max(0, grade - maxGrade);
       const mx = x0 + (ix + dx / 2) * grid,
         mz = z0 + (iz + dz / 2) * grid;
       const field = (fbm(mx / wander.scale, mz / wander.scale, salt, 3) + 1) / 2;
       const flat = 1 - sstep(wander.flat[0], wander.flat[1], grade);
-      const next = cost[i]! + run * (1 + gradeCost * grade * grade + wander.weight * field * flat);
+      const next =
+        cost[i]! +
+        run * (1 + gradeCost * grade * grade + steepCost * over * over + wander.weight * field * flat);
       if (next < cost[j]!) {
         cost[j] = next;
         from[j] = i;
@@ -178,4 +192,132 @@ export function pathBetween(
     length += Math.hypot(path[i]![0] - path[i - 1]![0], path[i]![1] - path[i - 1]![1]);
   if (length > ROUTE.detour * Math.hypot(b.x - a.x, b.z - a.z)) return null;
   return path;
+}
+
+export const SHAPE = {
+  /** Metres between the points of the finished road. */
+  sample: 24,
+  /** Rounding passes over the grid's stairs: Chaikin's, which cuts corners and never straightens a bend. */
+  chaikin: 2,
+  /**
+   * A country road's own sway: a few metres off its line, a few hundred metres
+   * a wave, and none of it on a hillside, where the terrain already bends it
+   * and a sway would only add a grade. It tapers to nothing at the two ends, so
+   * the road meets a settlement's street straight.
+   */
+  meander: {
+    amplitude: 9,
+    wavelength: 350,
+    salt: 0x3ea7,
+    taper: 200,
+    steep: [0.04, 0.12] as [number, number],
+  },
+  /**
+   * The tightest bend, m: 40 in open country, 20 on a slope steeper than
+   * `steepSlope`, where a serpentine's hairpin is what a road does.
+   */
+  turn: { radius: 40, steep: 20, steepSlope: 0.15, passes: 24 },
+  /** Metres either side the slope under a point is measured across. */
+  probe: 60,
+};
+
+/** Chaikin's corner cutting, the two ends kept where they are. */
+function chaikin(points: Array<[number, number]>): Array<[number, number]> {
+  if (points.length < 3) return points;
+  const out: Array<[number, number]> = [points[0]!];
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [x0, z0] = points[i]!,
+      [x1, z1] = points[i + 1]!;
+    out.push([x0 * 0.75 + x1 * 0.25, z0 * 0.75 + z1 * 0.25], [x0 * 0.25 + x1 * 0.75, z0 * 0.25 + z1 * 0.75]);
+  }
+  out.push(points.at(-1)!);
+  return out;
+}
+
+/** The polyline walked every `step` metres, its two ends included. */
+function resample(points: Array<[number, number]>, step: number): Array<[number, number]> {
+  const out: Array<[number, number]> = [points[0]!];
+  let carry = 0;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const [x0, z0] = points[i]!,
+      [x1, z1] = points[i + 1]!;
+    const length = Math.hypot(x1 - x0, z1 - z0);
+    let at = step - carry;
+    while (at < length) {
+      const t = at / length;
+      out.push([x0 + (x1 - x0) * t, z0 + (z1 - z0) * t]);
+      at += step;
+    }
+    carry = length - (at - step);
+  }
+  const last = points.at(-1)!,
+    tail = out.at(-1)!;
+  if (Math.hypot(last[0] - tail[0], last[1] - tail[1]) > step * 0.25) out.push(last);
+  else out[out.length - 1] = last;
+  return out;
+}
+
+/**
+ * The road a flight follows: the path rounded, swayed on the flat, its bends
+ * eased to what a road can take, and sampled every `SHAPE.sample` metres,
+ * from the end with the smaller id to the other. Null where `pathBetween` is.
+ */
+export function routeBetween(
+  first: RouteEnd,
+  second: RouteEnd,
+  heightAt: HeightAt,
+  seed: number,
+): Array<[number, number]> | null {
+  const path = pathBetween(first, second, heightAt, seed);
+  if (!path) return null;
+  const [a, b] = first.id < second.id ? [first, second] : [second, first];
+  const salt = pairSalt(a, b, seed) ^ SHAPE.meander.salt;
+  let points = path;
+  for (let k = 0; k < SHAPE.chaikin; k++) points = chaikin(points);
+  points = resample(points, SHAPE.sample);
+  const slopeAt = (x: number, z: number) => {
+    const p = SHAPE.probe;
+    return (
+      Math.hypot(heightAt(x + p, z) - heightAt(x - p, z), heightAt(x, z + p) - heightAt(x, z - p)) / (2 * p)
+    );
+  };
+  const slopes = points.map(([x, z]) => slopeAt(x, z));
+
+  // The sway: across the road, by a slow noise of the distance walked.
+  const total = (points.length - 1) * SHAPE.sample;
+  const { amplitude, wavelength, taper, steep } = SHAPE.meander;
+  const out = points.map(([x, z], i): [number, number] => {
+    if (i === 0 || i === points.length - 1) return [x, z];
+    const [px, pz] = points[i - 1]!,
+      [nx, nz] = points[i + 1]!;
+    const dx = nx - px,
+      dz = nz - pz,
+      d = Math.hypot(dx, dz) || 1;
+    const along = i * SHAPE.sample;
+    const ends = sstep(0, taper, along) * sstep(0, taper, total - along);
+    const open = 1 - sstep(steep[0], steep[1], slopes[i]!);
+    const offset = amplitude * ends * open * fbm(along / wavelength, 0.5, salt, 2);
+    return [x - (dz / d) * offset, z + (dx / d) * offset];
+  });
+
+  // The bends a road cannot take are eased: a point that turns the road more
+  // than its radius allows moves half way to its neighbours' middle, and the
+  // pass repeats until none does.
+  for (let pass = 0; pass < SHAPE.turn.passes; pass++) {
+    let eased = false;
+    for (let i = 1; i < out.length - 1; i++) {
+      const [ax, az] = out[i - 1]!,
+        [bx, bz] = out[i]!,
+        [cx, cz] = out[i + 1]!;
+      const u = Math.atan2(bz - az, bx - ax),
+        v = Math.atan2(cz - bz, cx - bx);
+      const angle = Math.abs(Math.atan2(Math.sin(v - u), Math.cos(v - u)));
+      const radius = slopes[i]! > SHAPE.turn.steepSlope ? SHAPE.turn.steep : SHAPE.turn.radius;
+      if (angle <= SHAPE.sample / radius) continue;
+      out[i] = [bx + ((ax + cx) / 2 - bx) * 0.5, bz + ((az + cz) / 2 - bz) * 0.5];
+      eased = true;
+    }
+    if (!eased) break;
+  }
+  return out;
 }
