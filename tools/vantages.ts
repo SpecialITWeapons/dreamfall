@@ -2,7 +2,7 @@
 // have to be of the same place or neither can explain the other.
 import { expect, type Page } from '@playwright/test';
 import { MAX_ALTITUDE } from '../src/engine/flight/FlightController';
-import { DECK_Y } from '../src/engine/terrain/WorldSampler';
+import { DECK, createCloudCover } from '../src/engine/sky/CloudCover';
 import type { WorldDebug } from '../src/page/Debug';
 
 declare global {
@@ -13,6 +13,12 @@ declare global {
 
 /** The village of seed 42: houses, a road, and windows to light after dark. */
 export const VILLAGE = { x: 1525, z: 1588 };
+
+/**
+ * The deck over the origin of seed 42: its base is the region's, so the deck
+ * vantage stands over the deepest bank that region can hold, as a crossing does.
+ */
+const DECK_TOP = createCloudCover(42).baseAt(0, 0) + DECK.thick;
 
 export interface Vantage {
   name: string;
@@ -33,7 +39,7 @@ export const VANTAGES: Vantage[] = [
   // the next step, with the escape turn armed.
   { name: 'far', x: 0, z: 0, above: MAX_ALTITUDE - 100, phase: 0.5 },
   // Over the deck, where the cloud sea is drawn and the ground is behind it.
-  { name: 'deck', x: 0, z: 0, above: DECK_Y + 180, phase: 0.5 },
+  { name: 'deck', x: 0, z: 0, above: Math.round(DECK_TOP) + 180, phase: 0.5 },
   // The village at midnight: lit panes, and the galaxy over them.
   { name: 'night', x: VILLAGE.x, z: VILLAGE.z, above: 120, phase: 0.0, galaxy: true },
 ];

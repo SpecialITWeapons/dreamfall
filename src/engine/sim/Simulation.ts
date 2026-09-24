@@ -65,6 +65,8 @@ export interface SimulationOptions {
    * this, because a remembered place is a place.
    */
   startY?: number;
+  /** The deck's base over a world point, m (`CloudCover.baseAt`); the flight crosses it. */
+  deckBase?: (x: number, z: number) => number;
 }
 
 export function createSimulation(opts: SimulationOptions): Simulation {
@@ -79,6 +81,7 @@ export function createSimulation(opts: SimulationOptions): Simulation {
     pulls,
     dayPhase: () => clock.phase,
     below: opts.below,
+    deckBase: opts.deckBase,
     start: resume
       ? {
           x: resume.x,

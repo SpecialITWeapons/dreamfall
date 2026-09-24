@@ -2,7 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { MIN_CLEARANCE } from '../../src/engine/flight/FlightController';
 import { GALAXY_HEADING } from '../../src/engine/flight/SkyPulls';
 import { ORBIT } from '../../src/engine/flight/Steering';
-import { DECK_Y } from '../../src/engine/terrain/WorldSampler';
+import { OPENING, openingStart } from '../../src/engine/sim/Opening';
+import { createCloudCover, deckAt } from '../../src/engine/sky/CloudCover';
+import { windFromSeed } from '../../src/engine/sky/Wind';
 import type { WorldDebug } from '../../src/page/Debug';
 
 declare global {
@@ -1670,31 +1672,44 @@ test('the opening plays once, and anything at all ends it', async ({ page }) => 
     page.evaluate((s) => {
       for (let i = 0; i < Math.round(s * 60); i++) window.__world!.step(1 / 60);
       const w = window.__world!;
-      return { card: w.opening.card, done: w.opening.done, y: w.state.y, phase: w.dayPhase };
+      const deck = w.deckAt(w.state.x, w.state.z);
+      return {
+        card: w.opening.card,
+        done: w.opening.done,
+        y: w.state.y,
+        phase: w.dayPhase,
+        base: deck.base,
+        top: deck.top,
+      };
     }, seconds);
 
-  // It starts at dawn with a card over it, and under the cloud deck: the climb
-  // is the act with something to see and it needs something to climb through.
-  // The deck is the engine's own number, read and not copied: this said 520
-  // for as long as it took the deck to move to 800, and then failed on every
-  // run with the flight starting exactly where it should.
+  // It starts at dawn with a card over it, and under the top of the cloud
+  // deck: the climb is the act with something to see and it comes out of the
+  // deck. The deck is the engine's own answer, read and not copied: this said
+  // 520 for as long as it took the deck to move to 800, and then failed on
+  // every run with the flight starting exactly where it should -- and now the
+  // deck stands at a different height in every region.
+  // How long the climb runs is the deck's over the start: the same answer the
+  // world gets, asked of the same field here in Node.
+  const { climb } = openingStart(deckAt(createCloudCover(42), 0, 0, 0, windFromSeed(42)));
+  const climbed = OPENING.side + OPENING.turn + climb;
   const early = await run(2);
   expect(early.card).toBeGreaterThan(0.5);
   expect(early.done).toBe(false);
   expect(early.phase).toBeGreaterThan(0.1);
   expect(early.phase).toBeLessThan(0.2);
-  const start = early.y;
-  expect(start).toBeLessThan(DECK_Y);
+  // under the deck's base, in clear air, where the sunrise can be seen
+  expect(early.y).toBeLessThan(early.base);
 
   // The card goes before the flight does anything worth watching, and the
-  // climb takes the figure over the deck.
-  const mid = await run(16);
+  // climb takes the figure through the deck and over it.
+  const mid = await run(climbed + 0.5 - 2);
   expect(mid.card).toBe(0);
-  expect(mid.y).toBeGreaterThan(DECK_Y);
+  expect(mid.y).toBeGreaterThan(mid.top);
   expect(mid.done).toBe(false);
 
   // It ends itself and hands the flight back.
-  const after = await run(14);
+  const after = await run(OPENING.hold + OPENING.dive + 1);
   expect(after.done).toBe(true);
   // the real flag, off the debug surface: `state.autopilot` does not exist, and
   // reading it gave `undefined ?? true`, which is an assertion that cannot fail
@@ -1750,7 +1765,11 @@ test('the dev panel switches a layer off and the frame loses it', async ({ page 
   // at dawn that is worth 0.0005 of the picture (measured in the wind test).
   // At noon the night factor is zero and the atlas cannot change a pixel.
   await page.evaluate(() => {
-    window.__world!.dayPhase = 0.5;
+    const w = window.__world!;
+    // Low over the ground, wherever the deck is: in the white of a bank the
+    // ground is hidden whether its layer is on or not.
+    w.jump(w.state.x, w.state.z, 120);
+    w.dayPhase = 0.5;
   });
   const shot = async () => {
     const data = await page.evaluate(async () => {

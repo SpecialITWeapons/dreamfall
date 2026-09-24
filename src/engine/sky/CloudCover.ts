@@ -22,7 +22,14 @@
 // top 40 per cent of the bank field, by a threshold read off the field's own
 // distribution rather than guessed from the noise's range.
 //
-// Pure CPU, no three: tested in Node, and the texture is `SkyUniforms`'.
+// The deck does not stand at one height either. Its base is a second field on
+// the same square, `DECK.base` apart from lowest to highest over a region of a
+// few kilometres, and unlike the cover it stays where it is: the banks drift
+// over country whose air holds them higher or lower, so the height is a
+// question with no `t` in it. A bank is as thick as it is solid, so its top is
+// the base plus `DECK.thin` at a thinning edge and `DECK.thick` in its middle.
+//
+// Pure CPU, no three: tested in Node, and the textures are `SkyUniforms`'.
 import { hash2 } from '../terrain/noise';
 
 export const COVER = {
@@ -41,6 +48,47 @@ export const COVER = {
    */
   bank: [0.15, 0.6] as const,
 };
+
+/** How high the deck stands: its base by region, and its depth by how solid it is. */
+export const DECK = {
+  /** The lowest and the highest base, m. */
+  base: [700, 1200] as const,
+  /** How deep a bank is at its thinning edge and in its middle, m. */
+  thin: 120,
+  thick: 350,
+  /** Lattice cells of the base's noise over the repeating square: regions of about five km. */
+  regions: 4,
+  /** The steepest the base may tilt, m a m: a region's lie, never a bank's edge. */
+  maxGrade: 0.25,
+};
+
+/** Where the deck stands over a world point at time `t`. */
+export interface DeckAt {
+  /** The underside, m. */
+  base: number;
+  /** The top of the bank there, m: `base` plus its depth. */
+  top: number;
+  /** How solid the bank is, 0..1 (`bankAt`). */
+  bank: number;
+}
+
+/** The deck's top over a base, for a bank this solid. */
+export const deckTop = (base: number, bank: number) => base + DECK.thin + (DECK.thick - DECK.thin) * bank;
+
+/** Base, top and bank over a world point: what the flight and the atmosphere ask. */
+export function deckAt(
+  cover: CloudCover,
+  x: number,
+  z: number,
+  t: number,
+  wind: { x: number; z: number },
+  out: DeckAt = { base: 0, top: 0, bank: 0 },
+): DeckAt {
+  out.base = cover.baseAt(x, z);
+  out.bank = bankAt(cover, x, z, t, wind);
+  out.top = deckTop(out.base, out.bank);
+  return out;
+}
 
 /**
  * How solid the deck is over a world point at time `t`, 0..1: the CPU's half
@@ -85,6 +133,10 @@ export interface CloudCover {
    * the point against the wind first, as the shader does.
    */
   at(x: number, z: number): number;
+  /** The deck's base, one byte a texel over `DECK.base`, laid out as `data`. */
+  readonly base: Uint8Array;
+  /** The deck's base over a world point, m: read like `at`, but where the point is, not against the wind. */
+  baseAt(x: number, z: number): number;
 }
 
 export function createCloudCover(seed: number): CloudCover {
@@ -122,26 +174,46 @@ export function createCloudCover(seed: number): CloudCover {
       data[j * n + i] = Math.round(s * 255);
     }
 
+  // The base: one slow noise stretched over its own extremes, so every world
+  // reaches both ends of the range somewhere rather than hovering in its middle.
+  const region = periodicNoise(DECK.regions, seed ^ 0x6c5);
+  const raw = new Float32Array(n * n);
+  let lo = Infinity,
+    hi = -Infinity;
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const r = region((i + 0.5) / n, (j + 0.5) / n);
+      raw[j * n + i] = r;
+      lo = Math.min(lo, r);
+      hi = Math.max(hi, r);
+    }
+  const base = new Uint8Array(n * n);
+  for (let k = 0; k < n * n; k++) base[k] = Math.round(((raw[k]! - lo) / Math.max(hi - lo, 1e-6)) * 255);
+
   const period = n * COVER.metres;
-  const texel = (i: number, j: number) => data[(((j % n) + n) % n) * n + (((i % n) + n) % n)]! / 255;
+  // Texel centres sit at half a texel, which is where a linear sampler takes a
+  // texel's own value whole.
+  const bilinear = (bytes: Uint8Array, x: number, z: number) => {
+    const texel = (i: number, j: number) => bytes[(((j % n) + n) % n) * n + (((i % n) + n) % n)]! / 255;
+    const fx = (x / period) * n - 0.5,
+      fz = (z / period) * n - 0.5;
+    const i = Math.floor(fx),
+      j = Math.floor(fz);
+    const tx = fx - i,
+      tz = fz - j;
+    const a = texel(i, j),
+      b = texel(i + 1, j),
+      c = texel(i, j + 1),
+      d = texel(i + 1, j + 1);
+    return a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz;
+  };
+  const [low0, high0] = DECK.base;
   return {
     data,
     texels: n,
     period,
-    at(x, z) {
-      // Texel centres sit at half a texel, which is where a linear sampler
-      // takes a texel's own value whole.
-      const fx = (x / period) * n - 0.5,
-        fz = (z / period) * n - 0.5;
-      const i = Math.floor(fx),
-        j = Math.floor(fz);
-      const tx = fx - i,
-        tz = fz - j;
-      const a = texel(i, j),
-        b = texel(i + 1, j),
-        c = texel(i, j + 1),
-        d = texel(i + 1, j + 1);
-      return a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz;
-    },
+    at: (x, z) => bilinear(data, x, z),
+    base,
+    baseAt: (x, z) => low0 + (high0 - low0) * bilinear(base, x, z),
   };
 }

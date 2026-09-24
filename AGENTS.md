@@ -240,9 +240,11 @@ page works under a Pages subdirectory.
   person and the envelope holds through all of it. It owns the camera and the
   clock outright and hands both back in one place. It plays for a first flight
   only -- never for a resumed one, never under `prefers-reduced-motion` -- and
-  any input at all ends it. The flight starts under the cloud deck because the
-  climb is the act with something to see; a test holds the climb's length
-  against the flight's own climb rate.
+  any input at all ends it. The flight starts under the deck's base, in clear
+  air where the sunrise is seen, and the climb is as long as the deck over the
+  start is deep (`openingStart`: 18 to 41 s), so it always comes out over the
+  top; a test holds that against the flight's own climb rate, and the fast day
+  is given back as the card goes rather than after the climb.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own
@@ -280,6 +282,25 @@ page works under a Pages subdirectory.
   deck the ground shows through the same gaps the sky shows through from
   under it. The dome's other painted clouds are a higher layer of their own. It was four
   fields once, and the sea alone was a sheet over the whole world.
+- **The deck has no one height.** Its base is a second texture on the same
+  square (`cover.baseAt`, `deckBaseAt`), 700 to 1200 m by region, and unlike
+  the cover it is read where the point is, not against the wind: the banks
+  drift over country that holds them higher or lower. A bank is as deep as it
+  is solid (`deckTop`, 120 to 350 m). Everything that used to read one number
+  reads `deckAt` where it stands -- the atmosphere under the camera, the sea and
+  its fog per fragment, the dome where the ray meets the base, the crossing
+  over the deepest bank the region can hold (`base + DECK.thick`).
+- **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
+  camera-facing quads standing from the base to the bank's top, a tower over a
+  solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
+  them back to front every frame and uploads only what it draws; blending is
+  order-dependent, so nothing else may reorder them. From over the deck the
+  sprites buried in the bank are dropped, or they paint grey balls on the sea.
+  A cluster lies along the wind and is cut flat at its base in the shader
+  (the `floor` attribute); how long, tall, puffed, ragged and soft-based it is
+  is `CloudForm`, which `?dev=1` moves live -- "print" gives the JSON to make
+  the new defaults in `CLOUD_FORM`.
+  `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery
 
