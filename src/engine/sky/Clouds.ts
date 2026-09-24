@@ -286,13 +286,18 @@ export function layoutClusters(
     // From over the sea the sea is what a bank is: a sprite buried under its
     // level is let go, and what stands out of it stays.
     const sea = region + DECK.sea - CLOUD_SEA_DROP;
-    const over = sstep(sea - 40, sea + 40, f.camera.y);
+    // Only once the camera is well over the sea, where the sea is a surface
+    // seen from above: at its own level it is edge-on and draws nothing, and
+    // letting the sprites go there emptied the sky of cloud until the flyer
+    // dipped back under the line.
+    const over = sstep(sea + 60, sea + 160, f.camera.y);
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
     const fade = sstep(0.15, 0.6, bank);
     // Is the camera in it? A soft ellipsoid the size of what the sprites
     // cover -- the offsets, and half a sprite past them -- long with the
     // wind, cut flat at the base as the sprites are.
+    let here: number;
     {
       const reach = 0.45 * form.puff;
       const dx = f.camera.x - px,
@@ -302,7 +307,7 @@ export function layoutClusters(
         half = (height + reach * radius) / 2,
         v = (f.camera.y - (base + half)) / half;
       const r = Math.hypot(a, b, v);
-      const here = (1 - sstep(0.55, 1, r)) * sstep(base - 10, base + 30, f.camera.y) * fade;
+      here = (1 - sstep(0.55, 1, r)) * sstep(base - 10, base + 30, f.camera.y) * fade;
       if (here > inside) inside = here;
     }
     for (const s of c.sprites) {
@@ -321,8 +326,14 @@ export function layoutClusters(
       // A lifted cluster's bottom row stands near the sea's level: it is let
       // go too, or the sea is dotted with the tops of balls.
       const buried = 1 - over * (1 - sstep(sea + 30, sea + 90, sy));
-      const alpha =
-        sstep(size * 0.9, size * 2, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
+      // A sprite the camera closes on stays until the camera is in its cluster,
+      // and the white takes over from it there. It faded by its own distance
+      // alone once, from twice its size away, which with sprites of two or three
+      // hundred metres emptied a cloud as the flyer climbed at it and showed the
+      // blue sky through where the white should have been. Only a sprite the
+      // camera is all but inside goes regardless.
+      const near = (1 - here * (1 - sstep(size * 0.9, size * 2, d))) * sstep(size * 0.15, size * 0.4, d);
+      const alpha = near * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
       if (alpha <= 0.003) continue;
       pos[n * 4] = sx - f.originX;
       pos[n * 4 + 1] = sy;

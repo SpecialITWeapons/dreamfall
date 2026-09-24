@@ -1,6 +1,7 @@
 import { Matrix4, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { DECK, createCloudCover, deckTop } from '../../src/engine/sky/CloudCover';
+import { CLOUD_SEA_DROP } from '../../src/engine/sky/CloudSea';
 import {
   CLUSTER,
   CLOUD_FORM,
@@ -210,6 +211,40 @@ describe('the cloud form', () => {
     // long with the wind (z here): further along it than across it is still inside
     const r = one!.radius;
     expect(inside(0, mid, r * 1.3)).toBeGreaterThan(inside(r * 1.3, mid, 0));
+  });
+
+  it('keeps a cloud drawn as the camera climbs into it, until the white takes over', () => {
+    // Up through a cluster from under its base: at every step either its
+    // sprites are there or the camera is inside it, never neither -- that
+    // was blue sky where a cloud had just been.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    const [one] = clusterShapes(42);
+    const f = (y: number) => ({ ...frame({ x: one!.x, y, z: one!.z }), wind: { x: 0, z: 12 } });
+    for (let y = 700; y <= 1100; y += 10) {
+      const out = createClusterLayout();
+      layoutClusters([one!], solid, out, f(y));
+      let opacity = 0;
+      for (let k = 0; k < out.count; k++) opacity = Math.max(opacity, out.shape[k * 4 + 3]!);
+      expect(Math.max(opacity, out.inside), `at ${y} m`).toBeGreaterThan(0.5);
+    }
+  });
+
+  it("does not empty the sky at the sea's level: the sprites go only once the sea is seen from over it", () => {
+    // At the sea's own level the sea is edge-on and draws nothing; the sprites
+    // let go there left blue sky until the flyer dipped back under the line.
+    const shapes = clusterShapes(42);
+    const x = 5000,
+      z = -6000,
+      base = cover.baseAt(x, z),
+      sea = base + DECK.sea - CLOUD_SEA_DROP;
+    const drawn = (y: number) => {
+      const out = createClusterLayout();
+      return layoutClusters(shapes, cover, out, { ...frame({ x, y, z }), bx: x, bz: z }).count;
+    };
+    const under = drawn(base + 20);
+    for (const y of [sea - 20, sea, sea + 20, sea + 50]) expect(drawn(y), `at sea ${y - sea}`).toBe(under);
+    // and well over it the buried ones are let go, or they paint balls on the sea
+    expect(drawn(sea + 250)).toBeLessThan(under);
   });
 
   it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {
