@@ -8,6 +8,7 @@ import {
   cameraPosition,
   densityFogFactor,
   dot,
+  exp,
   exponentialHeightFogFactor,
   float,
   fog,
@@ -20,6 +21,14 @@ import {
   smoothstep,
 } from 'three/tsl';
 import { DECK } from './CloudCover';
+
+/**
+ * How far one sees inside a cloud, m: the whiteout covers a thing this far off
+ * by two thirds. It was the same at every distance, so in a cloud the figure a
+ * few metres from the eye went as white as the ground a kilometre down, and
+ * turning the camera showed a white silhouette on a blue sky.
+ */
+export const WHITEOUT = { visibility: 50 };
 import { cloudBankAt, deckBaseAt } from './CloudShadow';
 import type { SkyUniforms } from './SkyUniforms';
 
@@ -70,6 +79,7 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   )
     .mul(u.uAbove)
     .mul(cloudBankAt(u, worldXZ));
-  const factor = max(max(air, seaF), u.uWhiteout);
+  const inCloud = u.uWhiteout.mul(float(1).sub(exp(distance.div(WHITEOUT.visibility).negate())));
+  const factor = max(max(air, seaF), inCloud);
   scene.fogNode = fog(horizon.horizonTint(normalize(positionWorld.sub(cameraPosition))), factor);
 }
