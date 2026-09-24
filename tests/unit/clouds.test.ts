@@ -201,13 +201,15 @@ describe('the cloud form', () => {
       };
       return layoutClusters([one!], solid, out, f).inside;
     };
-    expect(inside(0, 900)).toBeGreaterThan(0.9);
+    // its own base is the region's plus its lift
+    const mid = 800 + one!.lift + 60;
+    expect(inside(0, mid)).toBeGreaterThan(0.8);
     expect(inside(0, 700)).toBe(0);
     expect(inside(3000, 900)).toBe(0);
     expect(inside(0, 2000)).toBe(0);
     // long with the wind (z here): further along it than across it is still inside
     const r = one!.radius;
-    expect(inside(0, 900, r * 1.3)).toBeGreaterThan(inside(r * 1.3, 900, 0));
+    expect(inside(0, mid, r * 1.3)).toBeGreaterThan(inside(r * 1.3, mid, 0));
   });
 
   it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {

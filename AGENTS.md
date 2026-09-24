@@ -307,6 +307,9 @@ page works under a Pages subdirectory.
   the layout measures the camera against a soft ellipsoid of each cluster
   (`ClusterLayout.inside`) and the whiteout takes the larger of that and the
   deck's band, because a tower or a cloud met at its edge is not in the band.
+  Nothing in the sky may end on the horizon: the painted layer and the deck's
+  underside thin away over the lowest fifteen degrees, and each cluster lifts
+  its own base up to `CLUSTER.lift` over the region's, or the sky is ruled.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery

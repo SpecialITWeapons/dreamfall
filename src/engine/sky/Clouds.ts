@@ -72,6 +72,12 @@ export const CLUSTER = {
   tower: 170,
   /** How tall a cluster may stand, over its radius. */
   tallest: 1.1,
+  /**
+   * How far over the region's base a cluster's own base may stand, m. The
+   * region's clouds share a base, but not to the metre: every flat bottom at
+   * one height ruled a line across the whole sky.
+   */
+  lift: 140,
   /** Where the far clusters are gone, m: the fog has them by then. */
   far: [2300, 2900] as const,
 };
@@ -133,6 +139,8 @@ export interface ClusterShape {
   radius: number;
   /** How much of a tower it grows over a solid bank, 0..1. */
   tower: number;
+  /** How far over the region's base its own base stands, m. */
+  lift: number;
   sprites: Array<{ ox: number; oy: number; oz: number; size: number }>;
 }
 
@@ -165,6 +173,7 @@ export function clusterShapes(seed: number): ClusterShape[] {
       drift: 0.95 + r() * 0.1,
       radius: CLUSTER.radius[0] + (CLUSTER.radius[1] - CLUSTER.radius[0]) * r(),
       tower: r() * r(),
+      lift: r() * CLUSTER.lift,
       sprites,
     });
   }
@@ -254,15 +263,21 @@ export function layoutClusters(
     // GPU read the one field at one place.
     const bank = sstep(0.35, 0.8, cover.at(px - f.wind.x * f.t, pz - f.wind.z * f.t));
     if (bank <= 0.001) continue;
-    const base = cover.baseAt(px, pz),
-      top = deckTop(base, bank);
+    const region = cover.baseAt(px, pz),
+      top = deckTop(region, bank);
+    // The cluster's own base: its region's, a little higher for some.
+    const base = region + c.lift;
     const radius = c.radius * (0.55 + 0.45 * bank);
     // As deep as the bank, and a tower over a solid one, but never much taller
     // than it is wide: a column of sprites taller than its footprint read as a
     // tree, trunk and crown.
     const height =
-      Math.min(top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank), radius * CLUSTER.tallest) *
-      form.height;
+      // Lifted, a cluster keeps its crown where the bank's top is and is only
+      // shallower: lifted whole it stood out of the sea from above.
+      Math.min(
+        Math.max(top - base, 60) + CLUSTER.tower * c.tower * sstep(0.7, 1, bank),
+        radius * CLUSTER.tallest,
+      ) * form.height;
     // The heading the cluster's long axis takes: the wind's, turned by up to a
     // fifth of a right angle either way.
     const heading = windAngle + ((c.rot - Math.PI) / Math.PI) * 0.35;
@@ -270,7 +285,7 @@ export function layoutClusters(
       cos = Math.cos(heading);
     // From over the sea the sea is what a bank is: a sprite buried under its
     // level is let go, and what stands out of it stays.
-    const sea = base + DECK.sea - CLOUD_SEA_DROP;
+    const sea = region + DECK.sea - CLOUD_SEA_DROP;
     const over = sstep(sea - 40, sea + 40, f.camera.y);
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
@@ -303,7 +318,9 @@ export function layoutClusters(
         dy = sy - f.camera.y,
         dz = sz - f.camera.z;
       const d = Math.hypot(dx, dy, dz);
-      const buried = 1 - over * (1 - sstep(sea + 10, sea + 60, sy));
+      // A lifted cluster's bottom row stands near the sea's level: it is let
+      // go too, or the sea is dotted with the tops of balls.
+      const buried = 1 - over * (1 - sstep(sea + 30, sea + 90, sy));
       const alpha =
         sstep(size * 0.9, size * 2, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
       if (alpha <= 0.003) continue;
@@ -359,8 +376,8 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const rag = mx_noise_float(vec3(q.mul(1.6).add(seedXZ), u.time.mul(0.04)))
     .mul(0.7)
     .add(mx_noise_float(vec3(q.mul(4.2).sub(seedXZ), u.time.mul(0.06))).mul(0.3));
-  // A cumulus has a flat base, all of a region's at one height: whatever of a
-  // round sprite hangs below its cluster's base is cut away, softly.
+  // A cumulus has a flat base, a region's all at about one height: whatever of
+  // a round sprite hangs below its cluster's base is cut away, softly.
   const above = positionWorld.y.sub(floorY);
   // Ragged, but never to the quad's own edge, or the edge shows as a straight cut.
   const edge = smoothstep(1, 0.82, max(q.x.abs(), q.y.abs()));

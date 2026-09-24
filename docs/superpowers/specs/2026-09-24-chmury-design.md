@@ -211,6 +211,22 @@ inside) · 0,996`. Na seedzie 42, przelot na 120 m nad podstawą: biel narasta
 przez ok. 10 s wlotu, jest pełna w środku i schodzi na wylocie. Panel pokazuje
 `inside` obok liczby sprite'ów.
 
+## 7d. Bez linijki na horyzoncie
+
+Właściciel: „granica jest bardzo wyraźna, wszystkie systemy chmurowe ustawiają
+się od jakiejś wysokości”. Trzy rzeczy kończyły się w tym samym miejscu:
+malowana warstwa na kopule wygasała w pierwszych 8° nad horyzontem, spód
+pokładu na kopule był ucięty dokładnie na horyzoncie (`step(0, y)`), a każda
+gromada w regionie miała płaski spód na tej samej wysokości.
+
+- Warstwa malowana i spód pokładu wygasają łagodnie przez najniższe ~15°
+  (`smoothstep(0, 0,26, y)`, `DECK_UNDERSIDE.horizon`), więc niebo przechodzi
+  w mgłę horyzontu zamiast kończyć się kreską.
+- Każda gromada ma własne podniesienie podstawy, 0–140 m nad podstawą regionu
+  (`CLUSTER.lift`). Spody dalej są płaskie, ale nie leżą na jednej linii.
+  Wierzchołek zostaje przy wierzchołku ławicy, więc podniesiona gromada jest
+  płytsza, nie wyższa.
+
 ## 8. Czego nie zmieniamy
 
 - Malowane chmury na kopule (wyższa warstwa) i gwiazdy za nimi.
