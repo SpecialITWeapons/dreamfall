@@ -21,6 +21,7 @@ import {
   type Species,
 } from '../../../library/contract';
 import { CELL_TREES, resolvePopulate } from '../../../library/standard/index.js';
+import { countryOf, standingOf } from '../terrain/Country';
 import { createFields } from '../terrain/Fields';
 import type { Heightfield } from '../terrain/Heightfield';
 import { sstep } from '../terrain/noise';
@@ -231,6 +232,13 @@ export function createRing(deps: RingDeps): Ring {
   const fields = createFields(sampler);
   const slotIds = new Uint8Array(4);
   const slotWeights = new Float32Array(4);
+  // The country under the cell. A settlement's slot is its presence and its
+  // plateau, not a planting: its share goes to the biomes beside it, and what
+  // they sow is thinned by `clearing` (terrain/Country.ts).
+  const standing = standingOf(biomes);
+  const countryIds = new Uint8Array(4);
+  const countryWeights = new Float32Array(4);
+  let clearing = 1;
   const blended = new Color();
   const scratch = new Color();
 
@@ -322,22 +330,24 @@ export function createRing(deps: RingDeps): Ring {
       return here;
     },
     weight(id) {
-      for (let s = 0; s < SLOTS; s++) if (biomes[slotIds[s]!]?.id === id) return slotWeights[s]!;
+      for (let s = 0; s < SLOTS; s++) if (biomes[countryIds[s]!]?.id === id) return countryWeights[s]!;
       return 0;
     },
     mix(id) {
+      // A prop is thinned in a settlement exactly as a tree is: the country's
+      // boulders, a clearing's share of them.
       let sum = 0;
       for (let s = 0; s < SLOTS; s++) {
-        const weight = slotWeights[s]!;
-        if (weight > 0) sum += weight * (wants[slotIds[s]!]?.[id] ?? 0);
+        const weight = countryWeights[s]!;
+        if (weight > 0) sum += weight * (wants[countryIds[s]!]?.[id] ?? 0);
       }
-      return sum;
+      return sum * clearing;
     },
     blend(param) {
       blended.setRGB(0, 0, 0);
       for (let s = 0; s < SLOTS; s++) {
-        const weight = slotWeights[s]!,
-          color = palette[slotIds[s]!]?.get(param);
+        const weight = countryWeights[s]!,
+          color = palette[countryIds[s]!]?.get(param);
         if (weight > 0 && color) {
           blended.r += weight * color.r;
           blended.g += weight * color.g;
@@ -542,6 +552,7 @@ export function createRing(deps: RingDeps): Ring {
         read = false;
         cellTrees = 0;
         heightfield.weightsAt(ccx, ccz, slotIds, slotWeights);
+        clearing = countryOf(slotIds, slotWeights, standing, countryIds, countryWeights);
         // The layer is asked before any hook runs, and while it is empty it does
         // not even cost the key.
         const override = overrides.size === 0 ? null : overrides.for(cellKey(ix, iz));
@@ -566,12 +577,15 @@ export function createRing(deps: RingDeps): Ring {
           for (const put of entry.place(cell, propKit) ?? []) standProp(entry.id, put);
         }
         for (let s = 0; s < SLOTS; s++) {
-          const weight = slotWeights[s]!;
+          // The floor is the country's own share: which biomes get a say in a
+          // cell is not changed by a village standing on it, only how much of
+          // what they sow comes up.
+          const weight = countryWeights[s]!;
           if (weight < POPULATE_FLOOR) continue;
-          const entry = sown[slotIds[s]!];
+          const entry = sown[countryIds[s]!];
           if (!entry) continue;
-          share = weight;
-          roll = stream(biomeSalt[slotIds[s]!]!);
+          share = weight * clearing;
+          roll = stream(biomeSalt[countryIds[s]!]!);
           entry.hook(cell, kit);
         }
       }

@@ -1,7 +1,7 @@
-import { Matrix4, Quaternion, Vector2, Vector3 } from 'three';
+import { Color, Matrix4, Quaternion, Vector2, Vector3 } from 'three';
 import { uniform } from 'three/tsl';
 import { describe, expect, it } from 'vitest';
-import { defineBiome, type GroundHook, type Library } from '../../library/contract';
+import { defineBiome, swatchColor, type GroundHook, type Library } from '../../library/contract';
 import type { GroundShade } from '../../src/engine/scenery/GroundShade';
 import {
   CARDS,
@@ -171,10 +171,10 @@ const flat = (height = 100, onRead: () => void = () => {}): Heightfield =>
     },
   }) as unknown as Heightfield;
 
-const grassOver = (density: number, heightfield = flat()) =>
+const grassOver = (density: number, heightfield = flat(), library = meadow(density)) =>
   createGrass({
     seed: 42,
-    library: meadow(density),
+    library,
     heightfield,
     materials: { grass: () => ({ dispose() {} }) } as unknown as SceneryMaterials,
     shade: { aoNode: (node: unknown) => node } as unknown as GroundShade,
@@ -208,6 +208,41 @@ describe('createGrass', () => {
       expect(c).toBeLessThan(share * 1.2);
     }
     grass.dispose();
+  });
+
+  it("grows the country's grass on a settlement's ground, in the country's colour", () => {
+    // The settlement holds eight tenths of every texel and has no grass of its
+    // own: the meadow is the whole country, so the meadow's grass stands at the
+    // meadow's own thickness, exactly as if the settlement were not there.
+    const settled = meadow(0.2);
+    settled.biomes.push(
+      defineBiome({ id: 'camp', name: 'camp', params: {}, presence: () => 1, inherit: { trees: 0.4 } }),
+    );
+    const under = {
+      ...flat(),
+      weightsAt: (_x: number, _z: number, ids: Uint8Array, weights: Float32Array) => {
+        ids[0] = 1;
+        ids[1] = 0;
+        ids[2] = 0;
+        weights[0] = 0.8;
+        weights[1] = 0.2;
+        weights[2] = 0;
+      },
+    } as unknown as Heightfield;
+    const origin = createOrigin();
+    const open = grassOver(0.2);
+    open.update(0, 0, 120, origin, false);
+    const village = grassOver(0.2, under, settled);
+    village.update(0, 0, 120, origin, false);
+    expect(village.count).toBeGreaterThan(0);
+    expect(village.count).toBe(open.count);
+    const mesh = village.mesh.children[0] as unknown as { instanceColor: { array: Float32Array } };
+    const want = new Color(swatchColor('grassCool'));
+    expect(mesh.instanceColor.array[0]).toBeCloseTo(want.r, 5);
+    expect(mesh.instanceColor.array[1]).toBeCloseTo(want.g, 5);
+    expect(mesh.instanceColor.array[2]).toBeCloseTo(want.b, 5);
+    open.dispose();
+    village.dispose();
   });
 
   it('holds the same meadow whether it was flown to or jumped to', () => {

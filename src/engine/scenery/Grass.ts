@@ -30,6 +30,7 @@ import { swatchColor, type Library } from '../../../library/contract';
 import { resolvePopulate } from '../../../library/standard/index.js';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Origin } from '../sim/Origin';
+import { countryOf, standingOf } from '../terrain/Country';
 import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32 } from '../terrain/noise';
 import { CELL, SLOTS } from '../terrain/WorldSampler';
@@ -299,6 +300,11 @@ export function createGrass(deps: GrassDeps): Grass {
     const grass = biome.populate ? resolvePopulate(biome.populate).scatter?.grass : undefined;
     return grass ? { density: grass.density, color: new Color(swatchColor(grass.tint)) } : null;
   });
+  // A settlement grows the grass of the country it stands in, at the country's
+  // own thickness: trodden ground is the road, and the road is not grass.
+  const stands = standingOf(library.biomes);
+  const countryIds = new Uint8Array(4),
+    countryWeights = new Float32Array(4);
 
   const standing = new Int32Array(FORMS);
   /**
@@ -388,11 +394,12 @@ export function createGrass(deps: GrassDeps): Grass {
         // per 64 m rather than one per attempt, and the border between two
         // biomes is a tile wide, which at this distance nobody reads as a line.
         heightfield.weightsAt(midX, midZ, slotIds, slotWeights);
+        countryOf(slotIds, slotWeights, stands, countryIds, countryWeights);
         let thickness = 0;
         tint.setRGB(0, 0, 0);
         for (let s = 0; s < SLOTS; s++) {
-          const weight = slotWeights[s]!,
-            grass = sown[slotIds[s]!];
+          const weight = countryWeights[s]!,
+            grass = sown[countryIds[s]!];
           if (weight <= 0 || !grass) continue;
           thickness += weight * grass.density;
           tint.r += weight * grass.color.r;

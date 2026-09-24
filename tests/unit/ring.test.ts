@@ -136,6 +136,32 @@ const asker = (points: Array<[number, number]>, answers: boolean[]): Biome =>
     },
   });
 
+/** A country that remembers what share of each cell it was handed. */
+const recorder = (
+  id: string,
+  presence: number,
+  shares: Array<{ x: number; z: number; share: number }>,
+): Biome =>
+  defineBiome({
+    id,
+    name: id,
+    params: {},
+    presence: () => presence,
+    ground,
+    populate: (cell) => {
+      shares.push({ x: cell.center.x, z: cell.center.z, share: cell.share });
+    },
+  });
+
+/** A settlement 150 m across the middle of the world, standing in whatever is there. */
+const camp = defineBiome({
+  id: 'camp',
+  name: 'camp',
+  params: {},
+  presence: (f) => (Math.hypot(f.x, f.z) < 150 ? 1 : 0),
+  inherit: { trees: 0.4 },
+});
+
 /** A plan carrying nothing but the ground it speaks for. */
 const planOf = (parts: {
   x: number;
@@ -362,6 +388,21 @@ describe('the streamed ring', () => {
     with_.ring.update(0, 0, false);
     expect(with_.props.length).toBeGreaterThan(0);
     expect(with_.trees.map((t) => `${t.x},${t.z}`)).toEqual(without.trees.map((t) => `${t.x},${t.z}`));
+  });
+  it('sows a settlement with the country it stands in, thinned to its clearing', () => {
+    // The wood claims a quarter everywhere and the camp all of its disc, so the
+    // camp holds 0.8 of a cell and the wood 0.2. The wood used to sow 0.2 of
+    // that cell and the camp its own trees; now the wood has the whole cell,
+    // cleared by the camp's share: 1 - 0.8 * (1 - 0.4).
+    const shares: Array<{ x: number; z: number; share: number }> = [];
+    const r = ring(library([recorder('woods', 0.25, shares), camp]), { radius: 300 });
+    r.ring.update(0, 0, false);
+    const inside = shares.filter((s) => Math.hypot(s.x, s.z) < 100);
+    const outside = shares.filter((s) => Math.hypot(s.x, s.z) > 250);
+    expect(inside.length).toBeGreaterThan(0);
+    expect(outside.length).toBeGreaterThan(0);
+    for (const s of inside) expect(s.share).toBeCloseTo(0.52, 5);
+    for (const s of outside) expect(s.share).toBeCloseTo(1, 5);
   });
   it('keeps the scatter off a plan: nothing in a reservation, nothing on a road', () => {
     const plain = ring(library([everywhere('woods', 10)]));
