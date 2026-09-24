@@ -201,9 +201,9 @@ describe('the cloud form', () => {
 
   it('is changed on a running world through the clouds themselves', () => {
     const clouds = createClouds(42, createSkyUniforms(createDayClock().look, cover), cover);
-    clouds.setForm({ stretch: 2.5, floor: 40 });
+    clouds.setForm({ stretch: 2.5, floor: 100 });
     expect(clouds.form.stretch).toBe(2.5);
-    expect(clouds.form.floor).toBe(40);
+    expect(clouds.form.floor).toBe(100);
     clouds.dispose();
   });
 });

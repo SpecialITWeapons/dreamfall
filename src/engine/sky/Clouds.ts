@@ -96,11 +96,11 @@ export interface CloudForm {
 
 /** Each number's range and where it starts: the panel's sliders, and the clamp on `set`. */
 export const CLOUD_FORM: { [K in keyof CloudForm]: readonly [min: number, max: number, start: number] } = {
-  stretch: [1, 3, 1.8],
+  stretch: [2, 4, 3],
   height: [0.5, 1.6, 1],
-  puff: [0.6, 1.6, 1.15],
+  puff: [1.3, 1.8, 1.55],
   rag: [0, 0.8, 0.4],
-  floor: [2, 120, 30],
+  floor: [90, 120, 105],
 };
 
 /** A form at its starting values. */

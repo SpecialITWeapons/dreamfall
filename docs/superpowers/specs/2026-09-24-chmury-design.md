@@ -164,8 +164,10 @@ papierze (dysk wisiał pod nią o ~70% swojego rozmiaru). Zrobione:
   kąta prostego na gromadę; `stretch` wydłuża ją, zachowując powierzchnię
   (√s wzdłuż, 1/√s w poprzek).
 - **Panel.** `?dev=1` ma sekcję `clouds` z suwakami `CloudForm`: `stretch`
-  (1–3), `height` (0,5–1,6 głębokości ławicy), `puff` (0,6–1,6 rozmiaru
-  sprite'a), `rag` (0–0,8 poszarpania), `floor` (2–120 m miękkości spodu),
+  (2–4, start 3), `height` (0,5–1,6 głębokości ławicy), `puff` (1,3–1,8
+  rozmiaru sprite'a, start 1,55), `rag` (0–0,8 poszarpania), `floor` (90–120 m
+  miękkości spodu, start 105) -- zakresy `stretch`, `puff` i `floor` ustawił
+  właściciel po zabawie suwakami, starty to ich środki,
   plus „reset form” i „print” (JSON formy do konsoli, do wklejenia jako nowe
   wartości startowe w `CLOUD_FORM`). Zmiana działa na żywym świecie.
 - Przy okazji: dysk wygasa przed brzegiem kwadu (poszarpanie wypychało go
