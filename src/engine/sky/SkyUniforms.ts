@@ -15,6 +15,20 @@ import { uniform } from 'three/tsl';
 import type { Look } from '../render/ColorGrade';
 import type { CloudCover } from './CloudCover';
 
+/**
+ * How the deck and the air are drawn, as numbers the dev panel moves while the
+ * world runs: `sea` is how opaque the cloud sea is at its most solid, `fog` how
+ * much of the sea's fog over the ground under a bank there is, and `air` how
+ * thick the far air is against the palette's own density. The sea was 0.94 and
+ * its fog was all there was of it, and the owner read both as a lid.
+ */
+export const SKY_LOOK: { [K in 'sea' | 'fog' | 'air']: readonly [min: number, max: number, start: number] } =
+  {
+    sea: [0, 1, 0.45],
+    fog: [0, 1, 0.25],
+    air: [0, 2, 1],
+  };
+
 export function createSkyUniforms(look: Look, cover: CloudCover) {
   const cloudWhite = new Color(look.cloud.white);
   // The deck's one field, as the GPU reads it: every layer of the deck samples
@@ -74,6 +88,10 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uShowHigh: uniform(1),
     uShowSeaFog: uniform(1),
     uShowUnderside: uniform(1),
+    /** How opaque the cloud sea is at its most solid, how much of its fog there is, how thick the far air is (`SKY_LOOK`). */
+    uSeaOpacity: uniform(SKY_LOOK.sea[2]),
+    uSeaFog: uniform(SKY_LOOK.fog[2]),
+    uAir: uniform(SKY_LOOK.air[2]),
     /** World position of the local frame's origin (the floating origin), for shaders that read the world. */
     uWorldOrigin: uniform(new Vector2(0, 0)),
     /** The world's wind, m/s; every cloud layer drifts with it. */

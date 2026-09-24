@@ -232,34 +232,46 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
 
   section('clouds');
   reading('sprites drawn · inside', () => `${world.clouds.drawn} · ${fixed(world.clouds.inside, 2)}`);
-  // One slider a number of the form, labelled with its value. The world
-  // clamps, so the panel only has to say what was asked for.
-  const forms = world.clouds.ranges;
-  const sliders: Array<() => void> = [];
-  for (const key of Object.keys(forms) as Array<keyof typeof forms>) {
-    const [min, max] = forms[key];
-    const row = make('div', 'row');
-    const value = make('span');
-    row.append(make('span', '', key), value);
-    const slider = make('input');
-    slider.type = 'range';
-    slider.min = String(min);
-    slider.max = String(max);
-    slider.step = String((max - min) / 100);
-    const show = () => {
-      const now = world.clouds.form[key];
-      value.textContent = fixed(now, 2);
-      if (doc.activeElement !== slider) slider.value = String(now);
-    };
-    slider.addEventListener('input', () => {
-      world.clouds.set({ [key]: Number(slider.value) });
+  // One slider a number of a form, labelled with its value. The world clamps,
+  // so the panel only has to say what was asked for.
+  const formSliders = <K extends string>(
+    ranges: { readonly [key in K]: readonly [number, number, number] },
+    read: () => Readonly<Record<K, number>>,
+    write: (change: Partial<Record<K, number>>) => void,
+  ) => {
+    const shows: Array<() => void> = [];
+    for (const key of Object.keys(ranges) as K[]) {
+      const [min, max] = ranges[key];
+      const row = make('div', 'row');
+      const value = make('span');
+      row.append(make('span', '', key), value);
+      const slider = make('input');
+      slider.type = 'range';
+      slider.min = String(min);
+      slider.max = String(max);
+      slider.step = String((max - min) / 100);
+      const show = () => {
+        const now = read()[key];
+        value.textContent = fixed(now, 2);
+        if (doc.activeElement !== slider) slider.value = String(now);
+      };
+      slider.addEventListener('input', () => {
+        write({ [key]: Number(slider.value) } as Partial<Record<K, number>>);
+        show();
+        draw();
+      });
       show();
-      draw();
-    });
-    show();
-    sliders.push(show);
-    panel.append(row, slider);
-  }
+      shows.push(show);
+      panel.append(row, slider);
+    }
+    return shows;
+  };
+  const forms = world.clouds.ranges;
+  const sliders = formSliders(
+    forms,
+    () => world.clouds.form,
+    (change) => world.clouds.set(change),
+  );
   const cloudButtons = make('div', 'wrap');
   button(
     'reset form',
@@ -303,6 +315,28 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     highButtons,
   );
   panel.append(highButtons);
+
+  section('deck & air');
+  const looks = world.look.ranges;
+  const lookSliders = formSliders(
+    looks,
+    () => world.look.form,
+    (change) => world.look.set(change),
+  );
+  const lookButtons = make('div', 'wrap');
+  button(
+    'reset look',
+    () => {
+      const start: Record<string, number> = {};
+      for (const key of Object.keys(looks) as Array<keyof typeof looks>) start[key] = looks[key][2];
+      world.look.set(start);
+      for (const show of lookSliders) show();
+      draw();
+    },
+    lookButtons,
+  );
+  button('print', () => console.log('sky look', JSON.stringify(world.look.form)), lookButtons);
+  panel.append(lookButtons);
 
   section('scenery');
   reading('trees · props', () => `${scenery?.trees ?? 0} · ${scenery?.props ?? 0}`);

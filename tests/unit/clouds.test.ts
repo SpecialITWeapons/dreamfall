@@ -100,11 +100,11 @@ describe('layoutClusters', () => {
 });
 
 describe('createClouds', () => {
-  it('binds five vertex buffers, under the eight a WebGPU pipeline allows', () => {
+  it('binds six vertex buffers, under the eight a WebGPU pipeline allows', () => {
     const clouds = createClouds(42, createSkyUniforms(createDayClock().look, cover), cover);
     const g = clouds.mesh.geometry;
-    // the quad's position, the sprite, its shape and its floor, and the instance matrix
-    expect(Object.keys(g.attributes).sort()).toEqual(['floor', 'position', 'shape', 'sprite']);
+    // the quad's position, the sprite, its shape, its floor and its rag, and the instance matrix
+    expect(Object.keys(g.attributes).sort()).toEqual(['floor', 'position', 'rag', 'shape', 'sprite']);
     expect(Object.keys(g.attributes).length + 1).toBeLessThanOrEqual(8);
     expect(clouds.mesh.count).toBe(0);
     expect(clouds.mesh.instanceMatrix.count).toBe(CLUSTER_SPRITES);
@@ -183,8 +183,63 @@ describe('the cloud form', () => {
         low = Math.min(low, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
         high = Math.max(high, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
       }
-      expect(high - low).toBeLessThanOrEqual(one.radius * CLUSTER.tallest + 1e-6);
+      // its own build and its swell may take it over the ceiling, never past the
+      // width of its footprint
+      const form = cloudForm();
+      expect(high - low).toBeLessThanOrEqual(
+        one.radius * CLUSTER.tallest * (1 + form.spread) * (1 + form.breath) + 1e-6,
+      );
+      expect(high - low).toBeLessThan(one.radius * 2);
     }
+  });
+
+  it('gives every cluster its own build around the form, and the rag never under its floor', () => {
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    const rags = (spread: number) => {
+      const out = createClusterLayout();
+      const found = new Set<number>();
+      for (const one of clusterShapes(42).slice(0, 24)) {
+        layoutClusters(
+          [one],
+          solid,
+          out,
+          { ...frame({ x: one.x, y: 0, z: one.z }), wind: { x: 0, z: 0 } },
+          {
+            ...cloudForm(),
+            spread,
+          },
+        );
+        for (let k = 0; k < out.count; k++) {
+          expect(out.rag[k]).toBeGreaterThanOrEqual(CLOUD_FORM.rag[0] - 1e-6);
+          expect(out.rag[k]).toBeLessThanOrEqual(CLOUD_FORM.rag[1] + 1e-6);
+          found.add(Math.round(out.rag[k]! * 1e4));
+        }
+      }
+      return found;
+    };
+    // with no spread every cluster wears the form's own rag; with it, each its own
+    expect(rags(0).size).toBe(1);
+    expect(rags(CLOUD_FORM.spread[1]).size).toBeGreaterThan(10);
+  });
+
+  it('breathes: a cluster swells and settles over time, and stands still with no breath', () => {
+    // A thin bank, so the ceiling on how tall a cluster stands is not what holds it.
+    const thin = { ...cover, at: () => 0.6, baseAt: () => 800 };
+    const extent = (one: ReturnType<typeof clusterShapes>[number], t: number, breath: number) => {
+      const out = createClusterLayout();
+      const f = { ...frame({ x: one.x, y: 0, z: one.z }, t), wind: { x: 0, z: 0 } };
+      layoutClusters([one], thin, out, f, { ...cloudForm(), breath });
+      let high = -Infinity;
+      for (let k = 0; k < out.count; k++) high = Math.max(high, out.sprite[k * 4 + 1]!);
+      return high;
+    };
+    let moved = 0;
+    for (const one of clusterShapes(42).slice(0, 12)) {
+      const half = Math.PI / one.pace;
+      expect(extent(one, 0, 0)).toBeCloseTo(extent(one, half, 0), 6);
+      if (Math.abs(extent(one, 0, 0.2) - extent(one, half, 0.2)) > 5) moved++;
+    }
+    expect(moved).toBeGreaterThan(6);
   });
 
   it('knows when the camera is inside a cluster, and whitens only there', () => {
@@ -233,8 +288,8 @@ describe('the cloud form', () => {
     // At the sea's own level the sea is edge-on and draws nothing; the sprites
     // let go there left blue sky until the flyer dipped back under the line.
     const shapes = clusterShapes(42);
-    const x = 5000,
-      z = -6000,
+    const x = -3000,
+      z = -3000,
       base = cover.baseAt(x, z),
       sea = base + DECK.sea - CLOUD_SEA_DROP;
     const drawn = (y: number) => {

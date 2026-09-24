@@ -118,8 +118,10 @@ describe('createCloudCover', () => {
         solid++;
       }
     }
+    // Both ends are met. The deck is 15 to 35 per cent of the sky since the
+    // owner thinned it, so a solid bank is a few per cent of a line of samples.
     expect(clear).toBeGreaterThan(40);
-    expect(solid).toBeGreaterThan(40);
+    expect(solid).toBeGreaterThan(8);
     // and moves with the wind: after t seconds it stands wind * t further on
     expect(bankAt(cover, 500 + 3 * 60, 800 - 2 * 60, 60, wind)).toBeCloseTo(
       bankAt(cover, 500, 800, 0, wind),
@@ -189,6 +191,6 @@ describe('the deck base', () => {
       }
     }
     expect(clear).toBeGreaterThan(20);
-    expect(solid).toBeGreaterThan(20);
+    expect(solid).toBeGreaterThan(8);
   });
 });

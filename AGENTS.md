@@ -290,7 +290,8 @@ page works under a Pages subdirectory.
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.
 - **The deck is one field** (`sky/CloudCover.ts`): a repeating square baked
-  per seed, 30 to 60 per cent of it cloud by region, read at `p - wind * t` by
+  per seed, 15 to 35 per cent of it cloud by region (it was 30 to 60, and the
+  owner read the sea and its fog as too much of the world), read at `p - wind * t` by
   the GPU as `cloudCover` and by the CPU as `cover.at`. The cloud sea, its
   fog, the puffs, the shadows and the dome's painting of the deck's underside
   (where the view ray meets the sea's plane) all read it, so from over the
@@ -313,7 +314,11 @@ page works under a Pages subdirectory.
   the exception on purpose: it lies at one level a region (`base + DECK.sea`)
   and dissolves at a bank's edge, because following each bank's top made
   cliffs of cloud; a bank's depth and towers are the clusters' to show, and a
-  cluster is never much taller than wide (`CLUSTER.tallest`).
+  cluster is never much taller than wide (`CLUSTER.tallest`). How opaque the sea
+  is, how much of its fog there is and how thick the far air is are `SKY_LOOK`
+  (`sky/SkyUniforms.ts`), which `?dev=1` moves live. The far cover in `Fog.ts`
+  hides the **terrain's own edge**, 4.2 km out, and nothing else: started
+  sooner it is a wall of haze behind the land.
 - **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
   camera-facing quads standing from the base to the bank's top, a tower over a
   solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
@@ -323,7 +328,11 @@ page works under a Pages subdirectory.
   A cluster lies along the wind and is cut flat at its base in the shader
   (the `floor` attribute); how long, tall, puffed, ragged and soft-based it is
   is `CloudForm`, which `?dev=1` moves live -- "print" gives the JSON to make
-  the new defaults in `CLOUD_FORM`. Flying into a cluster whitens the view:
+  the new defaults in `CLOUD_FORM`. Every cluster strays from the form by its
+  own draw (`ClusterShape.vary`, scaled by `spread`) -- height, stretch, puff and
+  rag, the rag per sprite as the `rag` attribute -- and swells and settles at its
+  own pace (`breath`); both go over `CLUSTER.tallest`, and the tallest build at
+  the top of its swell is still lower than it is wide. Flying into a cluster whitens the view:
   the layout measures the camera against a soft ellipsoid of each cluster
   (`ClusterLayout.inside`) and the whiteout takes the larger of that and the
   deck's band, because a tower or a cloud met at its edge is not in the band.

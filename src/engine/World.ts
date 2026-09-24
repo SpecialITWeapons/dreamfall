@@ -36,7 +36,7 @@ import { highCloudCover } from './sky/HighCloud';
 import { createLights } from './sky/Lights';
 import { createMilkyWay } from './sky/MilkyWay';
 import { createSkyDome } from './sky/SkyDome';
-import { createSkyUniforms } from './sky/SkyUniforms';
+import { SKY_LOOK, createSkyUniforms } from './sky/SkyUniforms';
 import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
@@ -63,6 +63,16 @@ export interface CloudFormControl {
   /** Pins the high layer's cover, clamped to 0..1; `null` hands it back to the weather. */
   pinHigh(cover: number | null): void;
 }
+
+/** The deck's and the air's look (`SKY_LOOK`): the dev panel's sliders. */
+export interface SkyLookControl {
+  readonly ranges: { readonly [K in keyof SkyLook]: readonly [number, number, number] };
+  /** A copy of the look now. */
+  readonly form: SkyLook;
+  /** Changes what it names, each number clamped to its range. */
+  set(change: Partial<SkyLook>): void;
+}
+export type SkyLook = { [K in keyof typeof SKY_LOOK]: number };
 
 export interface WorldOptions {
   seed: number;
@@ -124,6 +134,8 @@ export interface World {
   deckAt(x: number, z: number): DeckAt;
   /** What the near clouds look like, and the way to change it while the world runs. */
   readonly clouds: CloudFormControl;
+  /** The deck's and the air's look: the dev panel's sliders. */
+  readonly look: SkyLookControl;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
@@ -524,6 +536,20 @@ export function createWorld(opts: WorldOptions): World {
       pinHigh(cover) {
         highPin = cover === null ? null : Math.min(1, Math.max(0, cover));
         uniforms.uHighCover.value = highPin ?? highCloudCover(opts.seed, sim.state.t);
+      },
+    },
+    look: {
+      ranges: SKY_LOOK,
+      get form() {
+        return { sea: uniforms.uSeaOpacity.value, fog: uniforms.uSeaFog.value, air: uniforms.uAir.value };
+      },
+      set(change) {
+        const into = { sea: uniforms.uSeaOpacity, fog: uniforms.uSeaFog, air: uniforms.uAir };
+        for (const key of Object.keys(SKY_LOOK) as Array<keyof SkyLook>) {
+          const v = change[key];
+          if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+          into[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
+        }
       },
     },
     get galaxy() {
