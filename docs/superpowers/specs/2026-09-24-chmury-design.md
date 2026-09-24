@@ -86,7 +86,7 @@ jak dla pokrycia.
 | Moduł | Dziś | Po zmianie |
 | --- | --- | --- |
 | `Atmosphere` | `rel = cameraY − 800` | `deckAt` pod kamerą: `uAbove` względem **wierzchołka**, `uCloudBodies` względem podstawy, `uWhiteout` w paśmie `base − 20 .. top + 20` razy `bank`. Sygnatura `update` przyjmuje `{ base, top, bank }` zamiast samego `cloud`. |
-| `Fog.ts` | `exponentialHeightFogFactor(…, uDeck − 30)` | własny czynnik: gęstość rośnie ku `deckTopAt(worldXZ) − 30` w fragmencie, razy `uAbove` i `cloudBankAt` jak dziś. `uDeck` znika. |
+| `Fog.ts` | `exponentialHeightFogFactor(…, uDeck − 30)` | ten sam czynnik, ale do wysokości `deckBaseAt(worldXZ) + DECK.thin − 30` w fragmencie, razy `uAbove` i `cloudBankAt` jak dziś. `uDeck` znika. Podstawa, a nie wierzchołek, bo zmienia się tylko między regionami: wierzchołek zmienia się z każdą ławicą i przy spojrzeniu z wysoka pod kątem dawał kurtynę smug nad ziemią. |
 | `SkyDome` (spód) | przecięcie z płaszczyzną 745 m | przecięcie z płaszczyzną podstawy pod kamerą, potem **jedna poprawka**: odczyt podstawy w punkcie trafienia i ponowne przecięcie. Podstawa zmienia się wolno (4.1), więc jeden krok wystarcza; test w Node sprawdza błąd na siatce kierunków. |
 | `CloudSea` | płachta na stałej `y` | wierzchołek siatki stoi na `deckTopAt` (rozdz. 6). |
 | `Clouds` | kłęby na `800 ± 45` | gromady stoją na podstawie swojego miejsca i sięgają do wierzchołka (rozdz. 7). |

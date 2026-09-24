@@ -26,8 +26,8 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
-import { createCloudSea } from './sky/CloudSea';
+import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
+import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
 import { createClouds } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
@@ -376,7 +376,7 @@ export function createWorld(opts: WorldOptions): World {
     uniforms.time.value = state.t;
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
     clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z, wind);
-    cloudSea.update(origin.localX(state.x), origin.localZ(state.z));
+    cloudSea.update(origin.localX(state.x), origin.localZ(state.z), origin.x, origin.z);
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
     atmosphere.update(
@@ -406,7 +406,10 @@ export function createWorld(opts: WorldOptions): World {
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
     }
     post.setExposure(atmosphere.exposure);
-    cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
+    // Over the lowest top the sea can have, not over the one under the camera:
+    // a lower region's banks are seen from over them while this one's are
+    // still overhead, and the sea hides whatever of itself is above the eye.
+    cloudSea.mesh.visible = camera.position.y > DECK.base[0] + DECK.thin - CLOUD_SEA_DROP - 60;
     clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
     sample.vy = state.vy;
     sample.gust = state.gust;
