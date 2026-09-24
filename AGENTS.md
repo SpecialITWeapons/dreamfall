@@ -289,7 +289,11 @@ page works under a Pages subdirectory.
   is solid (`deckTop`, 120 to 350 m). Everything that used to read one number
   reads `deckAt` where it stands -- the atmosphere under the camera, the sea and
   its fog per fragment, the dome where the ray meets the base, the crossing
-  over the deepest bank the region can hold (`base + DECK.thick`).
+  over the deepest bank the region can hold (`base + DECK.thick`). The sea is
+  the exception on purpose: it lies at one level a region (`base + DECK.sea`)
+  and dissolves at a bank's edge, because following each bank's top made
+  cliffs of cloud; a bank's depth and towers are the clusters' to show, and a
+  cluster is never much taller than wide (`CLUSTER.tallest`).
 - **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
   camera-facing quads standing from the base to the bank's top, a tower over a
   solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts

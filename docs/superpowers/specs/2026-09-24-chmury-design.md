@@ -176,6 +176,24 @@ Następne w kolejce, jeśli dalej będzie za mało natury: więcej mniejszych
 sprite'ów na koronie (kalafior), typy chmur zależne od udziału zachmurzenia,
 gromady stawiane w punktach wybranych z pola zamiast losowanych w polu.
 
+## 7b. Bez klifów (po drugim obejrzeniu)
+
+Właściciel: „teraz mamy klify chmurowe”. Morze szło za wierzchołkiem każdej
+ławicy, a wierzchołek na brzegu ławicy rośnie o 230 m na kilkuset metrach,
+więc nawet bez boków do podstawy wierzch robił stopień, a z boku była ściana.
+Gromady z kolei rosły na całą głębokość ławicy plus wieżę przy szerokości
+100–190 m i wyglądały jak drzewa.
+
+- Morze leży na jednym poziomie w regionie: `base + DECK.sea` (235 m) minus
+  `CLOUD_SEA_DROP`, z fałdami. Na brzegu ławicy rozpływa się w przezroczystość
+  (`smoothstep(0,1..0,5)` pokrycia) i opada najwyżej o 30 m. Żadnych boków.
+- Głębokość ławicy i wieże pokazują tylko gromady. Z góry zostają te sprite'y,
+  które stoją nad poziomem morza.
+- Gromada nie jest wyższa niż 1,1 swojego promienia (`CLUSTER.tallest`).
+
+Wierzchołek ławicy (`deckTop`) nadal steruje bielą, `uAbove` i przejściem
+autopilota; morze jest tylko obrazem.
+
 ## 8. Czego nie zmieniamy
 
 - Malowane chmury na kopule (wyższa warstwa) i gwiazdy za nimi.

@@ -170,6 +170,22 @@ describe('the cloud form', () => {
     expect(Math.abs(long.area / round.area - 1)).toBeLessThan(0.02);
   });
 
+  it('never stands a cluster much taller than it is wide, however deep the bank', () => {
+    // A column taller than its footprint read as a tree: a trunk and a crown.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    for (const one of clusterShapes(42).slice(0, 12)) {
+      const out = createClusterLayout();
+      layoutClusters([one], solid, out, { ...frame({ x: one.x, y: 0, z: one.z }), wind: { x: 0, z: 12 } });
+      let low = Infinity,
+        high = -Infinity;
+      for (let k = 0; k < out.count; k++) {
+        low = Math.min(low, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
+        high = Math.max(high, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
+      }
+      expect(high - low).toBeLessThanOrEqual(one.radius * CLUSTER.tallest + 1e-6);
+    }
+  });
+
   it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {
     const out = createClusterLayout();
     layoutClusters(clusterShapes(42), cover, out, frame({ x: 0, y: 0, z: 0 }));

@@ -53,7 +53,8 @@ import {
   vec3,
 } from 'three/tsl';
 import { mulberry32, sstep } from '../terrain/noise';
-import { deckTop, type CloudCover } from './CloudCover';
+import { DECK, deckTop, type CloudCover } from './CloudCover';
+import { CLOUD_SEA_DROP } from './CloudSea';
 import type { SkyUniforms } from './SkyUniforms';
 
 const VENUS = vec3(0.86, 0.46, 0.52);
@@ -69,6 +70,8 @@ export const CLUSTER = {
   radius: [120, 260] as const,
   /** How far a tower stands over the bank's top, m, at most. */
   tower: 170,
+  /** How tall a cluster may stand, over its radius. */
+  tallest: 1.1,
   /** Where the far clusters are gone, m: the fog has them by then. */
   far: [2300, 2900] as const,
 };
@@ -245,16 +248,22 @@ export function layoutClusters(
     if (bank <= 0.001) continue;
     const base = cover.baseAt(px, pz),
       top = deckTop(base, bank);
-    const height = (top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank)) * form.height;
     const radius = c.radius * (0.55 + 0.45 * bank);
+    // As deep as the bank, and a tower over a solid one, but never much taller
+    // than it is wide: a column of sprites taller than its footprint read as a
+    // tree, trunk and crown.
+    const height =
+      Math.min(top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank), radius * CLUSTER.tallest) *
+      form.height;
     // The heading the cluster's long axis takes: the wind's, turned by up to a
     // fifth of a right angle either way.
     const heading = windAngle + ((c.rot - Math.PI) / Math.PI) * 0.35;
     const sin = Math.sin(heading),
       cos = Math.cos(heading);
-    // From over the deck the bank's top is the sea's to draw: a sprite buried
-    // under it is let go.
-    const over = sstep(top - 40, top + 40, f.camera.y);
+    // From over the sea the sea is what a bank is: a sprite buried under its
+    // level is let go, and what stands out of it stays.
+    const sea = base + DECK.sea - CLOUD_SEA_DROP;
+    const over = sstep(sea - 40, sea + 40, f.camera.y);
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
     const fade = sstep(0.15, 0.6, bank);
@@ -271,7 +280,7 @@ export function layoutClusters(
         dy = sy - f.camera.y,
         dz = sz - f.camera.z;
       const d = Math.hypot(dx, dy, dz);
-      const buried = 1 - over * (1 - sstep(top + 20, top + 70, sy));
+      const buried = 1 - over * (1 - sstep(sea + 10, sea + 60, sy));
       const alpha =
         sstep(size * 0.9, size * 2, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
       if (alpha <= 0.003) continue;
