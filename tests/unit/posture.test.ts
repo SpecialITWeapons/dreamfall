@@ -369,8 +369,8 @@ describe('createPosture', () => {
     for (const [slot, flown] of [
       ['box', pose()],
       ['delta', pose({ pitch: -0.2, vy: -8, speed: SPEED * 1.14 })],
-      ['track', pose({ pitch: -0.42, vy: -16, speed: SPEED * 1.48 })],
-      ['climb', pose({ pitch: 0.56, vy: 12, speed: SPEED * 0.75 })],
+      ['track', pose({ pitch: -0.54, vy: -20.8, speed: SPEED * 1.47 })],
+      ['climb', pose({ pitch: 0.71, vy: 14.3, speed: SPEED * 0.75 })],
     ] as const) {
       posture.update(flown, 0);
       for (const { kind, side } of JOINTS) {
