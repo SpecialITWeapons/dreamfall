@@ -202,12 +202,14 @@ const oneSite = (plan: SitePlan): Sites => {
     fields: {} as Fields,
     random: () => 0.5,
   };
+  const near: Sites['near'] = (x, z, reach, out) => {
+    out.length = 0;
+    if (Math.hypot(site.x - x, site.z - z) <= reach + site.radius) out.push(site);
+    return out;
+  };
   return {
-    near(x, z, reach, out) {
-      out.length = 0;
-      if (Math.hypot(site.x - x, site.z - z) <= reach + site.radius) out.push(site);
-      return out;
-    },
+    near,
+    charted: near,
     planFor: (asked) => (asked.id === site.id ? plan : null),
     work: () => {},
     built: 1,
