@@ -92,7 +92,7 @@ describe('layoutClusters', () => {
     expect(over.count).toBeLessThan(under.count / 2);
     for (let i = 0; i < under.count; i++) {
       const d = Math.hypot(under.sprite[i * 4]!, under.sprite[i * 4 + 1]! - 500, under.sprite[i * 4 + 2]!);
-      expect(d).toBeGreaterThan(under.sprite[i * 4 + 3]! * 0.5);
+      expect(d).toBeGreaterThan(under.sprite[i * 4 + 3]! * 0.9);
       expect(d).toBeLessThan(CLUSTER.far[1]);
     }
   });

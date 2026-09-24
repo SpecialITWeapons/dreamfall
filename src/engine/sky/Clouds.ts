@@ -273,7 +273,7 @@ export function layoutClusters(
       const d = Math.hypot(dx, dy, dz);
       const buried = 1 - over * (1 - sstep(top + 20, top + 70, sy));
       const alpha =
-        sstep(size * 0.5, size * 1.6, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
+        sstep(size * 0.9, size * 2, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
       if (alpha <= 0.003) continue;
       pos[n * 4] = sx - f.originX;
       pos[n * 4 + 1] = sy;

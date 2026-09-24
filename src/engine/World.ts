@@ -425,7 +425,11 @@ export function createWorld(opts: WorldOptions): World {
     // a lower region's banks are seen from over them while this one's are
     // still overhead, and the sea hides whatever of itself is above the eye.
     cloudSea.mesh.visible = camera.position.y > DECK.base[0] + DECK.thin - CLOUD_SEA_DROP - 60;
-    clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001 && clouds.drawn > 0;
+    // Inside a bank the white is the whole picture, and a cluster round the
+    // camera is a stack of screen-sized sprites: on a software rasteriser a
+    // third of the frame for nothing anybody can see.
+    clouds.mesh.visible =
+      uniforms.uCloudBodies.value > 0.001 && uniforms.uWhiteout.value < 0.85 && clouds.drawn > 0;
     sample.vy = state.vy;
     sample.gust = state.gust;
     sample.rush = state.speed / SPEED;
