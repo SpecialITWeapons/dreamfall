@@ -247,6 +247,10 @@ export function createSkyDome(
         .mul(0.7)
         .mul(smoothstep(0.025, 0.12, y)),
     );
+    // Inside a cloud there is no sky: the dome is the cloud's white, whatever
+    // way the camera turns. Only the horizon went white before, so looking up
+    // out of a cloud showed a clear blue sky with painted clouds on it.
+    col.assign(mix(col, horizonColor, u.uWhiteout));
     return col;
   });
   const material = new MeshBasicNodeMaterial();

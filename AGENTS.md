@@ -310,6 +310,13 @@ page works under a Pages subdirectory.
   Nothing in the sky may end on the horizon: the painted layer and the deck's
   underside thin away over the lowest fifteen degrees, and each cluster lifts
   its own base up to `CLUSTER.lift` over the region's, or the sky is ruled.
+  Nothing near may vanish before the white replaces it: a sprite fades close
+  up only as deep as the camera is inside its cluster, and the buried ones go
+  only once the camera is 60 to 160 m over the sea's level -- at the level
+  itself the sea is edge-on, and letting them go there emptied the sky.
+  The whiteout is a fog by distance (`WHITEOUT.visibility`, 50 m), not a
+  flat cover, and the dome goes white with it: at a flat 0.996 the figure a
+  few metres off was a white silhouette on the blue the dome still drew.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery
