@@ -61,6 +61,8 @@ const stub = () => {
       form: { stretch: 1.8, rag: 0.4 },
       drawn: 640,
       inside: 0.25,
+      high: 0.2,
+      pinHigh() {},
       set(change: Record<string, number>) {
         Object.assign(this.form, change);
         calls.clouds.push(change);

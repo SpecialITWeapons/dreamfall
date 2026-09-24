@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLayers, type Hideable } from '../../src/engine/render/Layers';
+import { createLayers, uniformGate, type Hideable } from '../../src/engine/render/Layers';
 
 const thing = (): Hideable => ({ visible: true });
 
@@ -50,5 +50,20 @@ describe('layer switches', () => {
     layers.set('nothing', false);
     expect(layers.visible('nothing')).toBe(false);
     expect(() => layers.apply()).not.toThrow();
+  });
+});
+
+describe('uniformGate', () => {
+  it('switches a shader term through its uniform: 1 on, 0 off', () => {
+    const uShowHigh = { value: 1 };
+    const layers = createLayers({ high: [uniformGate(uShowHigh)] });
+    layers.set('high', false);
+    expect(uShowHigh.value).toBe(0);
+    layers.apply();
+    expect(uShowHigh.value).toBe(0);
+    layers.set('high', true);
+    expect(uShowHigh.value).toBe(1);
+    layers.apply();
+    expect(uShowHigh.value).toBe(1);
   });
 });

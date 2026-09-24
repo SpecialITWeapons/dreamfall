@@ -18,7 +18,7 @@ import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './avatar/Avatar';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
 import { MAX_STEP, MIN_CLEARANCE, SPEED } from './flight/FlightController';
 import { createSteering, type Orbit, type Steering, type View } from './flight/Steering';
-import { createLayers, type Hideable, type Layers } from './render/Layers';
+import { createLayers, uniformGate, type Hideable, type Layers } from './render/Layers';
 import { createPost, type Post } from './render/Post';
 import { createLitMaterial, createSoftShadow } from './render/SoftLighting';
 import { createGroundShade } from './scenery/GroundShade';
@@ -32,6 +32,7 @@ import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
 import { CLOUD_SHADOW, createCloudShadow } from './sky/CloudShadow';
 import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
+import { highCloudCover } from './sky/HighCloud';
 import { createLights } from './sky/Lights';
 import { createMilkyWay } from './sky/MilkyWay';
 import { createSkyDome } from './sky/SkyDome';
@@ -57,6 +58,10 @@ export interface CloudFormControl {
   readonly drawn: number;
   /** How far the camera is inside a cluster, 0..1: it whitens the view as the deck does. */
   readonly inside: number;
+  /** How much of the high layer there is now, 0..1 (sky/HighCloud.ts): the weather's, or the pinned value. */
+  readonly high: number;
+  /** Pins the high layer's cover, clamped to 0..1; `null` hands it back to the weather. */
+  pinHigh(cover: number | null): void;
 }
 
 export interface WorldOptions {
@@ -258,12 +263,17 @@ export function createWorld(opts: WorldOptions): World {
     buildings: [],
     roads: [],
   };
+  /** The dev panel's hold on the high layer's cover; `null` is the weather's. */
+  let highPin: number | null = null;
   const layers = createLayers({
     terrain: [terrain.mesh],
     water: [water.mesh],
     ...sceneryGroups,
     clouds: [clouds.mesh],
     deck: [cloudSea.mesh],
+    'deck fog': [uniformGate(uniforms.uShowSeaFog)],
+    underside: [uniformGate(uniforms.uShowUnderside)],
+    high: [uniformGate(uniforms.uShowHigh)],
     sky: [skyDome.mesh],
     figure: [avatar.object],
   });
@@ -402,6 +412,7 @@ export function createWorld(opts: WorldOptions): World {
     applyCameraPose(camera, chase.pose, origin.localX, origin.localZ);
     scenery?.update(state.x, state.z, camera.position.y, moved);
     uniforms.time.value = state.t;
+    uniforms.uHighCover.value = highPin ?? highCloudCover(opts.seed, state.t);
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
     camera.updateMatrixWorld();
     clouds.update(state.x, state.z, state.t, camera.position, camera.matrixWorld, origin.x, origin.z, wind);
@@ -506,6 +517,13 @@ export function createWorld(opts: WorldOptions): World {
       },
       get inside() {
         return clouds.inside;
+      },
+      get high() {
+        return uniforms.uHighCover.value;
+      },
+      pinHigh(cover) {
+        highPin = cover === null ? null : Math.min(1, Math.max(0, cover));
+        uniforms.uHighCover.value = highPin ?? highCloudCover(opts.seed, sim.state.t);
       },
     },
     get galaxy() {

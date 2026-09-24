@@ -88,7 +88,8 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
     exponentialHeightFogFactor(float(0.0000085), deckBaseAt(u, worldXZ).add(DECK.thin - 30)) as Node<'float'>
   )
     .mul(u.uAbove)
-    .mul(cloudBankAt(u, worldXZ));
+    .mul(cloudBankAt(u, worldXZ))
+    .mul(u.uShowSeaFog);
   const inCloud = u.uWhiteout.mul(float(1).sub(exp(distance.div(WHITEOUT.visibility).negate())));
   const factor = max(max(air, seaF), inCloud);
   scene.fogNode = fog(horizon.horizonTint(normalize(positionWorld.sub(cameraPosition))), factor);

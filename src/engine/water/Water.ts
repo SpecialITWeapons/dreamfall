@@ -30,7 +30,7 @@ import {
 import type { LitMaterial } from '../render/SoftLighting';
 import { CLOUD_SHADOW, createCloudShadow } from '../sky/CloudShadow';
 import type { Horizon } from '../sky/Fog';
-import { CLOUD_DRIFT } from '../sky/SkyDome';
+import { CLOUD_DRIFT, HIGH_CLOUD_SKY, highCloudBand } from '../sky/SkyDome';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import {
   WATER_CELL,
@@ -94,6 +94,7 @@ export function createWater(deps: {
   })();
 
   // Rough painted reflection, not another complete sky shader per water pixel.
+  const high = highCloudBand(u);
   const reflectedSky = Fn(([r]: [Node<'vec3'>]) => {
     const alignment = pow(horizon.azimuthAlign(r, u.uSunDir), 3.5);
     const warm = mix(u.uUpper, u.uUpperWarm, alignment.mul(0.8));
@@ -103,7 +104,10 @@ export function createWater(deps: {
     const mass = mx_noise_float(q.mul(0.3).add(vec2(3, 12)))
       .mul(0.28)
       .add(mx_noise_float(q).mul(0.6));
-    const cloud = smoothstep(-0.14, 0.34, mass).mul(smoothstep(0.014, 0.15, r.y));
+    // The dome's high layer, cut where the dome cuts it, so the water reflects the weather the sky has.
+    const cloud = smoothstep(high.cut, high.cut.add(HIGH_CLOUD_SKY.soft), mass)
+      .mul(high.present)
+      .mul(smoothstep(0.014, 0.15, r.y));
     color.assign(mix(color, mix(u.uUpper, horizon.horizonTint(r), 0.65), cloud.mul(0.32)));
     return color;
   });

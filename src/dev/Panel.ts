@@ -274,6 +274,35 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   );
   button('print', () => console.log('cloud form', JSON.stringify(world.clouds.form)), cloudButtons);
   panel.append(cloudButtons);
+  // The high layer's cover is weather: it drifts with the flight's clock until
+  // the slider pins it, and "weather" lets go.
+  let pinned = false;
+  reading('high cover', () => `${fixed(world.clouds.high, 2)}${pinned ? ' pinned' : ''}`);
+  const high = make('input');
+  high.type = 'range';
+  high.min = '0';
+  high.max = '1';
+  high.step = '0.01';
+  high.addEventListener('input', () => {
+    pinned = true;
+    world.clouds.pinHigh(Number(high.value));
+    draw();
+  });
+  panel.append(high);
+  readings.push(() => {
+    if (doc.activeElement !== high) high.value = String(world.clouds.high);
+  });
+  const highButtons = make('div', 'wrap');
+  button(
+    'weather',
+    () => {
+      pinned = false;
+      world.clouds.pinHigh(null);
+      draw();
+    },
+    highButtons,
+  );
+  panel.append(highButtons);
 
   section('scenery');
   reading('trees · props', () => `${scenery?.trees ?? 0} · ${scenery?.props ?? 0}`);

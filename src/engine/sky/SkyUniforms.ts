@@ -64,6 +64,16 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uWhiteout: uniform(0),
     uCloudWhite: uniform(cloudWhite.clone()),
     uCloudBodies: uniform(0),
+    /** How much of the high layer there is, 0..1 (sky/HighCloud.ts): weather, moved by the CPU. */
+    uHighCover: uniform(0),
+    /**
+     * Layer switches over shader terms rather than objects, 1 on and 0 off: the
+     * high layer, the cloud sea's fog over the ground, and the deck's underside
+     * on the dome. Only the dev panel writes them (render/Layers.ts `uniformGate`).
+     */
+    uShowHigh: uniform(1),
+    uShowSeaFog: uniform(1),
+    uShowUnderside: uniform(1),
     /** World position of the local frame's origin (the floating origin), for shaders that read the world. */
     uWorldOrigin: uniform(new Vector2(0, 0)),
     /** The world's wind, m/s; every cloud layer drifts with it. */
