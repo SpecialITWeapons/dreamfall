@@ -5,6 +5,7 @@ import type { KeyAction, Orbit, View } from '../engine/flight/Steering';
 import type { Capture } from '../engine/render/Post';
 import type { SceneryStats } from '../engine/scenery/Scenery';
 import type { FlightState, ResumeState } from '../engine/sim/Simulation';
+import type { DeckAt } from '../engine/sky/CloudCover';
 import type { Wind } from '../engine/sky/Wind';
 
 /** GPU counters taken right before and right after `world.dispose()`, to prove dispose actually frees things. */
@@ -69,6 +70,8 @@ export interface WorldDebug {
   readonly cameraFov: number;
   readonly orbit: Orbit;
   readonly wind: Wind;
+  /** Where the deck stands over a world point now (`deckAt`). */
+  deckAt(x: number, z: number): DeckAt;
   /** The Milky Way's atlas is baked off the main thread; this says whether it has arrived. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   readonly audio: {

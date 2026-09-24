@@ -19,7 +19,7 @@ import {
   pow,
   smoothstep,
 } from 'three/tsl';
-import { cloudBankAt } from './CloudShadow';
+import { cloudBankAt, deckTopAt } from './CloudShadow';
 import type { SkyUniforms } from './SkyUniforms';
 
 export function createHorizon(u: SkyUniforms) {
@@ -60,7 +60,9 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   // cloud sea's own fog, so it lies only where the deck has cloud: over a gap
   // between the banks the ground is seen through the air and nothing else.
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
-  const seaF = (exponentialHeightFogFactor(float(0.0000085), u.uDeck.sub(30)) as Node<'float'>)
+  // It rises to just under the sea's own surface, which is the top of the bank
+  // over the fragment and not one height for the world.
+  const seaF = (exponentialHeightFogFactor(float(0.0000085), deckTopAt(u, worldXZ).sub(85)) as Node<'float'>)
     .mul(u.uAbove)
     .mul(cloudBankAt(u, worldXZ));
   const factor = max(max(air, seaF), u.uWhiteout);

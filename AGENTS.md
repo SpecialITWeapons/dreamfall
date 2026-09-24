@@ -280,6 +280,14 @@ page works under a Pages subdirectory.
   deck the ground shows through the same gaps the sky shows through from
   under it. The dome's other painted clouds are a higher layer of their own. It was four
   fields once, and the sea alone was a sheet over the whole world.
+- **The deck has no one height.** Its base is a second texture on the same
+  square (`cover.baseAt`, `deckBaseAt`), 700 to 1200 m by region, and unlike
+  the cover it is read where the point is, not against the wind: the banks
+  drift over country that holds them higher or lower. A bank is as deep as it
+  is solid (`deckTop`, 120 to 350 m). Everything that used to read one number
+  reads `deckAt` where it stands -- the atmosphere under the camera, the sea and
+  its fog per fragment, the dome where the ray meets the base, the crossing
+  over the deepest bank the region can hold (`base + DECK.thick`).
 
 ## Scenery
 

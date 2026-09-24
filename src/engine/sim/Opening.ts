@@ -9,8 +9,6 @@
 // envelope holds through all of it: clearance over the ground, the ceiling,
 // the escape turn. What the opening does own outright is the camera and the
 // pace of the day.
-import { DECK_Y } from '../terrain/WorldSampler';
-
 /**
  * The five acts, in seconds, and the numbers around them. The climb is the
  * long one because it is the one with something to see, and it is as long as
@@ -24,11 +22,15 @@ export const OPENING = {
   hold: 4,
   dive: 6,
   /**
-   * Where the flight starts, so the climb has a deck to go through -- and with
-   * room to spare, because the climb rate is reached over a second or so and
-   * the ground's own clearance may hold the figure down for part of the act.
+   * How far under the deck's top the flight starts, m. A bank is 120 to 350 m
+   * deep, which no climb of nine seconds goes through, so the flight starts
+   * near the top and comes out of it -- inside the white where the start has a
+   * bank over it, which under the title card is only a background. The climb
+   * covers this with room to spare, because its rate is reached over a second
+   * or so and the ground's own clearance may hold the figure down for part of
+   * the act.
    */
-  startY: DECK_Y - 70,
+  startBelow: 60,
   /**
    * The day clock at the first frame: the sun a little under the rim. Measured
    * rather than guessed -- the sun breaks the horizon at 0.126 on this clock,
@@ -46,6 +48,9 @@ export const OPENING = {
   /** The card: up over `in` seconds, gone by `gone`, over `out`. */
   card: { in: 0.9, gone: 9.5, out: 2.2 },
 } as const;
+
+/** Where a first flight starts, under the top of the deck where it starts. */
+export const openingStartY = (deckTop: number) => deckTop - OPENING.startBelow;
 
 export const OPENING_SECONDS = OPENING.side + OPENING.turn + OPENING.climb + OPENING.hold + OPENING.dive;
 

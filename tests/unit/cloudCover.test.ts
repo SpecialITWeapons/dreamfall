@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COVER, bankAt, createCloudCover } from '../../src/engine/sky/CloudCover';
+import { COVER, DECK, bankAt, createCloudCover, deckAt } from '../../src/engine/sky/CloudCover';
 
 const share = (data: Uint8Array) => data.reduce((sum, b) => sum + (b >= 128 ? 1 : 0), 0) / data.length;
 
@@ -125,5 +125,70 @@ describe('createCloudCover', () => {
       bankAt(cover, 500, 800, 0, wind),
       12,
     );
+  });
+});
+
+describe('the deck base', () => {
+  it('stands between 700 and 1200 m, and every world reaches both ends somewhere', () => {
+    for (const seed of [1, 7, 42, 1234, 99999]) {
+      const cover = createCloudCover(seed);
+      expect(Math.min(...cover.base), `seed ${seed}`).toBe(0);
+      expect(Math.max(...cover.base), `seed ${seed}`).toBe(255);
+      for (let i = 0; i < 200; i++) {
+        const b = cover.baseAt(i * 311.7 - 20000, i * -173.3 + 5000);
+        expect(b).toBeGreaterThanOrEqual(DECK.base[0]);
+        expect(b).toBeLessThanOrEqual(DECK.base[1]);
+      }
+    }
+  });
+
+  it('changes by region and not by bank: a slope a flight can read as the lie of the weather', () => {
+    // The base is a region's, so it never tilts steeper than this anywhere; a
+    // bank's own edge is the cover's business.
+    const cover = createCloudCover(42);
+    const step = 40;
+    let worst = 0;
+    for (let z = 0; z < cover.period; z += 160)
+      for (let x = 0; x < cover.period; x += 160) {
+        const b = cover.baseAt(x, z);
+        worst = Math.max(
+          worst,
+          Math.abs(cover.baseAt(x + step, z) - b),
+          Math.abs(cover.baseAt(x, z + step) - b),
+        );
+      }
+    expect(worst / step).toBeLessThan(DECK.maxGrade);
+  });
+
+  it('stays where it is while the cover drifts over it', () => {
+    const cover = createCloudCover(42);
+    const wind = { x: 12, z: -5 };
+    const early = deckAt(cover, 1500, -800, 0, wind),
+      late = deckAt(cover, 1500, -800, 400, wind);
+    expect(late.base).toBe(early.base);
+    expect(cover.baseAt(1500 + cover.period, -800)).toBeCloseTo(early.base, 6);
+  });
+
+  it('is as deep as the bank is solid, and never tops out over 1550 m', () => {
+    const cover = createCloudCover(42);
+    const wind = { x: 3, z: -2 };
+    let clear = 0,
+      solid = 0;
+    for (let i = 0; i < 400; i++) {
+      const d = deckAt(cover, i * 97.3, i * -41.9, i * 11, wind);
+      expect(d.top - d.base).toBeGreaterThanOrEqual(DECK.thin - 1e-9);
+      expect(d.top - d.base).toBeLessThanOrEqual(DECK.thick + 1e-9);
+      expect(d.top).toBeLessThanOrEqual(1550);
+      if (d.bank === 0) {
+        expect(d.top - d.base).toBeCloseTo(DECK.thin, 9);
+        clear++;
+      }
+      if (d.bank === 1) {
+        expect(d.top - d.base).toBeCloseTo(DECK.thick, 9);
+        solid++;
+      }
+    }
+    expect(clear).toBeGreaterThan(20);
+    expect(solid).toBeGreaterThan(20);
   });
 });

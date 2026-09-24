@@ -54,16 +54,17 @@ Tekstura staje się `RGFormat`: R to pokrycie jak dziś, G to podstawa.
 - Podstawa to region, nie ławica: wolny szum o 3 komórkach na okres
   (~7 km, jak udział zachmurzenia), wygładzony, żeby zmiana 500 m rozkładała
   się na kilka kilometrów. Test trzyma nachylenie: podstawa nie zmienia się
-  szybciej niż o `DECK.maxGrade` (proponuję 0,12, czyli 120 m na km).
+  szybciej niż o `DECK.maxGrade` = 0,25 (zmierzone: 0,17–0,20 na pięciu
+  seedach, czyli do 200 m na km; regiony ok. 5 km, 4 komórki na okres).
 - **Podstawa stoi w świecie, pokrycie płynie z wiatrem.** Kanał G jest czytany
   w `p`, a nie w `p − wind·t`: ławice przepływają nad krainą, której powietrze
   trzyma podstawę wyżej albo niżej (tak jak w prawdziwej pogodzie podstawa
   zależy od wilgotności przy ziemi). Dzięki temu wysokość nie zależy od czasu,
   a CPU pyta o nią jedną funkcją bez `t`.
 - **Grubość** to funkcja pokrycia: `thickness = mix(DECK.thin, DECK.thick,
-  bank)`, proponuję 120–350 m, plus wolny szum wież (do +80 m) tam, gdzie
-  ławica jest pełna. Wierzchołek: `top = base + thickness`, maksymalnie
-  ok. 1550 m, jak w decyzji.
+  bank)`, 120–350 m. Wierzchołek: `top = base + thickness`, maksymalnie
+  1550 m, jak w decyzji. Wieże wyższe niż wierzchołek robią gromady
+  (rozdz. 7), nie pole: lot i atmosfera czytają gładką powierzchnię.
 
 ### 4.2 API
 
@@ -89,8 +90,8 @@ jak dla pokrycia.
 | `SkyDome` (spód) | przecięcie z płaszczyzną 745 m | przecięcie z płaszczyzną podstawy pod kamerą, potem **jedna poprawka**: odczyt podstawy w punkcie trafienia i ponowne przecięcie. Podstawa zmienia się wolno (4.1), więc jeden krok wystarcza; test w Node sprawdza błąd na siatce kierunków. |
 | `CloudSea` | płachta na stałej `y` | wierzchołek siatki stoi na `deckTopAt` (rozdz. 6). |
 | `Clouds` | kłęby na `800 ± 45` | gromady stoją na podstawie swojego miejsca i sięgają do wierzchołka (rozdz. 7). |
-| `FlightController` | `high = 800 + 190 + szum`, `y > 800` | `high = top + 150 + szum` w punkcie lotu (maks. ok. 1730 < 2000); `cloudOrigin` porównuje z wierzchołkiem. Kontroler dostaje `deck: (x, z, t) => { base, top }` w zależnościach, jak dziś dostaje `groundAt`; zostaje czystym CPU. |
-| `Opening` | `startY = 730` | patrz 9.1. |
+| `FlightController` | `high = 800 + 190 + szum`, `y > 800` | `high = base + DECK.thick + 140 + szum` w punkcie lotu, czyli nad najgłębszą ławicą, jaką region może mieć (maks. 1720 < 2000); cel nie podskakuje, gdy pod lotem przepływa ławica. `cloudOrigin` porównuje z tym samym wierzchołkiem. Kontroler dostaje `deckBase: (x, z) => number` w zależnościach, jak dziś dostaje `groundAt`; zostaje czystym CPU. |
+| `Opening` | `startY = 730` | `openingStartY(top) = top − 60` w punkcie startu (rozdz. 9). |
 | `tools/vantages.ts` | `deck` na 980 m | `deck` na `top(0, 0) + 180`. |
 
 ## 6. Morze chmur: powierzchnia z bokami
@@ -151,21 +152,16 @@ Z góry nadal jedna siatka wokół lotnika, rysowana tylko nad pokładem, ale:
 - Wiatr, okres pola, udział zachmurzenia 30–60%.
 - Sufit `MAX_ALTITUDE = 2000`.
 
-## 9. Otwarte pytania
+## 9. Rozstrzygnięte w rozmowie
 
 1. **Otwarcie.** Dziś wznoszenie trwa 9 s (≈130 m) i przebija pas bieli
-   80 m. Przy grubości 120–350 m to za mało. Propozycje:
-   (a) `startY = top − 60` w punkcie startu, czyli start w białym i wynurzenie
-   się ponad chmury o świcie — akt wznoszenia bez zmiany długości;
-   (b) długość aktu liczona z grubości w punkcie startu (12–35 s).
-   **Rekomenduję (a)**: film zaczyna się w bieli, co przy planszy tytułowej
-   i tak jest tłem, a wynurzenie jest tym, co akt ma pokazać.
+   80 m; przy grubości 120–350 m to za mało. Start 60 m pod wierzchołkiem
+   w punkcie startu: film zaczyna się w bieli, jeśli nad startem stoi ławica,
+   a akt wznoszenia jest wynurzeniem ponad chmury. Długość aktów bez zmian.
 2. **Wzgórza w chmurach.** Podstawa 700 m przy terenie do 851 m oznacza
-   szczyty w ławicy i lot w bieli przy `MIN_CLEARANCE`. Proponuję to zostawić
-   (szczyt w chmurze to dobry widok), ale autopilot przy niskim przelocie
-   nie wybiera trasy przez ławicę poniżej 150 m nad ziemią. Alternatywa:
-   podstawa podnoszona nad terenem — odrzucam, bo teren nie jest okresowy
-   i nie da się go wpiec w pole.
+   szczyty w ławicy. Zostaje: szczyt w chmurze to dobry widok. Podnoszenie
+   podstawy nad terenem odrzucone, bo teren nie jest okresowy i nie da się
+   go wpiec w pole.
 
 ## 10. Etapy
 

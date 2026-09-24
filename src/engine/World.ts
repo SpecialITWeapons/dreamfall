@@ -11,7 +11,7 @@ import { swatchColor, validateLibrary, type Biome, type Library } from '../../li
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { emptyMix, layerMix } from './audio/AmbienceModel';
-import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
+import { OPENING, createOpening, openingStartY, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './avatar/Avatar';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
@@ -26,7 +26,7 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { bankAt, createCloudCover } from './sky/CloudCover';
+import { createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
 import { createCloudSea } from './sky/CloudSea';
 import { createClouds } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
@@ -98,6 +98,8 @@ export interface World {
    */
   readonly layers: Layers;
   readonly wind: Wind;
+  /** Where the deck stands over a world point now: its base, the top of the bank there, how solid it is. */
+  deckAt(x: number, z: number): DeckAt;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
@@ -159,15 +161,19 @@ export function createWorld(opts: WorldOptions): World {
   // remembered flight is somebody coming back, and thirty seconds of titles is
   // not what they came back for. A page that asked for less motion skips it too.
   const opening = createOpening(!resume && !(opts.reducedMotion ?? false));
+  // Before the simulation too: the flight reads the deck's base to cross it.
+  const cloudCover = createCloudCover(opts.seed);
+  const deck = deckAt(cloudCover, 0, 0, 0, wind);
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
     obstacles,
     below: HUMAN_BOUNDS.below,
     resume,
-    // High enough that the climb has a deck to go through. Nothing else about
-    // the start moves: the flight's own clearance still owns the first frame.
-    startY: opening.live ? OPENING.startY : undefined,
+    deckBase: cloudCover.baseAt,
+    // Just under the deck's top, so the climb comes out of it. Nothing else
+    // about the start moves: the flight's own clearance still owns the first frame.
+    startY: opening.live ? openingStartY(deck.top) : undefined,
   });
   const { state } = sim;
   // a remembered flight never resumes inside the ground it may have been saved over
@@ -179,7 +185,6 @@ export function createWorld(opts: WorldOptions): World {
     clock.evalPalette();
   }
   const look = clock.look;
-  const cloudCover = createCloudCover(opts.seed);
   const uniforms = createSkyUniforms(look, cloudCover);
   uniforms.uWind.value.set(wind.x, wind.z);
   const horizon = createHorizon(uniforms);
@@ -377,7 +382,14 @@ export function createWorld(opts: WorldOptions): World {
     atmosphere.update(
       camera.position.y,
       follow,
-      bankAt(cloudCover, origin.worldX(camera.position.x), origin.worldZ(camera.position.z), state.t, wind),
+      deckAt(
+        cloudCover,
+        origin.worldX(camera.position.x),
+        origin.worldZ(camera.position.z),
+        state.t,
+        wind,
+        deck,
+      ),
     );
     // The biome's own air, over the palette's. It goes on after the atmosphere
     // because the atmosphere copies the palette every frame, so this is a tint
@@ -435,6 +447,7 @@ export function createWorld(opts: WorldOptions): World {
     atmosphere,
     post,
     wind,
+    deckAt: (x, z) => deckAt(cloudCover, x, z, state.t, wind),
     get galaxy() {
       return { baked: galaxy.baked, bakeMs: galaxy.bakeMs };
     },
@@ -515,6 +528,7 @@ export function createWorld(opts: WorldOptions): World {
       clouds.dispose();
       cloudSea.dispose();
       uniforms.cloudCover.dispose();
+      uniforms.deckBase.dispose();
       avatar.dispose();
       lights.dispose();
       scene.clear();

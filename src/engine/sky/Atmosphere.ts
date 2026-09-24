@@ -2,12 +2,13 @@
 // simulation; the palette is read, the sky bodies are placed, every shared
 // uniform is written, the one directional light becomes the sun or the moon,
 // and the cloud sea, whiteout and exposure follow the camera's altitude
-// relative to the deck.
+// relative to the deck where the camera is -- its base and its top, which
+// differ from one region to the next.
 import { Vector3 } from 'three';
 import { LOOK } from '../render/ColorGrade';
 import { sstep } from '../terrain/noise';
-import { DECK_Y } from '../terrain/WorldSampler';
 import type { DayClock } from '../time/DayClock';
+import type { DeckAt } from './CloudCover';
 import type { Lights } from './Lights';
 import type { SkyUniforms } from './SkyUniforms';
 
@@ -31,8 +32,8 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     get exposure() {
       return exposure;
     },
-    /** `cloud` is how solid the deck is over the camera, 0..1 (`bankAt`). */
-    update(cameraY: number, follow: Vector3, cloud: number) {
+    /** `deck` is where the deck stands over the camera (`deckAt`). */
+    update(cameraY: number, follow: Vector3, deck: DeckAt) {
       const pal = clock.palette;
       clock.skyBodies(clock.phase, sunDir, moonDir);
       const sy = sunDir.y;
@@ -60,18 +61,21 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
         .lerp(pal.horizon, night * 0.97);
       u.uSunColor.value.copy(pal.sun);
       lights.update({ palette: pal, sunDir, moonDir, sunUp, moonLight, follow });
-      // cloud sea and whiteout follow the camera's altitude relative to the deck
-      const rel = cameraY - DECK_Y;
+      // The sea is the deck's top seen from over it, so "above" is read against
+      // the top; the puffs hang from its base, so they are read against that.
+      const rel = cameraY - deck.top;
       above = sstep(-90, 30, rel);
       u.uAbove.value = above;
       exposure = LOOK.exposure * (1 - 0.25 * night) * (1 - 0.12 * above);
       u.uFogDensity.value = u.fogDensity * (1 - 0.28 * sstep(0.1, 0.65, sy)) * (1 + 0.35 * night);
-      u.uCloudBodies.value = sstep(-240, -80, rel);
+      u.uCloudBodies.value = sstep(-240, -80, cameraY - deck.base);
       // Inside the deck is white only where the deck has cloud: the band is the
-      // deck's height, the cloud is the field's over the camera. It was the band
-      // alone, so a climb through a clear sky met a wall of fog at 800 m and
-      // came out over the deck into a white haze on every side.
-      u.uWhiteout.value = (1 - sstep(0, 80, Math.abs(rel + 20))) * 0.996 * cloud;
+      // deck from its base to its top, the cloud is the field's over the camera.
+      // It was the band alone, so a climb through a clear sky met a wall of fog
+      // and came out over the deck into a white haze on every side.
+      const inside =
+        sstep(deck.base - 40, deck.base + 30, cameraY) * (1 - sstep(deck.top - 70, deck.top, cameraY));
+      u.uWhiteout.value = inside * 0.996 * deck.bank;
     },
   };
 }

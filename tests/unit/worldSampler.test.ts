@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CELL,
-  DECK_Y,
-  SEA_LEVEL,
-  createWorldSampler,
-  fieldSeeds,
-} from '../../src/engine/terrain/WorldSampler';
+import { CELL, SEA_LEVEL, createWorldSampler, fieldSeeds } from '../../src/engine/terrain/WorldSampler';
 
 // Golden values from fly-with-me's sampleWorld (src/main.js) run with its own
 // noise.js at seed 42. A mismatch is a porting error.
@@ -68,14 +62,9 @@ describe('createWorldSampler', () => {
     expect(land / n).toBeCloseTo(0.5043, 3);
     expect(hmax).toBeCloseTo(851.183640166237, 3);
     expect(hmin).toBeCloseTo(-48.14756826224149, 3);
-    expect(hmax).toBeGreaterThan(DECK_Y);
   });
   it('exposes the world constants', () => {
     expect(CELL).toBe(16);
     expect(SEA_LEVEL).toBe(0);
-    // 520 in fly-with-me and here until the owner raised it: the deck is where
-    // the banks are, and from over it the ground shows between them, which
-    // reads as height only if there is height between the two.
-    expect(DECK_Y).toBe(800);
   });
 });

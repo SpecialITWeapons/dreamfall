@@ -474,6 +474,7 @@ const debug: WorldDebug = {
   get wind() {
     return world.wind;
   },
+  deckAt: (x, z) => world.deckAt(x, z),
   get audio() {
     return {
       available: audio.available,

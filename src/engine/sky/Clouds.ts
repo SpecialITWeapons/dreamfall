@@ -29,7 +29,6 @@ import {
   smoothstep,
 } from 'three/tsl';
 import { mulberry32, sstep } from '../terrain/noise';
-import { DECK_Y } from '../terrain/WorldSampler';
 import type { CloudCover } from './CloudCover';
 import type { SkyUniforms } from './SkyUniforms';
 
@@ -80,7 +79,7 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
     base.push({
       x: r() * CLOUD_FIELD,
       z: r() * CLOUD_FIELD,
-      y: DECK_Y + (r() - 0.5) * 90,
+      y: (r() - 0.5) * 90,
       s: 55 + r() * 95,
       rot: r() * 6.283,
       drift: 0.95 + r() * 0.1,
@@ -111,14 +110,16 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
         z = (((z % CLOUD_FIELD) + CLOUD_FIELD * 1.5) % CLOUD_FIELD) - CLOUD_FIELD / 2;
         const px = bx + x,
           pz = bz + z;
-        const d = Math.hypot(px - cx, c.y - cy, pz - cz);
+        // They hang from the deck's base where they are.
+        const py = cover.baseAt(px, pz) + 45 + c.y;
+        const d = Math.hypot(px - cx, py - cy, pz - cz);
         // Moved against the wind as the shader moves its point, so the CPU and
         // the GPU read the one field at one place.
         const bank = sstep(0.35, 0.8, cover.at(px - wind.x * t, pz - wind.z * t));
         const shrink = sstep(c.s * 1.6, c.s * 3.6, d) * bank;
         q.setFromAxisAngle(v.set(0, 1, 0), c.rot);
         m4.compose(
-          v.set(px - originX, c.y, pz - originZ),
+          v.set(px - originX, py, pz - originZ),
           q,
           s3.set(c.s * shrink, c.s * 0.6 * shrink, c.s * shrink),
         );

@@ -5,9 +5,10 @@ import {
   OPENING_SECONDS,
   createOpening,
   openingAt,
+  openingStartY,
   type OpeningFrame,
 } from '../../src/engine/sim/Opening';
-import { DECK_Y } from '../../src/engine/terrain/WorldSampler';
+import { DECK } from '../../src/engine/sky/CloudCover';
 import { DAY_SECONDS } from '../../src/engine/time/DayClock';
 import { CLIMB, DESCENT } from '../../src/engine/flight/FlightController';
 
@@ -39,16 +40,18 @@ describe('openingAt', () => {
     expect(at(OPENING_SECONDS).done).toBe(true);
   });
 
-  it('starts under the deck and climbs through it in the time it gives itself', () => {
+  it("starts under the deck's top and climbs out of it in the time it gives itself", () => {
     // The one number the acts have to agree with: the flight's own climb rate
-    // over the length of the climb has to cover the deck, or the opening's
-    // money shot is a figure still under the clouds when the music stops.
-    expect(OPENING.startY).toBeLessThan(DECK_Y);
-    // with room to spare: the climb rate is reached over a second or so, and
-    // the ground's own clearance may hold the figure down for part of the act
-    expect(CLIMB * OPENING.climb).toBeGreaterThan((DECK_Y - OPENING.startY) * 1.3);
-    // and the dive gets back under it inside its own act
-    expect(DESCENT * OPENING.dive).toBeGreaterThan(DECK_Y - OPENING.startY);
+    // over the length of the climb has to come out over the deck, or the
+    // opening's money shot is a figure still in the cloud when the music stops.
+    for (const top of [DECK.base[0] + DECK.thin, DECK.base[1] + DECK.thick]) {
+      expect(openingStartY(top)).toBeLessThan(top);
+      // with room to spare: the climb rate is reached over a second or so, and
+      // the ground's own clearance may hold the figure down for part of the act
+      expect(CLIMB * OPENING.climb).toBeGreaterThan((top - openingStartY(top)) * 1.3);
+      // and the dive gets back into it inside its own act
+      expect(DESCENT * OPENING.dive).toBeGreaterThan(top - openingStartY(top));
+    }
   });
 
   it('keeps the camera inside the frame a person could put it in', () => {

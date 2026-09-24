@@ -29,8 +29,7 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
-import { DECK_Y } from '../terrain/WorldSampler';
-import { cloudBankAt, cloudCoverAt } from './CloudShadow';
+import { cloudBankAt, cloudCoverAt, deckTopAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
 
@@ -91,22 +90,25 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   // under the banks around it.
   material.positionNode = vec3(
     positionLocal.x,
-    heap
-      .add(sin(worldXZ.x.mul(0.006).add(u.time.mul(0.2))).mul(4.0))
-      .mul(cloud)
-      .sub(float(1).sub(cloud).mul(30)),
+    deckTopAt(u, worldXZ)
+      .sub(CLOUD_SEA_DROP)
+      .add(
+        heap
+          .add(sin(worldXZ.x.mul(0.006).add(u.time.mul(0.2))).mul(4.0))
+          .mul(cloud)
+          .sub(float(1).sub(cloud).mul(30)),
+      ),
     positionLocal.z,
   );
   const geometry = new PlaneGeometry(CLOUD_SEA_SIZE, CLOUD_SEA_SIZE, 96, 96);
   geometry.rotateX(-Math.PI / 2);
   const mesh = new Mesh(geometry, material);
-  mesh.position.y = DECK_Y - CLOUD_SEA_DROP;
   mesh.frustumCulled = false;
   mesh.renderOrder = 2;
   return {
     mesh,
     update(flyerLocalX: number, flyerLocalZ: number) {
-      mesh.position.set(flyerLocalX, DECK_Y - CLOUD_SEA_DROP, flyerLocalZ);
+      mesh.position.set(flyerLocalX, 0, flyerLocalZ);
     },
     dispose() {
       geometry.dispose();
