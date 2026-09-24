@@ -5,12 +5,13 @@ import {
   OPENING_SECONDS,
   createOpening,
   openingAt,
-  openingStartY,
+  openingSeconds,
+  openingStart,
   type OpeningFrame,
 } from '../../src/engine/sim/Opening';
 import { DECK } from '../../src/engine/sky/CloudCover';
 import { DAY_SECONDS } from '../../src/engine/time/DayClock';
-import { CLIMB, DESCENT } from '../../src/engine/flight/FlightController';
+import { CLIMB } from '../../src/engine/flight/FlightController';
 
 const blank = (): OpeningFrame => ({
   yaw: 0,
@@ -40,18 +41,38 @@ describe('openingAt', () => {
     expect(at(OPENING_SECONDS).done).toBe(true);
   });
 
-  it("starts under the deck's top and climbs out of it in the time it gives itself", () => {
+  it('starts under the deck and climbs out over it in the time it gives itself, however deep the deck', () => {
     // The one number the acts have to agree with: the flight's own climb rate
     // over the length of the climb has to come out over the deck, or the
     // opening's money shot is a figure still in the cloud when the music stops.
-    for (const top of [DECK.base[0] + DECK.thin, DECK.base[1] + DECK.thick]) {
-      expect(openingStartY(top)).toBeLessThan(top);
+    for (const deck of [
+      { base: DECK.base[0], top: DECK.base[0] + DECK.thin },
+      { base: DECK.base[1], top: DECK.base[1] + DECK.thick },
+      { base: 950, top: 950 + 235 },
+    ]) {
+      const { y, climb } = openingStart(deck);
+      // under the base, in clear air, where the first act's sunrise is seen
+      expect(y).toBeLessThan(deck.base);
+      expect(climb).toBeGreaterThanOrEqual(OPENING.climb);
       // with room to spare: the climb rate is reached over a second or so, and
       // the ground's own clearance may hold the figure down for part of the act
-      expect(CLIMB * OPENING.climb).toBeGreaterThan((top - openingStartY(top)) * 1.3);
-      // and the dive gets back into it inside its own act
-      expect(DESCENT * OPENING.dive).toBeGreaterThan(top - openingStartY(top));
+      expect(CLIMB * climb).toBeGreaterThanOrEqual((deck.top + OPENING.clearTop - y) * 1.3 - 1e-9);
+      // and never so long that the opening is a minute and a half of cloud
+      expect(openingSeconds(climb)).toBeLessThan(60);
     }
+  });
+
+  it('runs the script to the climb it was given', () => {
+    const long = 30;
+    const f = blank();
+    const climbAt = OPENING.side + OPENING.turn;
+    expect(openingAt(climbAt + long - 0.1, f, long).climb).toBe(1);
+    expect(openingAt(climbAt + long + 0.1, f, long).climb).toBe(0);
+    expect(openingAt(openingSeconds(long) - 0.01, f, long).done).toBe(false);
+    expect(openingAt(openingSeconds(long), f, long).done).toBe(true);
+    const opening = createOpening(true, long);
+    for (let i = 0; i < Math.ceil(openingSeconds(long) * 60) + 4; i++) opening.step(1 / 60);
+    expect(opening.live).toBe(false);
   });
 
   it('keeps the camera inside the frame a person could put it in', () => {
@@ -86,10 +107,15 @@ describe('openingAt', () => {
     // hold, in a day 600 s long, has to be a few hundredths of one. The first
     // draft ran at eighteen and crossed half a day, so the opening ended with
     // the sun going back down the far side.
-    let turned = 0;
-    for (let t = 0; t < OPENING_SECONDS; t += 0.05) turned += (at(t).dayRate * 0.05) / DAY_SECONDS;
-    expect(turned).toBeGreaterThan(0.03);
-    expect(turned).toBeLessThan(0.12);
+    // However long the climb: the day is given back as the card goes.
+    for (const climb of [OPENING.climb, 40]) {
+      let turned = 0;
+      const f = blank();
+      for (let t = 0; t < openingSeconds(climb); t += 0.05)
+        turned += (openingAt(t, f, climb).dayRate * 0.05) / DAY_SECONDS;
+      expect(turned, `climb ${climb}`).toBeGreaterThan(0.03);
+      expect(turned, `climb ${climb}`).toBeLessThan(0.14);
+    }
   });
 });
 

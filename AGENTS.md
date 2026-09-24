@@ -240,9 +240,11 @@ page works under a Pages subdirectory.
   person and the envelope holds through all of it. It owns the camera and the
   clock outright and hands both back in one place. It plays for a first flight
   only -- never for a resumed one, never under `prefers-reduced-motion` -- and
-  any input at all ends it. The flight starts under the cloud deck because the
-  climb is the act with something to see; a test holds the climb's length
-  against the flight's own climb rate.
+  any input at all ends it. The flight starts under the deck's base, in clear
+  air where the sunrise is seen, and the climb is as long as the deck over the
+  start is deep (`openingStart`: 18 to 41 s), so it always comes out over the
+  top; a test holds that against the flight's own climb rate, and the fast day
+  is given back as the card goes rather than after the climb.
 - Memory: `dreamfall-settings` and `dreamfall-resume`; every numeric field
   passes through `finite`, everything else by a direct type or equality
   check; `?seed` wins over a remembered one; a flight resumes only on its own

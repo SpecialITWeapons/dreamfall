@@ -11,7 +11,7 @@ import { swatchColor, validateLibrary, type Biome, type Library } from '../../li
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { emptyMix, layerMix } from './audio/AmbienceModel';
-import { OPENING, createOpening, openingStartY, type OpeningFrame } from './sim/Opening';
+import { OPENING, createOpening, openingStart, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './avatar/Avatar';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
@@ -174,10 +174,12 @@ export function createWorld(opts: WorldOptions): World {
   // The opening plays for a first flight and never for a continued one: a
   // remembered flight is somebody coming back, and thirty seconds of titles is
   // not what they came back for. A page that asked for less motion skips it too.
-  const opening = createOpening(!resume && !(opts.reducedMotion ?? false));
-  // Before the simulation too: the flight reads the deck's base to cross it.
+  // Before the opening and the simulation: the opening climbs through the deck
+  // over the start, and the flight reads the deck's base to cross it.
   const cloudCover = createCloudCover(opts.seed);
   const deck = deckAt(cloudCover, 0, 0, 0, wind);
+  const start = openingStart(deck);
+  const opening = createOpening(!resume && !(opts.reducedMotion ?? false), start.climb);
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
@@ -185,9 +187,9 @@ export function createWorld(opts: WorldOptions): World {
     below: HUMAN_BOUNDS.below,
     resume,
     deckBase: cloudCover.baseAt,
-    // Just under the deck's top, so the climb comes out of it. Nothing else
-    // about the start moves: the flight's own clearance still owns the first frame.
-    startY: opening.live ? openingStartY(deck.top) : undefined,
+    // Under the deck's base, so the climb goes through it. Nothing else about
+    // the start moves: the flight's own clearance still owns the first frame.
+    startY: opening.live ? start.y : undefined,
   });
   const { state } = sim;
   // a remembered flight never resumes inside the ground it may have been saved over

@@ -91,7 +91,7 @@ jak dla pokrycia.
 | `CloudSea` | płachta na stałej `y` | wierzchołek siatki stoi na `deckTopAt` (rozdz. 6). |
 | `Clouds` | kłęby na `800 ± 45` | gromady stoją na podstawie swojego miejsca i sięgają do wierzchołka (rozdz. 7). |
 | `FlightController` | `high = 800 + 190 + szum`, `y > 800` | `high = base + DECK.thick + 140 + szum` w punkcie lotu, czyli nad najgłębszą ławicą, jaką region może mieć (maks. 1720 < 2000); cel nie podskakuje, gdy pod lotem przepływa ławica. `cloudOrigin` porównuje z tym samym wierzchołkiem. Kontroler dostaje `deckBase: (x, z) => number` w zależnościach, jak dziś dostaje `groundAt`; zostaje czystym CPU. |
-| `Opening` | `startY = 730` | `openingStartY(top) = top − 60` w punkcie startu (rozdz. 9). |
+| `Opening` | `startY = 730` | `openingStart(deck)`: 50 m pod podstawą w punkcie startu, wznoszenie tak długie, jak każe głębokość ławicy tam (rozdz. 9). |
 | `tools/vantages.ts` | `deck` na 980 m | `deck` na `top(0, 0) + 180`. |
 
 ## 6. Morze chmur: powierzchnia z bokami
@@ -187,9 +187,16 @@ gromady stawiane w punktach wybranych z pola zamiast losowanych w polu.
 ## 9. Rozstrzygnięte w rozmowie
 
 1. **Otwarcie.** Dziś wznoszenie trwa 9 s (≈130 m) i przebija pas bieli
-   80 m; przy grubości 120–350 m to za mało. Start 60 m pod wierzchołkiem
-   w punkcie startu: film zaczyna się w bieli, jeśli nad startem stoi ławica,
-   a akt wznoszenia jest wynurzeniem ponad chmury. Długość aktów bez zmian.
+   80 m; przy grubości 120–350 m to za mało. Najpierw start 60 m pod
+   wierzchołkiem, ale na seedzie 42 to był środek pełnej ławicy i cały
+   pierwszy akt (wschód słońca) był biały. Właściciel: start pod podstawą.
+   Teraz `openingStart(deck)`: 50 m pod podstawą w punkcie startu,
+   a wznoszenie trwa `(top + 30 − y) · 1,3 / CLIMB`, co najmniej 9 s: od ok.
+   18 s nad cienką ławicą do ok. 41 s nad najgłębszą (seed 42: 39 s, całe
+   otwarcie 57 s). Przyspieszony dzień zwalnia, gdy znika plansza, a nie po
+   wznoszeniu, bo długie wznoszenie przy 3× przewinęłoby ćwierć doby. Nurkowanie
+   na końcu zostaje 6 s: w dół ku ławicy, nie pod nią (pod spód trzeba by
+   kolejnych ~20 s).
 2. **Wzgórza w chmurach.** Podstawa 700 m przy terenie do 851 m oznacza
    szczyty w ławicy. Zostaje: szczyt w chmurze to dobry widok. Podnoszenie
    podstawy nad terenem odrzucone, bo teren nie jest okresowy i nie da się
