@@ -61,6 +61,25 @@ export const DECK_UNDERSIDE = {
   horizon: 0.26,
 } as const;
 
+/**
+ * Where the dome cuts the high layer's field, as the field's value: `cut[0]`
+ * over a clear sky, `cut[1]` at the most cover the weather brings
+ * (`uHighCover`, sky/HighCloud.ts). The field is noise of a few tenths either
+ * side of zero; it was cut at -0.14 by day, which put some cloud over four
+ * fifths of the sky and a solid half of it. `soft` is how far past the cut a
+ * cloud goes solid.
+ */
+export const HIGH_CLOUD_SKY = { cut: [0.46, 0.12] as const, soft: 0.24 };
+
+/** The high layer's cut and whether it is there at all, for the dome and the water's reflection of it. */
+export function highCloudBand(u: SkyUniforms) {
+  return {
+    cut: mix(HIGH_CLOUD_SKY.cut[0], HIGH_CLOUD_SKY.cut[1], u.uHighCover),
+    /** 0 over a clear sky and while the layer is switched off: nothing of it is drawn, not even an edge. */
+    present: smoothstep(0, 0.05, u.uHighCover).mul(u.uShowHigh),
+  };
+}
+
 export function createSkyDome(
   u: SkyUniforms,
   horizon: Horizon,
@@ -68,6 +87,8 @@ export function createSkyDome(
 ) {
   const galaxy = opts.galaxy ?? (() => vec3(0));
   // Shared by the dome and (in M5) the star catalog: clouds occlude all celestial detail once, with the same shape.
+  // Returns the field over its cut (0 is the cloud's outer edge) and how much cloud a direction shows.
+  const high = highCloudBand(u);
   const paintedClouds = Fn(([dir]: [Node<'vec3'>]) => {
     const p0 = dir.xz.div(dir.y.max(0.025).add(0.19)).mul(vec2(2.8, 6));
     // The wind carries the field across the sky; a slow warp boils the shapes
@@ -83,14 +104,13 @@ export function createSkyDome(
       .add(mx_noise_float(p.mul(15)).mul(0.06));
     // The night ceiling opens into clear windows, while the low cloud banks keep their opacity.
     const opening = smoothstep(0.045, 0.22, dir.y).mul(u.uNight).mul(0.35);
-    const mask = smoothstep(
-      u.uNight.mul(0.14).sub(0.14).add(opening),
-      u.uNight.mul(0.08).add(0.34).add(opening),
-      mass,
+    const rel = mass.sub(high.cut).sub(opening);
+    const mask = smoothstep(0, u.uNight.mul(0.06).add(HIGH_CLOUD_SKY.soft), rel)
+      .mul(high.present)
       // Thinning over the lowest fifteen degrees: ending closer in, the layer
       // and the deck under it ruled a line along the horizon.
-    ).mul(smoothstep(0.0, 0.26, dir.y));
-    return vec2(mass, mask);
+      .mul(smoothstep(0.0, 0.26, dir.y));
+    return vec2(rel, mask);
   });
   const celestialVisibility = Fn(([dir]: [Node<'vec3'>]) =>
     u.uNight
@@ -191,7 +211,7 @@ export function createSkyDome(
     col.addAssign(vec3(0.75, 0.8, 0.95).mul(halo).mul(u.uNight).mul(u.uMoonUp).mul(float(1).sub(discM)));
     // painted clouds: their mass and mask come first so stars can hide behind them
     const cloud = paintedClouds(dir),
-      mass = cloud.x,
+      rel = cloud.x,
       mask = cloud.y;
     // stars (and the Milky Way when plugged in), only at night, fading into the horizon haze
     const sparseBand = exp(dot(dir, SPARSE_STAR_AXIS).div(0.15).pow(2).negate());
@@ -206,9 +226,7 @@ export function createSkyDome(
     light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(anti, 1.5)).mul(0.6)));
     light.addAssign(vec3(0.5, 0.55, 0.7).mul(pow(m, 6)).mul(u.uMoonLight).mul(0.35));
     const sunlit = light.mul(mix(1, LOOK.daylight.cloudSun, u.uDaylight));
-    col.assign(
-      mix(col, mix(sunlit, shade, smoothstep(0.02, 0.36, mass)), mask.mul(mix(0.6, 0.94, u.uNight))),
-    );
+    col.assign(mix(col, mix(sunlit, shade, smoothstep(0.16, 0.5, rel)), mask.mul(mix(0.6, 0.94, u.uNight))));
     // The deck from under it. The painted clouds above are a layer of their
     // own and higher; the deck is the one field the sea, its fog, the puffs and
     // the shadows read, so a flyer under it sees the banks and the gaps it will
@@ -236,6 +254,7 @@ export function createSkyDome(
       closing,
     )
       .mul(step(0.0, rise))
+      .mul(u.uShowUnderside)
       // Thinning into the air over the last few degrees above the horizon
       // rather than ending on it: cut at the horizon, the deck was a ruled
       // line with the whole ceiling above it and clear sky below.
@@ -258,7 +277,9 @@ export function createSkyDome(
       .add(pow(s, 90).mul(1.1))
       .mul(float(1).sub(smoothstep(0.5, 1, bank).mul(0.55)));
     col.addAssign(sunCol.mul(behind).mul(bank).mul(DECK_UNDERSIDE.opacity).mul(float(1).sub(u.uWhiteout)));
-    const edge = smoothstep(-0.18, 0.08, mass).mul(float(1).sub(smoothstep(0.08, 0.24, mass)));
+    const edge = smoothstep(-0.04, 0.22, rel)
+      .mul(float(1).sub(smoothstep(0.22, 0.38, rel)))
+      .mul(high.present);
     col.addAssign(
       sunCol
         .mul(edge)

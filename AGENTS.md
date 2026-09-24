@@ -35,7 +35,7 @@ page works under a Pages subdirectory.
   `flight/FlightController.ts`, `flight/Steering.ts`, `flight/ChaseCamera.ts`'s
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
-  `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`,
+  `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`,
   `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`) import neither
   `three/webgpu`, `three/tsl` nor
@@ -295,7 +295,12 @@ page works under a Pages subdirectory.
   fog, the puffs, the shadows and the dome's painting of the deck's underside
   (where the view ray meets the sea's plane) all read it, so from over the
   deck the ground shows through the same gaps the sky shows through from
-  under it. The dome's other painted clouds are a higher layer of their own. It was four
+  under it. The dome's other painted clouds are a higher layer of their own, and
+  how much of it there is is **weather** (`sky/HighCloud.ts`): a slow wander
+  through simulation time from the seed, clear a third of the time or more and
+  never much past a third of the sky, handed to the dome and the water's
+  reflection as `uHighCover`. It was cut near the middle of its noise and covered
+  the whole blue. The deck was four
   fields once, and the sea alone was a sheet over the whole world.
 - **The deck has no one height.** Its base is a second texture on the same
   square (`cover.baseAt`, `deckBaseAt`), 700 to 1200 m by region, and unlike
@@ -507,7 +512,10 @@ page works under a Pages subdirectory.
   for its own reasons (the cloud sea under the deck, the grass over its ceiling,
   the figure in the first person), so `layers.apply()` runs last in the world's
   update and hides what is switched off; switching one back on hands the object
-  to the engine, which is free to hide it again.
+  to the engine, which is free to hide it again. A term inside a shader that
+  draws other things too -- the high layer, the sea's fog over the ground, the
+  deck's underside on the dome -- is switched through a uniform it is multiplied
+  by (`uniformGate`), and nothing but the switch writes that uniform.
 - What a hook costs is measured, never argued about. `measureHeightHooks` times
   the window's own `sampleWindow` against a sampler with no registry at all, and
   each biome's share by leaving that one out -- a marginal cost, which is the

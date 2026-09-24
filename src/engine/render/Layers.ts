@@ -25,6 +25,24 @@ export interface Layers {
   apply(): void;
 }
 
+/**
+ * A switch over a shader term rather than an object -- the high clouds, the
+ * sea's fog, the deck's underside are a few lines of a shader that draws
+ * other things too -- through a uniform the term is multiplied by: 1 on, 0 off.
+ * Nothing but the switch may write the uniform, or `apply` and the engine
+ * would fight over it every frame.
+ */
+export function uniformGate(u: { value: number }): Hideable {
+  return {
+    get visible() {
+      return u.value > 0;
+    },
+    set visible(on: boolean) {
+      u.value = on ? 1 : 0;
+    },
+  };
+}
+
 export function createLayers(groups: Record<string, readonly Hideable[]>): Layers {
   const names = Object.keys(groups);
   const on = new Map<string, boolean>(names.map((name) => [name, true]));

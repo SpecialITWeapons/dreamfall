@@ -600,6 +600,9 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
   // Waiting for the atlas, and stepping once so it reaches the GPU, is what
   // makes the pair below a pair.
   await expect.poll(() => page.evaluate(() => window.__world!.galaxy.baked), { timeout: 120_000 }).toBe(true);
+  // The high layer's cover is weather and may be a clear sky for the whole
+  // minute; pinned, it is there to move, and only the wind moves it.
+  await page.evaluate(() => window.__world!.clouds.pinHigh(0.6));
   await page.evaluate(() => window.__world!.step(0.05));
   const phase = await page.evaluate(() => window.__world!.dayPhase);
   const a = await sky();
