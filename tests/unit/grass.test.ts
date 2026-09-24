@@ -1,7 +1,14 @@
 import { Color, Matrix4, Quaternion, Vector2, Vector3 } from 'three';
 import { uniform } from 'three/tsl';
 import { describe, expect, it } from 'vitest';
-import { defineBiome, swatchColor, type GroundHook, type Library } from '../../library/contract';
+import {
+  defineBiome,
+  swatchColor,
+  type GroundHook,
+  type Library,
+  type SitePlan,
+} from '../../library/contract';
+import { createClaims } from '../../src/engine/scenery/Claims';
 import type { GroundShade } from '../../src/engine/scenery/GroundShade';
 import {
   CARDS,
@@ -171,7 +178,12 @@ const flat = (height = 100, onRead: () => void = () => {}): Heightfield =>
     },
   }) as unknown as Heightfield;
 
-const grassOver = (density: number, heightfield = flat(), library = meadow(density)) =>
+const grassOver = (
+  density: number,
+  heightfield = flat(),
+  library = meadow(density),
+  claims?: ReturnType<typeof createClaims>,
+) =>
   createGrass({
     seed: 42,
     library,
@@ -179,6 +191,22 @@ const grassOver = (density: number, heightfield = flat(), library = meadow(densi
     materials: { grass: () => ({ dispose() {} }) } as unknown as SceneryMaterials,
     shade: { aoNode: (node: unknown) => node } as unknown as GroundShade,
     uniforms: { uWorldOrigin: uniform(new Vector2(0, 0)) } as unknown as SkyUniforms,
+    claims,
+  });
+
+/** Every tuft's matrix, form by form, in an order the window cannot move. */
+const tufts = (grass: ReturnType<typeof createGrass>) =>
+  grass.mesh.children.map((child) => {
+    const mesh = child as unknown as { count: number; getMatrixAt(i: number, m: Matrix4): void };
+    const matrix = new Matrix4();
+    const out: string[] = [];
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix);
+      out.push(matrix.elements.map((e) => e.toFixed(4)).join(','));
+    }
+    // The compaction moves the last live tuft into the hole a departing
+    // tile leaves, so a form's order is not the order it was written in.
+    return out.sort();
   });
 
 /** The instanced meshes behind the group, one to a form. */
@@ -245,6 +273,60 @@ describe('createGrass', () => {
     village.dispose();
   });
 
+  it('keeps off a road, and a plan that arrives late rewrites only the tiles under it', () => {
+    const road: SitePlan = {
+      id: 'village:0,0',
+      x: 0,
+      z: 0,
+      radius: 200,
+      roads: [
+        {
+          points: [
+            [-200, 10],
+            [200, 10],
+          ],
+          width: 8,
+        },
+      ],
+      lines: [],
+      lots: [],
+      reservations: [],
+    };
+    const shapes = { building: () => null };
+    const origin = createOrigin();
+    // The plan was there when the window was written.
+    const early = createClaims();
+    early.add(road, shapes);
+    const first = grassOver(0.2, flat(), meadow(0.2), early);
+    first.update(0, 0, 120, origin, false);
+    // The plan arrived after: the window was written, then the queue built it.
+    const late = createClaims();
+    const second = grassOver(0.2, flat(), meadow(0.2), late);
+    second.update(0, 0, 120, origin, false);
+    const before = second.count;
+    late.add(road, shapes);
+    second.update(0, 0, 120, origin, false);
+    // the same meadow either way, and nothing on the road in it
+    expect(second.count).toBe(first.count);
+    expect(tufts(second)).toEqual(tufts(first));
+    expect(second.count).toBeLessThan(before);
+    // and the arrival paid for the tiles under the road, not for the window
+    expect(second.written).toBeGreaterThan(0);
+    expect(second.written).toBeLessThan(second.count / 4);
+    const m = new Matrix4();
+    for (const child of second.mesh.children) {
+      const mesh = child as unknown as { count: number; getMatrixAt(i: number, m: Matrix4): void };
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        const x = m.elements[12]!,
+          z = m.elements[14]!;
+        if (Math.abs(x) < 200) expect(Math.abs(z - 10)).toBeGreaterThan(4.5 - 1e-6);
+      }
+    }
+    first.dispose();
+    second.dispose();
+  });
+
   it('holds the same meadow whether it was flown to or jumped to', () => {
     // The whole of what makes an incremental window correct: a tile's tufts are
     // a function of the tile and of nothing else, so a tile that is already
@@ -252,20 +334,6 @@ describe('createGrass', () => {
     // flyer happened to be -- the count of attempts, say, or the order they
     // were written in -- then approaching a meadow would change it, which is
     // the fault this window was widened to cure rather than one to add.
-    const tufts = (grass: ReturnType<typeof createGrass>) =>
-      grass.mesh.children.map((child) => {
-        const mesh = child as unknown as { count: number; getMatrixAt(i: number, m: Matrix4): void };
-        const matrix = new Matrix4();
-        const out: string[] = [];
-        for (let i = 0; i < mesh.count; i++) {
-          mesh.getMatrixAt(i, matrix);
-          out.push(matrix.elements.map((e) => e.toFixed(4)).join(','));
-        }
-        // The compaction moves the last live tuft into the hole a departing
-        // tile leaves, so a form's order is not the order it was written in.
-        return out.sort();
-      });
-
     const origin = createOrigin();
     const flown = grassOver(0.2);
     // 64 m a step, which is `STEP`: every one of these writes the rim.

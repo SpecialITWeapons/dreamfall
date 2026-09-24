@@ -14,6 +14,7 @@ import type { Origin } from '../sim/Origin';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from '../terrain/Heightfield';
 import type { WorldSampler } from '../terrain/WorldSampler';
+import { createClaims } from './Claims';
 import { createGrass } from './Grass';
 import type { GroundShade } from './GroundShade';
 import type { Obstacles } from './Obstacles';
@@ -94,7 +95,18 @@ export function createScenery(deps: {
     textures,
   });
   const pools = createPools({ library, textures, materials, uniforms: deps.uniforms, origin, heightfield });
-  const grass = createGrass({ seed, library, heightfield, materials, shade, uniforms: deps.uniforms });
+  // The ground the plans speak for: the ring fills it at every rebuild, and the
+  // grass, updated after the ring in the same frame, reads the same one.
+  const claims = createClaims();
+  const grass = createGrass({
+    seed,
+    library,
+    heightfield,
+    materials,
+    shade,
+    uniforms: deps.uniforms,
+    claims,
+  });
   const bakeMs = Math.round(performance.now() - bakeStarted);
   for (const mesh of pools.meshes) scene.add(mesh);
   scene.add(pools.roads);
@@ -149,6 +161,7 @@ export function createScenery(deps: {
     metrics: pools.metrics,
     propKit: pools.propKit,
     sites,
+    claims,
     sink,
   });
 

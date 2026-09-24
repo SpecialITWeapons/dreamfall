@@ -34,6 +34,7 @@ import { countryOf, standingOf } from '../terrain/Country';
 import type { Heightfield } from '../terrain/Heightfield';
 import { hash2, mulberry32 } from '../terrain/noise';
 import { CELL, SLOTS } from '../terrain/WorldSampler';
+import type { Claims } from './Claims';
 import type { GroundShade } from './GroundShade';
 import type { SceneryMaterials } from './Painted';
 
@@ -244,10 +245,16 @@ export interface GrassDeps {
   materials: SceneryMaterials;
   shade: GroundShade;
   uniforms: SkyUniforms;
+  /**
+   * The ground the plans speak for. A tuft keeps off a road and off a house,
+   * and a tile is the same set of tufts whether its plan was built before the
+   * tile was written or after -- the late one is written again.
+   */
+  claims?: Claims;
 }
 
 export function createGrass(deps: GrassDeps): Grass {
-  const { seed, library, heightfield, materials, shade, uniforms } = deps;
+  const { seed, library, heightfield, materials, shade, uniforms, claims } = deps;
   const salt = (seed ^ GRASS_SALT) >>> 0;
 
   // The shade under the trees is anchored in the world, so it is read at the
@@ -333,6 +340,31 @@ export function createGrass(deps: GrassDeps): Grass {
    */
   const keyOf = (tx: number, tz: number) => tx * 8388608 + tz;
 
+  /** Plans the window has written its tiles around, and tiles a new plan has made stale. */
+  const accounted = new Set<string>();
+  const stale = new Set<number>();
+  /**
+   * A tile is a function of its own coordinates and of the plans built over
+   * it, and plans are built in a queue: one that arrives after its tiles were
+   * written has them written again, once, and only those. A plan that leaves
+   * the index is forgotten, so coming back to it checks it again.
+   */
+  const account = () => {
+    if (!claims) return;
+    const plans = claims.plans;
+    for (const plan of plans) {
+      if (accounted.has(plan.id)) continue;
+      accounted.add(plan.id);
+      for (let tz = Math.floor(plan.z0 / TILE); tz <= Math.floor(plan.z1 / TILE); tz++)
+        for (let tx = Math.floor(plan.x0 / TILE); tx <= Math.floor(plan.x1 / TILE); tx++) {
+          const key = keyOf(tx, tz);
+          if (live.has(key)) stale.add(key);
+        }
+    }
+    if (accounted.size > plans.length)
+      for (const id of accounted) if (!plans.some((plan) => plan.id === id)) accounted.delete(id);
+  };
+
   const rebuild = (x: number, z: number, origin: Origin, whole: boolean) => {
     const started = performance.now();
     const cx = Math.floor(x / TILE),
@@ -340,6 +372,7 @@ export function createGrass(deps: GrassDeps): Grass {
     if (whole) {
       standing.fill(0);
       live.clear();
+      stale.clear();
     }
     // What the window should hold from here.
     wanted.clear();
@@ -360,7 +393,7 @@ export function createGrass(deps: GrassDeps): Grass {
         col = mesh.instanceColor!.array as Float32Array;
       let n = standing[f]!;
       for (let i = 0; i < n;) {
-        if (wanted.has(mine[i]!)) {
+        if (wanted.has(mine[i]!) && !stale.has(mine[i]!)) {
           i++;
           continue;
         }
@@ -373,6 +406,10 @@ export function createGrass(deps: GrassDeps): Grass {
       }
       standing[f] = n;
     }
+    // A stale tile's tufts are gone above; forget it was held, so it is
+    // written again below like any arrival.
+    for (const key of stale) live.delete(key);
+    stale.clear();
     let placed = standing.reduce((sum, n) => sum + n, 0);
     written = 0;
     for (let tz = cz - SPAN; tz <= cz + SPAN; tz++)
@@ -426,6 +463,10 @@ export function createGrass(deps: GrassDeps): Grass {
           // not answer differently for being asked later, and most attempts
           // die here.
           if (!keep) continue;
+          // Off the road and out of the house. Every attempt still drew its six
+          // numbers above, so the tufts that stand are the same ones whether
+          // the plan was there or not.
+          if (claims?.grass(px, pz)) continue;
           const h = heightfield.heightAt(px, pz);
           if (h < MIN_GROUND || h > MAX_GROUND || heightfield.slopeAt(px, pz) > MAX_SLOPE) continue;
           const squash = 1 - TUFT_SQUASH + (pick % 1) * TUFT_SQUASH * 2;
@@ -480,6 +521,7 @@ export function createGrass(deps: GrassDeps): Grass {
       // An origin jump under a hidden window invalidates its matrices just the
       // same, so it is remembered until there is something to rebuild.
       if (forced) jumped = true;
+      account();
       const visible = cameraY - heightfield.heightAt(x, z) < CEILING;
       group.visible = visible;
       // From any normal altitude the whole window costs that one height read:
@@ -487,7 +529,7 @@ export function createGrass(deps: GrassDeps): Grass {
       if (!visible) return;
       const ix = Math.floor(x / STEP),
         iz = Math.floor(z / STEP);
-      if (!jumped && ix === atX && iz === atZ) return;
+      if (!jumped && stale.size === 0 && ix === atX && iz === atZ) return;
       // An origin jump is the one thing a kept tile cannot survive: its
       // matrices are the scene's coordinates, and the scene has moved under it.
       const whole = jumped;
