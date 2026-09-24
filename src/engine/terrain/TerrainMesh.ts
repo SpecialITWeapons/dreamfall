@@ -54,6 +54,17 @@ import { BASE_TEMP_RANGE, CELL } from './WorldSampler';
 export const TERRAIN_CELLS = 528;
 /** A biome under this share of a fragment does not run its hook at all (spec 6.3). */
 const BRANCH_FLOOR = 0.01;
+/**
+ * Below this a fragment has no country in it at all. It is not a hundredth of
+ * anything: in the middle of a village the settlement holds 0.99995 of a texel
+ * and the country beside it the rest -- 4e-5 and 9e-7 at seed 42's first
+ * village -- and those two are still the whole country, renormalised. A floor
+ * of 1e-4 painted the middle of that village as the registry's first biome and
+ * its edge as the country, with a hard step between them where the sum crossed
+ * it, while the ring sowed the country's pines over both. The window holds its
+ * weights as 32-bit floats, which keep 1e-30 exactly.
+ */
+const COUNTRY_FLOOR = 1e-30;
 export const WATER_CELLS = 132;
 export const WATER_CELL = CELL * 4;
 
@@ -253,7 +264,7 @@ export function createTerrain(deps: {
         .toVar();
       // Nobody here is a country: the first biome takes it, the sampler's own
       // rule for ground no presence claims.
-      const unclaimed = float(1).sub(step(0.0001, country));
+      const unclaimed = float(1).sub(step(COUNTRY_FLOOR, country));
       const total = float(0).toVar();
       biomes.forEach((_biome, k) => {
         const hook = hooks[k];
@@ -263,7 +274,7 @@ export function createTerrain(deps: {
         const mask = share
           .map((w, slot) => w.mul(step(id[slot]!.sub(k).abs(), 0.5)))
           .reduce((a, b) => a.add(b))
-          .div(country.max(0.0001))
+          .div(country.max(COUNTRY_FLOOR))
           .toVar();
         if (k === 0) mask.addAssign(unclaimed);
         If(mask.greaterThan(BRANCH_FLOOR), () => {
