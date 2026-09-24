@@ -7,6 +7,7 @@
 // figure and the camera get their poses converted through it.
 import { Color, PerspectiveCamera, Scene, Vector3 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { positionWorld } from 'three/tsl';
 import { swatchColor, validateLibrary, type Biome, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
@@ -28,6 +29,7 @@ import { createSimulation, type ResumeState, type Simulation } from './sim/Simul
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
 import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
 import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
+import { CLOUD_SHADOW, createCloudShadow } from './sky/CloudShadow';
 import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
@@ -37,6 +39,7 @@ import { createSkyUniforms } from './sky/SkyUniforms';
 import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
+import { sstep } from './terrain/noise';
 import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
@@ -210,7 +213,13 @@ export function createWorld(opts: WorldOptions): World {
   scene.backgroundNode = uniforms.uHorizon;
   installFog(scene, uniforms, horizon);
   const lights = createLights(scene, look);
-  const litMaterial = createLitMaterial(createSoftShadow(lights.shadowMatrix));
+  // The banks overhead dim the sun on everything it lights -- the ground, the
+  // trees, the houses, the grass -- and leave the sky's light alone.
+  const sunThroughClouds = createCloudShadow(
+    uniforms,
+    CLOUD_SHADOW.sun,
+  )(positionWorld.xz.add(uniforms.uWorldOrigin));
+  const litMaterial = createLitMaterial(createSoftShadow(lights.shadowMatrix, sunThroughClouds));
   const atmosphere = createAtmosphere({ clock, uniforms, lights });
   const palette = createTerrainPalette(look);
   // The shade under the trees is built before the terrain, because the ground
@@ -305,6 +314,7 @@ export function createWorld(opts: WorldOptions): World {
   };
 
   const follow = new Vector3();
+  const facing = new Vector3();
   const pose: FlightPose = {
     x: 0,
     y: 0,
@@ -410,6 +420,8 @@ export function createWorld(opts: WorldOptions): World {
         deck,
       ),
       clouds.inside,
+      camera.getWorldDirection(facing),
+      dt,
     );
     // The biome's own air, over the palette's. It goes on after the atmosphere
     // because the atmosphere copies the palette every frame, so this is a tint
@@ -426,6 +438,12 @@ export function createWorld(opts: WorldOptions): World {
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
     }
     post.setExposure(atmosphere.exposure);
+    // Shafts while the sun is up and the air is clear: inside a cloud there is no sun to see.
+    post.setSun(
+      atmosphere.sunDir,
+      uniforms.uSunColor.value,
+      sstep(-0.02, 0.08, atmosphere.sunDir.y) * (1 - uniforms.uWhiteout.value),
+    );
     // Over the lowest top the sea can have, not over the one under the camera:
     // a lower region's banks are seen from over them while this one's are
     // still overhead, and the sea hides whatever of itself is above the eye.

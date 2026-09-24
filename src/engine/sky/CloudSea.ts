@@ -42,6 +42,7 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
+import { LOOK } from '../render/ColorGrade';
 import { DECK } from './CloudCover';
 import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
@@ -175,6 +176,7 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
     const light = mix(u.uCloudWhite, sunCol, u.uLowSun.mul(0.7).add(pow(s, 4).mul(0.3))).toVar();
     light.assign(mix(light, u.uGlow, u.uLowSun.mul(pow(align, 1.5)).mul(0.65)));
     light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(anti, 1.5)).mul(0.45)));
+    light.mulAssign(mix(1, LOOK.daylight.cloudSun, u.uDaylight));
     const tops = mix(shade, light, lit.mul(float(1).sub(hollow.mul(0.55))));
     return tops.add(sunCol.mul(rim).mul(0.35)).add(vec3(0.42, 0.5, 0.72).mul(moonlit).mul(0.1));
   })();

@@ -50,6 +50,8 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uNight: uniform(0),
     /** The sun sits on the horizon. */
     uLowSun: uniform(0),
+    /** The sun stands well clear of the horizon: a clear day's light, 0..1. */
+    uDaylight: uniform(0),
     /** The sun-side horizon band. */
     uGlow: uniform(new Color(0)),
     uGlowI: uniform(0),

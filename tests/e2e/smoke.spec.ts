@@ -743,8 +743,14 @@ test('the registry reaches the page and two climates paint different ground', as
   const apart = (x: typeof shotA, y: typeof shotA) =>
     x && y ? x.colour.reduce((s, v, i) => s + Math.abs(v - y.colour[i]!), 0) / x.colour.length : NaN;
   // The pixels come back 0..1, so these are small numbers on purpose. Measured
-  // at seed 42: steppe reads (0.29, 0.31, 0.11) and wildsong (0.17, 0.28, 0.08).
-  expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
+  // at seed 42 under the morning sun: steppe reads (0.42, 0.37, 0.12), and the
+  // two climates are 0.165 apart.
+  // Two visits are not bit-identical: the grass tufts and the sky differ between
+  // them (the ground and the trees do not), and that reads 0.0014 under the old
+  // flat light and 0.0019 to 0.0022 under a clear day's sun, whose shadows and
+  // translucent blades make the same tufts differ by more. 0.003 is still well
+  // under anything a person would see, and a fiftieth of what two climates are apart.
+  expect(apart(shotA, shotAgain)).toBeLessThan(0.003);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
   // and the place itself is the same place twice: the same forest, the same
   // meadow, the flight pinned where it was put

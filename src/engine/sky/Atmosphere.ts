@@ -18,6 +18,7 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     moonDir = new Vector3();
   let night = 0,
     above = 0,
+    glare = 0,
     exposure = LOOK.exposure;
   return {
     sunDir,
@@ -32,11 +33,17 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     get exposure() {
       return exposure;
     },
+    /** How far the eye has stopped down against the sun, 0..1. */
+    get glare() {
+      return glare;
+    },
     /**
      * `deck` is where the deck stands over the camera (`deckAt`); `cluster` is
-     * how far the camera is inside one of the near clouds (`Clouds.inside`).
+     * how far the camera is inside one of the near clouds (`Clouds.inside`);
+     * `look` is the way the camera faces, and the eye follows it over `dt`
+     * seconds (`dt <= 0` is there now).
      */
-    update(cameraY: number, follow: Vector3, deck: DeckAt, cluster = 0) {
+    update(cameraY: number, follow: Vector3, deck: DeckAt, cluster = 0, look?: Vector3, dt = 0) {
       const pal = clock.palette;
       clock.skyBodies(clock.phase, sunDir, moonDir);
       const sy = sunDir.y;
@@ -50,6 +57,7 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       u.uMoonUp.value = moonAbove;
       u.uMoonLight.value = moonLight;
       u.uLowSun.value = Math.exp(-((sy / 0.14) ** 2));
+      u.uDaylight.value = sstep(0.06, 0.3, sy);
       u.uGlowI.value = sstep(-0.22, -0.04, sy) * (1 - sstep(0.12, 0.32, sy));
       u.uVenusI.value = Math.exp(-(((sy + 0.03) / 0.09) ** 2));
       u.uZenith.value.copy(pal.zenith);
@@ -69,7 +77,16 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       const rel = cameraY - deck.top;
       above = sstep(-90, 30, rel);
       u.uAbove.value = above;
-      exposure = LOOK.exposure * (1 - 0.25 * night) * (1 - 0.12 * above);
+      // Looking into a high sun the eye stops down, so the land goes a little
+      // darker under the glare; it opens again as slowly as an eye does.
+      const into = look ? sstep(0.5, 0.95, look.dot(sunDir)) * u.uDaylight.value : 0;
+      glare = dt > 0 ? glare + (into - glare) * Math.min(1, dt * LOOK.daylight.glare.rate) : into;
+      exposure =
+        LOOK.exposure *
+        (1 + (LOOK.daylight.exposure - 1) * u.uDaylight.value) *
+        (1 - 0.25 * night) *
+        (1 - 0.12 * above) *
+        (1 - LOOK.daylight.glare.stop * glare);
       u.uFogDensity.value = u.fogDensity * (1 - 0.28 * sstep(0.1, 0.65, sy)) * (1 + 0.35 * night);
       // The clusters are seen from well under the deck, because their flat
       // bases are what a cumulus is known by from below; further down the

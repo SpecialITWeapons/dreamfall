@@ -34,11 +34,44 @@ export const LOOK = {
   bloom: { strength: 0.34, radius: 0.68, threshold: 1.02 },
   materialGray: 0,
   materialPow: 0.84,
+  /**
+   * The illustrated response (`SoftIllustratedLighting`): what a face turned
+   * from the light still gets, and how much of the response is bands rather
+   * than the plain cosine. At 0.18 and 0.65 every slope that saw the sun at
+   * all got the same light, so the land had no relief in it at noon.
+   */
+  bands: { floor: 0.08, share: 0.4 },
   sunI: 1.12,
   hemiI: 1.08,
   fog: 0.82,
   moonI: 1.05,
-  shadowI: 1.08,
+  /** How much of the direct light a cast shadow takes away, sun and moon. */
+  shadow: { sun: 0.82, moon: 0.43 },
+  /**
+   * What a clear day is made of: the sun several times the sky, warm light
+   * and blue shade. Weighed by the day, so dawn and dusk keep their keys. The
+   * sky's light was two thirds of the sun's, which lit the world like an
+   * overcast morning however high the sun stood.
+   */
+  daylight: {
+    sunI: 1.3,
+    hemiI: 0.7,
+    sun: { hueTarget: 0.11, huePull: 0.25, light: -0.03 },
+    /** Sunlit cloud over paper white, so it is the brightest thing in the sky and the bloom finds it. */
+    cloudSun: 1.45,
+    /** Light scattered forward around the sun in the air: a broad lobe and a tight one. */
+    scatter: { broad: 0.2, tight: 0.32 },
+    /**
+     * Exposure by day, times the grade's: the stronger sun would otherwise
+     * push the lit ground into the shoulder of the tone curve, where colour
+     * goes to white and the land looks bleached rather than sunny.
+     */
+    exposure: 0.88,
+    /** The sun's disc by day, times its dawn brightness: far over the bloom's threshold. */
+    disc: 6,
+    /** How far the eye stops down looking straight into a high sun, and how fast, 1/s. */
+    glare: { stop: 0.16, rate: 2.5 },
+  },
   post: {
     sat: 1.18,
     contrast: 1.14,
@@ -82,7 +115,7 @@ export function adjustColor(
   return color;
 }
 
-function dayWeight(t: number): number {
+export function dayWeight(t: number): number {
   if (t <= 0.22 || t >= 0.8) return 0;
   if (t >= 0.34 && t <= 0.66) return 1;
   if (t < 0.34) return (t - 0.22) / 0.12;
@@ -129,8 +162,9 @@ export function applyLook(look: Look): Look {
       for (const field of ['zenith', 'upper', 'hemiSky'] as const)
         adjustColor(key[field], sky.nightBlue, night);
     }
-    key.sunI *= LOOK.sunI;
-    key.hemiI *= LOOK.hemiI;
+    if (day) adjustColor(key.sun, LOOK.daylight.sun, day);
+    key.sunI *= LOOK.sunI * (1 + (LOOK.daylight.sunI - 1) * day);
+    key.hemiI *= LOOK.hemiI * (1 + (LOOK.daylight.hemiI - 1) * day);
   }
   return look;
 }

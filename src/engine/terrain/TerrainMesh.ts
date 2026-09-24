@@ -45,7 +45,6 @@ import { SNOW_LINE, resolveGround } from '../../../library/standard/index.js';
 import type { Look } from '../render/ColorGrade';
 import type { LitMaterial } from '../render/SoftLighting';
 import type { GroundShade } from '../scenery/GroundShade';
-import { createCloudShadow } from '../sky/CloudShadow';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
 import { BASE_TEMP_RANGE, CELL } from './WorldSampler';
@@ -323,13 +322,9 @@ export function createTerrain(deps: {
     .mul(0.04)
     .add(mx_noise_float(worldXZ.mul(0.13)).mul(0.015))
     .add(1);
-  const cloudShadow = createCloudShadow(u);
   // Shore masks use the actual fragment height, never interpolated corner colors.
-  const material = litMaterial(
-    mix(palette.sand, colorNode, smoothstep(1.5, 7.5, h))
-      .mul(brush)
-      .mul(cloudShadow(worldXZ)),
-  );
+  // The clouds' shadow is the lit material's: it dims the sun, not the ground's colour.
+  const material = litMaterial(mix(palette.sand, colorNode, smoothstep(1.5, 7.5, h)).mul(brush));
   // The shade under the trees reads the same worldXZ as the ground hooks, so
   // its sheet stays where the trees are when the origin jumps under the scene.
   if (deps.shade) material.aoNode = deps.shade.aoNode(worldXZ);

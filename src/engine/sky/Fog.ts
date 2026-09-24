@@ -20,6 +20,7 @@ import {
   pow,
   smoothstep,
 } from 'three/tsl';
+import { LOOK } from '../render/ColorGrade';
 import { DECK } from './CloudCover';
 
 /**
@@ -48,7 +49,16 @@ export function createHorizon(u: SkyUniforms) {
       mix(u.uHorizonWarm, u.uGlow, u.uLowSun.mul(0.7)),
       align,
     );
-    return mix(mix(base, haze, u.uAbove), u.uCloudWhite, u.uWhiteout);
+    // Light scattered forward in the air: toward the sun the haze is brighter
+    // and warmer, at noon as at dusk. Only the low sun had any of it, so by day
+    // the air was one colour on every side and the sun was nowhere in it.
+    const s = max(dot(dir, u.uSunDir), 0);
+    const scatter = pow(s, 6)
+      .mul(LOOK.daylight.scatter.broad)
+      .add(pow(s, 28).mul(LOOK.daylight.scatter.tight))
+      .mul(smoothstep(-0.02, 0.1, u.uSunDir.y));
+    const sunCol = mix(u.uSunColor, u.uGlow, u.uLowSun.mul(0.6));
+    return mix(mix(base, haze, u.uAbove).add(sunCol.mul(scatter)), u.uCloudWhite, u.uWhiteout);
   });
   return { azimuthAlign, horizonTint };
 }

@@ -32,8 +32,17 @@ describe('applyLook', () => {
     expect(l.sat).toBe(LOOK.sat);
     expect(l.fogDensity).toBeCloseTo(0.00018 * LOOK.fog, 12);
     expect(l.moon.intensity).toBeCloseTo(0.7 * LOOK.moonI, 12);
-    expect(l.keys[1]!.sunI).toBeCloseTo(3 * LOOK.sunI, 12);
-    expect(l.keys[1]!.hemiI).toBeCloseTo(1.8 * LOOK.hemiI, 12);
+    expect(l.keys[0]!.sunI).toBeCloseTo(3 * LOOK.sunI, 12);
+    expect(l.keys[0]!.hemiI).toBeCloseTo(1.8 * LOOK.hemiI, 12);
+  });
+  it('gives a clear day a sun several times its sky, and leaves the night its own balance', () => {
+    const l = applyLook(look());
+    const noon = l.keys[1]!,
+      night = l.keys[0]!;
+    expect(noon.sunI).toBeCloseTo(3 * LOOK.sunI * LOOK.daylight.sunI, 12);
+    expect(noon.hemiI).toBeCloseTo(1.8 * LOOK.hemiI * LOOK.daylight.hemiI, 12);
+    expect(noon.sunI / noon.hemiI).toBeGreaterThan(3);
+    expect(night.sunI / night.hemiI).toBeCloseTo((3 * LOOK.sunI) / (1.8 * LOOK.hemiI), 12);
   });
   it('pulls the daytime blue toward the target hue and leaves the night hue alone', () => {
     const before = look();

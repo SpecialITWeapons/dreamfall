@@ -35,6 +35,7 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
+import { LOOK } from '../render/ColorGrade';
 import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
@@ -148,12 +149,20 @@ export function createSkyDome(
       .mul(smoothstep(-0.05, 0.01, y))
       .mul(u.uVenusI);
     col.assign(mix(col, col.mul(vec3(0.78, 0.84, 1.0)), earthShadow.mul(0.5)));
-    // the sun: a disc, a tight glow, and a broad warm halo when it sits low
+    // the sun: a disc, a tight glow, a bright aureole by day and a broad warm
+    // halo when it sits low
     const ang = acos(clamp(s, 0.0, 1.0));
     const disc = smoothstep(0.03, 0.024, ang);
     const sunCol = mix(u.uSunColor, u.uGlow, u.uLowSun.mul(0.6));
-    const glow = pow(s, 30).mul(0.12).add(pow(s, 500).mul(0.6)).add(pow(s, 4).mul(u.uLowSun).mul(0.35));
-    col.addAssign(sunCol.mul(glow.add(disc.mul(mix(1.2, 0.8, u.uLowSun)))).mul(smoothstep(-0.02, 0.0, y)));
+    const glow = pow(s, 30)
+      .mul(0.12)
+      .add(pow(s, 500).mul(mix(0.6, 1.4, u.uDaylight)))
+      .add(pow(s, 4).mul(u.uLowSun).mul(0.35))
+      .add(pow(s, 12).mul(u.uDaylight).mul(0.16));
+    // By day the disc is far over white, so the bloom spreads it into a glare
+    // rather than leaving a pale coin on the blue.
+    const discI = mix(1.2, 0.8, u.uLowSun).mul(mix(1, LOOK.daylight.disc, u.uDaylight));
+    col.addAssign(sunCol.mul(glow.add(disc.mul(discI))).mul(smoothstep(-0.02, 0.0, y)));
     // the moon: a lit gibbous face with maria and limb darkening, a soft halo
     const m = max(dot(dir, u.uMoonDir), 0.0);
     const moonRight = normalize(cross(u.uMoonDir, vec3(0, 1, 0)));
@@ -196,7 +205,10 @@ export function createSkyDome(
     light.assign(mix(light, u.uGlow, u.uLowSun.mul(pow(align, 1.5)).mul(0.7)));
     light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(anti, 1.5)).mul(0.6)));
     light.addAssign(vec3(0.5, 0.55, 0.7).mul(pow(m, 6)).mul(u.uMoonLight).mul(0.35));
-    col.assign(mix(col, mix(light, shade, smoothstep(0.02, 0.36, mass)), mask.mul(mix(0.6, 0.94, u.uNight))));
+    const sunlit = light.mul(mix(1, LOOK.daylight.cloudSun, u.uDaylight));
+    col.assign(
+      mix(col, mix(sunlit, shade, smoothstep(0.02, 0.36, mass)), mask.mul(mix(0.6, 0.94, u.uNight))),
+    );
     // The deck from under it. The painted clouds above are a layer of their
     // own and higher; the deck is the one field the sea, its fog, the puffs and
     // the shadows read, so a flyer under it sees the banks and the gaps it will
@@ -239,6 +251,13 @@ export function createSkyDome(
         bank.mul(DECK_UNDERSIDE.opacity),
       ),
     );
+    // The sun behind a bank still shows: a bright place in the cloud, strongest
+    // where it thins, so an overcast sky has a sun in it and not a grey lid.
+    const behind = pow(s, 8)
+      .mul(0.3)
+      .add(pow(s, 90).mul(1.1))
+      .mul(float(1).sub(smoothstep(0.5, 1, bank).mul(0.55)));
+    col.addAssign(sunCol.mul(behind).mul(bank).mul(DECK_UNDERSIDE.opacity).mul(float(1).sub(u.uWhiteout)));
     const edge = smoothstep(-0.18, 0.08, mass).mul(float(1).sub(smoothstep(0.08, 0.24, mass)));
     col.addAssign(
       sunCol
