@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DECK, createCloudCover, deckTop } from '../../src/engine/sky/CloudCover';
 import {
   CLUSTER,
+  CLOUD_FORM,
   CLUSTER_SPRITES,
+  cloudForm,
   clusterShapes,
   createClouds,
   createClusterLayout,
   layoutClusters,
+  setCloudForm,
 } from '../../src/engine/sky/Clouds';
 import { createSkyUniforms } from '../../src/engine/sky/SkyUniforms';
 import { createDayClock } from '../../src/engine/time/DayClock';
@@ -96,11 +99,11 @@ describe('layoutClusters', () => {
 });
 
 describe('createClouds', () => {
-  it('binds four vertex buffers, well under the eight a WebGPU pipeline allows', () => {
+  it('binds five vertex buffers, under the eight a WebGPU pipeline allows', () => {
     const clouds = createClouds(42, createSkyUniforms(createDayClock().look, cover), cover);
     const g = clouds.mesh.geometry;
-    // the quad's position, the sprite and its shape, and the instance matrix
-    expect(Object.keys(g.attributes).sort()).toEqual(['position', 'shape', 'sprite']);
+    // the quad's position, the sprite, its shape and its floor, and the instance matrix
+    expect(Object.keys(g.attributes).sort()).toEqual(['floor', 'position', 'shape', 'sprite']);
     expect(Object.keys(g.attributes).length + 1).toBeLessThanOrEqual(8);
     expect(clouds.mesh.count).toBe(0);
     expect(clouds.mesh.instanceMatrix.count).toBe(CLUSTER_SPRITES);
@@ -115,6 +118,76 @@ describe('createClouds', () => {
     clouds.update(0, 0, 30, camera, world, 0, 0, wind);
     expect(clouds.drawn).toBeGreaterThan(0);
     expect(clouds.mesh.count).toBe(clouds.drawn);
+    clouds.dispose();
+  });
+});
+
+describe('the cloud form', () => {
+  it('starts inside its ranges and clamps whatever it is asked for into them', () => {
+    const form = cloudForm();
+    for (const [key, [min, max, start]] of Object.entries(CLOUD_FORM)) {
+      expect(start).toBeGreaterThanOrEqual(min);
+      expect(start).toBeLessThanOrEqual(max);
+      expect(form[key as keyof typeof form]).toBe(start);
+    }
+    setCloudForm(form, { stretch: 99, rag: -1, puff: Number.NaN, height: 1.2 });
+    expect(form.stretch).toBe(CLOUD_FORM.stretch[1]);
+    expect(form.rag).toBe(CLOUD_FORM.rag[0]);
+    expect(form.puff).toBe(CLOUD_FORM.puff[2]);
+    expect(form.height).toBe(1.2);
+  });
+
+  it('draws a cluster out along the wind, keeping its footprint', () => {
+    // One cluster, a solid bank everywhere, the camera right under it: all its
+    // sprites are drawn, and their spread along the wind against across it says
+    // whether it is round or long.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    const [one] = clusterShapes(42);
+    const spread = (stretch: number) => {
+      const out = createClusterLayout();
+      const f = { ...frame({ x: one!.x, y: 0, z: one!.z }), wind: { x: 0, z: 12 } };
+      layoutClusters([one!], solid, out, f, { ...cloudForm(), stretch });
+      expect(out.count).toBe(CLUSTER.sprites);
+      let mx = 0,
+        mz = 0;
+      for (let k = 0; k < out.count; k++) {
+        mx += out.sprite[k * 4]! / out.count;
+        mz += out.sprite[k * 4 + 2]! / out.count;
+      }
+      let along = 0,
+        across = 0;
+      for (let k = 0; k < out.count; k++) {
+        along += (out.sprite[k * 4 + 2]! - mz) ** 2;
+        across += (out.sprite[k * 4]! - mx) ** 2;
+      }
+      return { ratio: along / across, area: Math.sqrt(along * across) };
+    };
+    const round = spread(1),
+      long = spread(3);
+    // the wind blows along z, and a cluster turns off it by no more than a fifth of a right angle
+    expect(long.ratio).toBeGreaterThan(round.ratio * 3);
+    // longer along, narrower across: the footprint is the same size
+    expect(Math.abs(long.area / round.area - 1)).toBeLessThan(0.02);
+  });
+
+  it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {
+    const out = createClusterLayout();
+    layoutClusters(clusterShapes(42), cover, out, frame({ x: 0, y: 0, z: 0 }));
+    expect(out.count).toBeGreaterThan(0);
+    for (let i = 0; i < out.count; i++) {
+      const floor = out.floor[i]!;
+      expect(floor).toBeGreaterThanOrEqual(DECK.base[0]);
+      expect(floor).toBeLessThanOrEqual(DECK.base[1]);
+      // the sprite's centre stands over its floor, so the cut takes only its bottom
+      expect(out.sprite[i * 4 + 1]!).toBeGreaterThan(floor);
+    }
+  });
+
+  it('is changed on a running world through the clouds themselves', () => {
+    const clouds = createClouds(42, createSkyUniforms(createDayClock().look, cover), cover);
+    clouds.setForm({ stretch: 2.5, floor: 40 });
+    expect(clouds.form.stretch).toBe(2.5);
+    expect(clouds.form.floor).toBe(40);
     clouds.dispose();
   });
 });

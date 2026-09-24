@@ -28,7 +28,7 @@ import { createSimulation, type ResumeState, type Simulation } from './sim/Simul
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
 import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
 import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
-import { createClouds } from './sky/Clouds';
+import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
 import { createMilkyWay } from './sky/MilkyWay';
@@ -41,6 +41,18 @@ import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/Terra
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
+
+/** The near clouds' form, as the dev panel and the browser tests reach it. */
+export interface CloudFormControl {
+  /** Each number's range and where it starts. */
+  readonly ranges: { readonly [K in keyof CloudForm]: readonly [number, number, number] };
+  /** A copy of the form now. */
+  readonly form: CloudForm;
+  /** Changes what it names, each number clamped to its range. */
+  set(change: Partial<CloudForm>): void;
+  /** How many sprites the last frame drew. */
+  readonly drawn: number;
+}
 
 export interface WorldOptions {
   seed: number;
@@ -100,6 +112,8 @@ export interface World {
   readonly wind: Wind;
   /** Where the deck stands over a world point now: its base, the top of the bank there, how solid it is. */
   deckAt(x: number, z: number): DeckAt;
+  /** What the near clouds look like, and the way to change it while the world runs. */
+  readonly clouds: CloudFormControl;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
@@ -452,6 +466,18 @@ export function createWorld(opts: WorldOptions): World {
     post,
     wind,
     deckAt: (x, z) => deckAt(cloudCover, x, z, state.t, wind),
+    clouds: {
+      ranges: CLOUD_FORM,
+      get form() {
+        return { ...clouds.form };
+      },
+      set(change) {
+        clouds.setForm(change);
+      },
+      get drawn() {
+        return clouds.drawn;
+      },
+    },
     get galaxy() {
       return { baked: galaxy.baked, bakeMs: galaxy.bakeMs };
     },

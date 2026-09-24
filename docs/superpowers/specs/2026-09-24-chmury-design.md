@@ -148,6 +148,34 @@ Z góry nadal jedna siatka wokół lotnika, rysowana tylko nad pokładem, ale:
   co najmniej 20–70 m nad jej wierzchołkiem, czyli wieże. Bez tego szare
   kule leżały na morzu.
 
+## 7a. Kształt gromad (po pierwszym obejrzeniu)
+
+Właściciel: „wyglądają fajnie, ale są mało naturalne, za okrągłe”. Przyczyny
+były trzy: sprite'y w półkuli o jednym promieniu we wszystkich kierunkach,
+okrągłe dyski większe od odstępów między nimi, i płaska podstawa tylko na
+papierze (dysk wisiał pod nią o ~70% swojego rozmiaru). Zrobione:
+
+- **Płaski spód.** Każdy sprite niesie podstawę swojej gromady (atrybut
+  `floor`, piąty bufor z ośmiu), a shader wycina to, co jest pod nią,
+  z miękkim brzegiem `floor` metrów. Spód jest też najciemniejszą częścią
+  gromady. Gromady widać teraz do 800 m pod podstawą (wcześniej 240 m), bo
+  płaski spód to właśnie to, po czym cumulus poznaje się z dołu.
+- **Wydłużenie z wiatrem.** Długa oś gromady idzie z wiatrem, ± jedna piąta
+  kąta prostego na gromadę; `stretch` wydłuża ją, zachowując powierzchnię
+  (√s wzdłuż, 1/√s w poprzek).
+- **Panel.** `?dev=1` ma sekcję `clouds` z suwakami `CloudForm`: `stretch`
+  (1–3), `height` (0,5–1,6 głębokości ławicy), `puff` (0,6–1,6 rozmiaru
+  sprite'a), `rag` (0–0,8 poszarpania), `floor` (2–120 m miękkości spodu),
+  plus „reset form” i „print” (JSON formy do konsoli, do wklejenia jako nowe
+  wartości startowe w `CLOUD_FORM`). Zmiana działa na żywym świecie.
+- Przy okazji: dysk wygasa przed brzegiem kwadu (poszarpanie wypychało go
+  poza kwadrat i widać było proste cięcia), a normalna jest bardziej gromady
+  niż dysku, bo sprite cieniowany osobno czytał się jak winogrono.
+
+Następne w kolejce, jeśli dalej będzie za mało natury: więcej mniejszych
+sprite'ów na koronie (kalafior), typy chmur zależne od udziału zachmurzenia,
+gromady stawiane w punktach wybranych z pola zamiast losowanych w polu.
+
 ## 8. Czego nie zmieniamy
 
 - Malowane chmury na kopule (wyższa warstwa) i gwiazdy za nimi.

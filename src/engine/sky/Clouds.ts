@@ -16,6 +16,11 @@
 // in the bank under its top are let go, so the sea is not painted over with
 // what is inside it.
 //
+// A cluster lies along the wind and has a flat base, cut where the deck's base
+// is, because a round heap of round sprites read as a ball; how long, how tall,
+// how puffed, how ragged and how soft its base is are `CloudForm`, which the dev
+// panel moves while the world runs.
+//
 // Transparent sprites blend in the order they are drawn, so the CPU sorts them
 // back to front every frame, draws only the ones it can see, and fades the
 // ones the camera is about to fly into rather than let them fill the screen.
@@ -68,6 +73,52 @@ export const CLUSTER = {
   far: [2300, 2900] as const,
 };
 export const CLUSTER_SPRITES = CLUSTER.count * CLUSTER.sprites;
+
+/**
+ * What a cloud looks like, as numbers the dev panel moves while the world runs.
+ * The layout reads the first three every frame; the last two are uniforms.
+ */
+export interface CloudForm {
+  /** How much longer a cluster is along the wind than across it; its footprint keeps its area. */
+  stretch: number;
+  /** How tall a cluster stands, over the bank's own depth. */
+  height: number;
+  /** How big a sprite is, over its cluster's radius. */
+  puff: number;
+  /** How ragged a sprite's edge is. */
+  rag: number;
+  /** How soft the flat base is, m: the height over which a sprite fades in above it. */
+  floor: number;
+}
+
+/** Each number's range and where it starts: the panel's sliders, and the clamp on `set`. */
+export const CLOUD_FORM: { [K in keyof CloudForm]: readonly [min: number, max: number, start: number] } = {
+  stretch: [1, 3, 1.8],
+  height: [0.5, 1.6, 1],
+  puff: [0.6, 1.6, 1.15],
+  rag: [0, 0.8, 0.4],
+  floor: [2, 120, 30],
+};
+
+/** A form at its starting values. */
+export const cloudForm = (): CloudForm => ({
+  stretch: CLOUD_FORM.stretch[2],
+  height: CLOUD_FORM.height[2],
+  puff: CLOUD_FORM.puff[2],
+  rag: CLOUD_FORM.rag[2],
+  floor: CLOUD_FORM.floor[2],
+});
+
+/** Writes into `form` what `change` asks for, each number clamped to its range and a non-number ignored. */
+export function setCloudForm(form: CloudForm, change: Partial<CloudForm>): CloudForm {
+  for (const key of Object.keys(CLOUD_FORM) as Array<keyof CloudForm>) {
+    const v = change[key];
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const [min, max] = CLOUD_FORM[key];
+    form[key] = Math.min(max, Math.max(min, v));
+  }
+  return form;
+}
 
 /** One cluster's shape: where its sprites sit, 0..1 up it and -1..1 across, and how big each is. */
 export interface ClusterShape {
@@ -123,24 +174,32 @@ export interface ClusterLayout {
   sprite: Float32Array;
   /** Per drawn sprite: where it sits in its cluster (ox, oy, oz) and its opacity. */
   shape: Float32Array;
+  /** Per drawn sprite: its cluster's base, m, under which it is cut away. */
+  floor: Float32Array;
   /** How many of them are drawn. */
   count: number;
-}
-
-export function createClusterLayout(): ClusterLayout {
-  return {
-    sprite: new Float32Array(CLUSTER_SPRITES * 4),
-    shape: new Float32Array(CLUSTER_SPRITES * 4),
-    count: 0,
+  /** The same, unsorted, as the sweep finds them. */
+  scratch: {
+    sprite: Float32Array;
+    shape: Float32Array;
+    floor: Float32Array;
+    dist: Float32Array;
+    order: number[];
   };
 }
 
-const scratch = {
-  pos: new Float32Array(CLUSTER_SPRITES * 4),
-  shape: new Float32Array(CLUSTER_SPRITES * 4),
-  dist: new Float32Array(CLUSTER_SPRITES),
-  order: [] as number[],
-};
+export function createClusterLayout(): ClusterLayout {
+  const arrays = () => ({
+    sprite: new Float32Array(CLUSTER_SPRITES * 4),
+    shape: new Float32Array(CLUSTER_SPRITES * 4),
+    floor: new Float32Array(CLUSTER_SPRITES),
+  });
+  return {
+    ...arrays(),
+    count: 0,
+    scratch: { ...arrays(), dist: new Float32Array(CLUSTER_SPRITES), order: [] },
+  };
+}
 
 /**
  * Places every cluster for this frame and writes the sprites worth drawing,
@@ -160,11 +219,19 @@ export function layoutClusters(
     originZ: number;
     wind: { x: number; z: number };
   },
+  form: CloudForm = cloudForm(),
 ): ClusterLayout {
-  const { pos, shape, dist, order } = scratch;
+  const { sprite: pos, shape, floor, dist, order } = out.scratch;
   const F = CLUSTER.field;
   let n = 0;
   order.length = 0;
+  // A cluster lies along the wind, give or take a little of its own: a cloud
+  // is drawn out by the air it rides, and a field of them lines up.
+  const wl = Math.hypot(f.wind.x, f.wind.z);
+  const windAngle = wl > 1e-6 ? Math.atan2(f.wind.x, f.wind.z) : 0;
+  // Its footprint keeps its area: longer along, narrower across.
+  const along = Math.sqrt(form.stretch),
+    across = 1 / along;
   for (const c of shapes) {
     let x = c.x + f.t * f.wind.x * c.drift - f.bx,
       z = c.z + f.t * f.wind.z * c.drift - f.bz;
@@ -178,21 +245,28 @@ export function layoutClusters(
     if (bank <= 0.001) continue;
     const base = cover.baseAt(px, pz),
       top = deckTop(base, bank);
-    const height = top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank);
+    const height = (top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank)) * form.height;
     const radius = c.radius * (0.55 + 0.45 * bank);
-    const cos = Math.cos(c.rot),
-      sin = Math.sin(c.rot);
+    // The heading the cluster's long axis takes: the wind's, turned by up to a
+    // fifth of a right angle either way.
+    const heading = windAngle + ((c.rot - Math.PI) / Math.PI) * 0.35;
+    const sin = Math.sin(heading),
+      cos = Math.cos(heading);
     // From over the deck the bank's top is the sea's to draw: a sprite buried
     // under it is let go.
     const over = sstep(top - 40, top + 40, f.camera.y);
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
-    const fade = sstep(0, 0.5, bank);
+    const fade = sstep(0.15, 0.6, bank);
     for (const s of c.sprites) {
-      const size = s.size * radius * (0.45 + 0.55 * bank);
-      const sx = px + (s.ox * cos - s.oz * sin) * radius,
-        sz = pz + (s.ox * sin + s.oz * cos) * radius,
-        sy = base + s.oy * height + size * 0.3;
+      const size = s.size * radius * (0.7 + 0.3 * bank) * form.puff;
+      // `oz` runs along the long axis (x = sin, z = cos of the heading), `ox` across it.
+      const a = s.oz * radius * along,
+        b = s.ox * radius * across;
+      const sx = px + a * sin + b * cos,
+        sz = pz + a * cos - b * sin,
+        // Low enough that the bottom row reaches the base, where it is cut flat.
+        sy = base + s.oy * height + size * 0.12;
       const dx = sx - f.camera.x,
         dy = sy - f.camera.y,
         dz = sz - f.camera.z;
@@ -209,6 +283,7 @@ export function layoutClusters(
       shape[n * 4 + 1] = s.oy;
       shape[n * 4 + 2] = s.oz;
       shape[n * 4 + 3] = alpha;
+      floor[n] = base;
       dist[n] = d;
       order.push(n);
       n++;
@@ -219,6 +294,7 @@ export function layoutClusters(
     const k = order[i]!;
     out.sprite.set(pos.subarray(k * 4, k * 4 + 4), i * 4);
     out.shape.set(shape.subarray(k * 4, k * 4 + 4), i * 4);
+    out.floor[i] = floor[k]!;
   }
   out.count = n;
   return out;
@@ -227,13 +303,17 @@ export function layoutClusters(
 export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const shapes = clusterShapes(seed);
   const layout = createClusterLayout();
+  const form = cloudForm();
+  const uRag = uniform(form.rag),
+    uFloor = uniform(form.floor);
   // The camera's own right and up in the world: a sprite is laid in the plane
   // of the screen, so every sprite faces the eye and none is seen edge on.
   const uRight = uniform(new Vector3(1, 0, 0)),
     uUp = uniform(new Vector3(0, 1, 0));
   const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
   const sprite = attribute<'vec4'>('sprite', 'vec4'),
-    shape = attribute<'vec4'>('shape', 'vec4');
+    shape = attribute<'vec4'>('shape', 'vec4'),
+    floorY = attribute<'float'>('floor', 'float');
   const corner = attribute<'vec3'>('position', 'vec3').xy;
   material.positionNode = sprite.xyz
     .add(uRight.mul(corner.x.mul(sprite.w)))
@@ -246,7 +326,14 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const rag = mx_noise_float(vec3(q.mul(1.6).add(seedXZ), u.time.mul(0.04)))
     .mul(0.7)
     .add(mx_noise_float(vec3(q.mul(4.2).sub(seedXZ), u.time.mul(0.06))).mul(0.3));
-  const disc = smoothstep(0.0, 0.3, float(1).sub(d).add(rag.mul(0.4)));
+  // A cumulus has a flat base, all of a region's at one height: whatever of a
+  // round sprite hangs below its cluster's base is cut away, softly.
+  const above = positionWorld.y.sub(floorY);
+  // Ragged, but never to the quad's own edge, or the edge shows as a straight cut.
+  const edge = smoothstep(1, 0.82, max(q.x.abs(), q.y.abs()));
+  const disc = smoothstep(0.0, 0.3, float(1).sub(d).add(rag.mul(uRag)))
+    .mul(edge)
+    .mul(smoothstep(0, uFloor, above));
   // The normal: where the sprite sits in its cluster (out of its middle, a
   // little under half way up), bent by the round of its own disc.
   const toEye = normalize(cameraPosition.sub(positionWorld));
@@ -257,7 +344,8 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
       .add(toEye.mul(sqrt(max(float(1).sub(d.mul(d)), 0.0)))),
   );
   const place = normalize(vec3(shape.x, shape.y.sub(0.35).mul(1.2), shape.z).add(vec3(0, 0.0001, 0)));
-  const n = normalize(place.add(round.mul(0.55)));
+  // Mostly the cluster's: a sprite shaded on its own reads as a grape.
+  const n = normalize(place.add(round.mul(0.35)));
   const view = toEye.negate();
   const sunUp = smoothstep(-0.04, 0.06, u.uSunDir.y);
   const s = max(dot(view, u.uSunDir), 0.0).mul(sunUp);
@@ -269,6 +357,8 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   // The underside is in the cluster's own shadow, the top takes the sky.
   const shade = mix(u.uUpper.mul(0.6), u.uCloudWhite, 0.45)
     .mul(mix(0.74, 1, shape.y))
+    // and the flat underside itself is the darkest of it
+    .mul(mix(0.82, 1, smoothstep(0, 90, above)))
     .mul(float(0.92).add(rag.mul(0.16)));
   // Seen against the sun a cluster's thin edge glows.
   const rim = pow(s, 6)
@@ -299,6 +389,9 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   shapeAttr.setUsage(DynamicDrawUsage);
   quad.setAttribute('sprite', spriteAttr);
   quad.setAttribute('shape', shapeAttr);
+  const floorAttr = new InstancedBufferAttribute(layout.floor, 1);
+  floorAttr.setUsage(DynamicDrawUsage);
+  quad.setAttribute('floor', floorAttr);
   const mesh = new InstancedMesh(quad, material, CLUSTER_SPRITES);
   // The instance matrix is the identity: every sprite's place is in `sprite`.
   const identity = new Matrix4();
@@ -312,6 +405,15 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const e = new Float32Array(16);
   return {
     mesh,
+    /** What the clouds look like; `setForm` changes it while the world runs. */
+    get form(): Readonly<CloudForm> {
+      return form;
+    },
+    setForm(change: Partial<CloudForm>) {
+      setCloudForm(form, change);
+      uRag.value = form.rag;
+      uFloor.value = form.floor;
+    },
     /** How many sprites the last frame drew. */
     get drawn() {
       return layout.count;
@@ -330,17 +432,20 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
       camera.y = cameraLocal.y;
       camera.z = cameraLocal.z + originZ;
       Object.assign(frame, { bx, bz, t, originX, originZ, wind });
-      layoutClusters(shapes, cover, layout, frame);
+      layoutClusters(shapes, cover, layout, frame, form);
       cameraWorld.toArray(e);
       uRight.value.set(e[0]!, e[1]!, e[2]!).normalize();
       uUp.value.set(e[4]!, e[5]!, e[6]!).normalize();
       mesh.count = layout.count;
-      spriteAttr.clearUpdateRanges();
-      shapeAttr.clearUpdateRanges();
-      spriteAttr.addUpdateRange(0, layout.count * 4);
-      shapeAttr.addUpdateRange(0, layout.count * 4);
-      spriteAttr.needsUpdate = true;
-      shapeAttr.needsUpdate = true;
+      for (const [attr, size] of [
+        [spriteAttr, 4],
+        [shapeAttr, 4],
+        [floorAttr, 1],
+      ] as const) {
+        attr.clearUpdateRanges();
+        attr.addUpdateRange(0, layout.count * size);
+        attr.needsUpdate = true;
+      }
     },
     dispose() {
       quad.dispose();

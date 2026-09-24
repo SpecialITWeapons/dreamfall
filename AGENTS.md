@@ -294,6 +294,10 @@ page works under a Pages subdirectory.
   them back to front every frame and uploads only what it draws; blending is
   order-dependent, so nothing else may reorder them. From over the deck the
   sprites buried in the bank are dropped, or they paint grey balls on the sea.
+  A cluster lies along the wind and is cut flat at its base in the shader
+  (the `floor` attribute); how long, tall, puffed, ragged and soft-based it is
+  is `CloudForm`, which `?dev=1` moves live -- "print" gives the JSON to make
+  the new defaults in `CLOUD_FORM`.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery

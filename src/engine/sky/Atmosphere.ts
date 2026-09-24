@@ -68,7 +68,10 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       u.uAbove.value = above;
       exposure = LOOK.exposure * (1 - 0.25 * night) * (1 - 0.12 * above);
       u.uFogDensity.value = u.fogDensity * (1 - 0.28 * sstep(0.1, 0.65, sy)) * (1 + 0.35 * night);
-      u.uCloudBodies.value = sstep(-240, -80, cameraY - deck.base);
+      // The clusters are seen from well under the deck, because their flat
+      // bases are what a cumulus is known by from below; further down the
+      // dome's painting of the underside has them.
+      u.uCloudBodies.value = sstep(-800, -400, cameraY - deck.base);
       // Inside the deck is white only where the deck has cloud: the band is the
       // deck from its base to its top, the cloud is the field's over the camera.
       // It was the band alone, so a climb through a clear sky met a wall of fog

@@ -1751,7 +1751,12 @@ test('the dev panel switches a layer off and the frame loses it', async ({ page 
   // at dawn that is worth 0.0005 of the picture (measured in the wind test).
   // At noon the night factor is zero and the atlas cannot change a pixel.
   await page.evaluate(() => {
-    window.__world!.dayPhase = 0.5;
+    const w = window.__world!;
+    // Out of the cloud: the flight begins just under the deck's top, and on
+    // seed 42 that is inside a solid bank, where the white hides the ground
+    // whether its layer is on or not.
+    w.jump(w.state.x, w.state.z, 120);
+    w.dayPhase = 0.5;
   });
   const shot = async () => {
     const data = await page.evaluate(async () => {
