@@ -375,7 +375,8 @@ export function createWorld(opts: WorldOptions): World {
     scenery?.update(state.x, state.z, camera.position.y, moved);
     uniforms.time.value = state.t;
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
-    clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z, wind);
+    camera.updateMatrixWorld();
+    clouds.update(state.x, state.z, state.t, camera.position, camera.matrixWorld, origin.x, origin.z, wind);
     cloudSea.update(origin.localX(state.x), origin.localZ(state.z), origin.x, origin.z);
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
@@ -410,7 +411,7 @@ export function createWorld(opts: WorldOptions): World {
     // a lower region's banks are seen from over them while this one's are
     // still overhead, and the sea hides whatever of itself is above the eye.
     cloudSea.mesh.visible = camera.position.y > DECK.base[0] + DECK.thin - CLOUD_SEA_DROP - 60;
-    clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
+    clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001 && clouds.drawn > 0;
     sample.vy = state.vy;
     sample.gust = state.gust;
     sample.rush = state.speed / SPEED;

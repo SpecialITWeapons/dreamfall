@@ -288,6 +288,13 @@ page works under a Pages subdirectory.
   reads `deckAt` where it stands -- the atmosphere under the camera, the sea and
   its fog per fragment, the dome where the ray meets the base, the crossing
   over the deepest bank the region can hold (`base + DECK.thick`).
+- **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
+  camera-facing quads standing from the base to the bank's top, a tower over a
+  solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
+  them back to front every frame and uploads only what it draws; blending is
+  order-dependent, so nothing else may reorder them. From over the deck the
+  sprites buried in the bank are dropped, or they paint grey balls on the sea.
+  `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery
 

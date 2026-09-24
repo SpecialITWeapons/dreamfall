@@ -117,10 +117,10 @@ Z góry nadal jedna siatka wokół lotnika, rysowana tylko nad pokładem, ale:
 
 ## 7. Gromady sprite'ów zamiast kłębów
 
-- **Gromada** to 12–20 kwadów w jednym `InstancedMesh`, rozłożonych
-  w elipsoidzie spłaszczonej od dołu (płaska podstawa, kopuła u góry). Ok.
-  96 gromad w polu owiniętym wokół lotnika, jak dziś 64 kłęby; łącznie do
-  ok. 1900 instancji.
+- **Gromada** to 16 kwadów w jednym `InstancedMesh`, rozłożonych
+  w elipsoidzie spłaszczonej od dołu (płaska podstawa, kopuła u góry). Jest
+  96 gromad w polu owiniętym wokół lotnika, zamiast dawnych 64 kłębów; łącznie do
+  1536 instancji (16 na gromadę).
 - **Gdzie stoją.** Jak dziś: tylko tam, gdzie pole ma ławicę, noszone przez
   wiatr. Nowe: podstawa gromady na `base` jej miejsca, wysokość do `top`,
   więc nad pełną ławicą gromada wystaje ponad morze jako wieża, a przy brzegu
@@ -133,16 +133,20 @@ Z góry nadal jedna siatka wokół lotnika, rysowana tylko nad pokładem, ale:
   złożony z normalną sfery na kwadzie. Strona słoneczna jasna, spód w cieniu
   (mnożnik z wysokości w gromadzie), srebrny brzeg pod słońce, kolor nieba od
   góry. Wieczorem `uGlow`, nocą księżyc, jak powierzchnia w rozdz. 6.
-- **Kolejność.** Przezroczyste, bez zapisu głębi. CPU sortuje gromady od
-  najdalszej i kwady w gromadzie wzdłuż osi widzenia co klatkę (1900 elementów,
-  rzędu 0,1 ms), bo mieszanie jest wrażliwe na kolejność.
+- **Kolejność.** Przezroczyste, bez zapisu głębi, rysowane po morzu. CPU
+  sortuje wszystkie widoczne sprite'y od najdalszego co klatkę (do 1536)
+  i wysyła tylko je, bo mieszanie jest wrażliwe na kolejność.
 - **Wypełnienie.** Największe ryzyko to overdraw. Kwad blisko kamery zanika
   (zamiast dzisiejszego kurczenia się), rozmiar na ekranie ma górną granicę,
   a przy `uWhiteout` gromady wokół kamery znikają, bo i tak jest biało.
   Pomiar `npm run bench` na vantage `deck` i nowym `inside` przed i po.
-- **Bufory wierzchołków**: pozycja, uv, macierz instancji i jeden `vec4`
-  instancji (środek gromady względem kwadu + wysokość w gromadzie). Cztery
-  z ośmiu; test liczy jak w `structureKit.test.ts`.
+- **Bufory wierzchołków**: pozycja kwadu (bez normalnej i uv: róg kwadu to
+  jego pozycja), macierz instancji (jednostkowa) i dwa `vec4` instancji:
+  `sprite` (środek w układzie lokalnym i rozmiar) oraz `shape` (miejsce
+  w gromadzie i krycie liczone na CPU). Cztery z ośmiu; test liczy.
+- **Z góry** znikają sprite'y zakopane w ławicy: zostaje tylko to, co stoi
+  co najmniej 20–70 m nad jej wierzchołkiem, czyli wieże. Bez tego szare
+  kule leżały na morzu.
 
 ## 8. Czego nie zmieniamy
 
