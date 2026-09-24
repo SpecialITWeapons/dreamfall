@@ -211,7 +211,7 @@ page works under a Pages subdirectory.
   built with, so a pose cannot drift out of step with the bones. Which one is
   worn is read off three axes -- flight angle, airspeed, bank -- and **every
   threshold in `POSE` has to be inside what the controller can actually fly**:
-  it reaches `pitch -0.42..+0.56`, `rush 0.75..1.48` and `bank 0.47`, a test
+  it reaches `pitch -0.54..+0.71`, `rush 0.75..1.47` and `bank 0.47`, a test
   asks the controller itself, and a number written from a picture of a skydiver
   instead was a pose that existed and could not be reached. Nose up and slow are
   one state and not two, because a climb is paid for in airspeed; the climb
@@ -275,8 +275,10 @@ page works under a Pages subdirectory.
 - **The deck is one field** (`sky/CloudCover.ts`): a repeating square baked
   per seed, 30 to 60 per cent of it cloud by region, read at `p - wind * t` by
   the GPU as `cloudCover` and by the CPU as `cover.at`. The cloud sea, its
-  fog, the puffs and the shadows all read it, so from over the deck the ground
-  shows through the same gaps it is seen through from under it. It was four
+  fog, the puffs, the shadows and the dome's painting of the deck's underside
+  (where the view ray meets the sea's plane) all read it, so from over the
+  deck the ground shows through the same gaps the sky shows through from
+  under it. The dome's other painted clouds are a higher layer of their own. It was four
   fields once, and the sea alone was a sheet over the whole world.
 
 ## Scenery

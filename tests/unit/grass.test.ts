@@ -1,13 +1,15 @@
-import { Color, Matrix4, Quaternion, Vector2, Vector3 } from 'three';
+import { Color, Matrix4, Quaternion, SRGBColorSpace, Vector2, Vector3 } from 'three';
 import { uniform } from 'three/tsl';
 import { describe, expect, it } from 'vitest';
 import {
+  ENVELOPE,
   defineBiome,
   swatchColor,
   type GroundHook,
   type Library,
   type SitePlan,
 } from '../../library/contract';
+import { createLibrary } from '../../library/index.js';
 import { createClaims } from '../../src/engine/scenery/Claims';
 import type { GroundShade } from '../../src/engine/scenery/GroundShade';
 import {
@@ -18,10 +20,12 @@ import {
   REACH,
   STEP,
   TUFTS,
+  TUFT_TINT,
   createGrass,
   tuftForm,
+  tuftTint,
 } from '../../src/engine/scenery/Grass';
-import { GRASS_FADE } from '../../src/engine/scenery/Painted';
+import { GRASS_BLADES, GRASS_FADE } from '../../src/engine/scenery/Painted';
 import type { SceneryMaterials } from '../../src/engine/scenery/Painted';
 import type { SkyUniforms } from '../../src/engine/sky/SkyUniforms';
 import { createOrigin } from '../../src/engine/sim/Origin';
@@ -194,15 +198,21 @@ const grassOver = (
     claims,
   });
 
-/** Every tuft's matrix, form by form, in an order the window cannot move. */
+/** Every tuft's matrix and colour, form by form, in an order the window cannot move. */
 const tufts = (grass: ReturnType<typeof createGrass>) =>
   grass.mesh.children.map((child) => {
-    const mesh = child as unknown as { count: number; getMatrixAt(i: number, m: Matrix4): void };
-    const matrix = new Matrix4();
+    const mesh = child as unknown as {
+      count: number;
+      getMatrixAt(i: number, m: Matrix4): void;
+      getColorAt(i: number, c: Color): void;
+    };
+    const matrix = new Matrix4(),
+      colour = new Color();
     const out: string[] = [];
     for (let i = 0; i < mesh.count; i++) {
       mesh.getMatrixAt(i, matrix);
-      out.push(matrix.elements.map((e) => e.toFixed(4)).join(','));
+      mesh.getColorAt(i, colour);
+      out.push([...matrix.elements, colour.r, colour.g, colour.b].map((e) => e.toFixed(4)).join(','));
     }
     // The compaction moves the last live tuft into the hole a departing
     // tile leaves, so a form's order is not the order it was written in.
@@ -263,12 +273,8 @@ describe('createGrass', () => {
     const village = grassOver(0.2, under, settled);
     village.update(0, 0, 120, origin, false);
     expect(village.count).toBeGreaterThan(0);
-    expect(village.count).toBe(open.count);
-    const mesh = village.mesh.children[0] as unknown as { instanceColor: { array: Float32Array } };
-    const want = new Color(swatchColor('grassCool'));
-    expect(mesh.instanceColor.array[0]).toBeCloseTo(want.r, 5);
-    expect(mesh.instanceColor.array[1]).toBeCloseTo(want.g, 5);
-    expect(mesh.instanceColor.array[2]).toBeCloseTo(want.b, 5);
+    // tuft for tuft, the meadow's own: where it stands, how it is shaped, its colour
+    expect(tufts(village)).toEqual(tufts(open));
     open.dispose();
     village.dispose();
   });
@@ -448,6 +454,94 @@ describe('createGrass', () => {
     grass.update(1, 1, 120, origin, true);
     expect(asked()).toBeGreaterThan(1000);
     expect(grass.count).toBe(written);
+    grass.dispose();
+  });
+});
+
+describe('tuftTint', () => {
+  const hsl = (c: Color) => {
+    const out = { h: 0, s: 0, l: 0 };
+    c.getHSL(out, SRGBColorSpace);
+    return out;
+  };
+  /** A painted blade under a tint and a tuft's own multiplier, as the shader multiplies them. */
+  const seen = (blade: string, tint: number, own: Color) =>
+    new Color(blade).multiply(new Color(tint)).multiply(own);
+  /** Every tint the real library sows grass with. */
+  const tints = () => {
+    const out = new Set<number>();
+    for (const biome of createLibrary().biomes) {
+      const grass = typeof biome.populate === 'object' ? biome.populate.grass : undefined;
+      if (grass) out.add(swatchColor(grass.tint));
+    }
+    return [...out];
+  };
+
+  it('keeps every corner of every blade under every tint the library sows inside the palette envelope', () => {
+    // The corners are where it can go wrong: the warmest, lightest tuft on the
+    // brightest blade under the goldest tint, and the darkest on the darkest.
+    const own = new Color();
+    const found = tints();
+    expect(found.length).toBeGreaterThan(1);
+    for (const tint of found)
+      for (const blade of GRASS_BLADES)
+        for (const hue of [0, 0.5, 1])
+          for (const light of [0, 0.5, 1])
+            for (const dry of [0, 0.5]) {
+              const c = hsl(seen(blade, tint, tuftTint(hue, light, dry, own)));
+              const where = `${blade} x #${tint.toString(16)} at ${hue}/${light}/${dry}`;
+              expect(c.s, where).toBeLessThanOrEqual(ENVELOPE.maxSaturation);
+              expect(c.l, where).toBeGreaterThanOrEqual(ENVELOPE.minLightness);
+              expect(c.l, where).toBeLessThanOrEqual(ENVELOPE.maxLightness);
+            }
+  });
+
+  it('moves the green about 0.04 of a turn either way, a quarter darker or a tenth lighter, and a dry tuft towards straw', () => {
+    const own = new Color();
+    const blade = GRASS_BLADES[1]!,
+      base = hsl(new Color(blade));
+    const at = (hue: number, light: number, dry: number) =>
+      hsl(seen(blade, 0xffffff, tuftTint(hue, light, dry, own)));
+    // Hue is a turn from red: warmer is toward yellow, which is smaller.
+    expect(base.h - at(1, 0.5, 1).h).toBeGreaterThan(0.03);
+    expect(base.h - at(1, 0.5, 1).h).toBeLessThan(0.07);
+    expect(at(0, 0.5, 1).h - base.h).toBeGreaterThan(0.03);
+    expect(at(0, 0.5, 1).h - base.h).toBeLessThan(0.07);
+    expect(at(0.5, 1, 1).l / base.l).toBeGreaterThan(1.08);
+    expect(at(0.5, 1, 1).l / base.l).toBeLessThan(1.14);
+    expect(at(0.5, 0, 1).l / base.l).toBeGreaterThan(0.68);
+    expect(at(0.5, 0, 1).l / base.l).toBeLessThan(0.78);
+    // Dry: warmer than the warmest green tuft, and duller than the blade.
+    const dry = at(0.5, 0.5, 0);
+    expect(base.h - dry.h).toBeGreaterThan(base.h - at(1, 0.5, 1).h);
+    expect(dry.s).toBeLessThan(base.s);
+    // and a dry tuft never comes out lighter than it would have
+    expect(at(0.5, 1, 0).l).toBeCloseTo(dry.l, 9);
+  });
+
+  it('gives a meadow tufts of their own colour, about one in eight of them dry', () => {
+    const grass = grassOver(0.2);
+    grass.update(0, 0, 120, createOrigin(), false);
+    const tint = new Color(swatchColor('grassCool'));
+    const colour = new Color();
+    const seenColours = new Set<string>();
+    let dry = 0,
+      all = 0;
+    for (const child of grass.mesh.children) {
+      const mesh = child as unknown as { count: number; getColorAt(i: number, c: Color): void };
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getColorAt(i, colour);
+        seenColours.add(colour.getHexString());
+        // Straw lifts blue over green, which no green tuft's hue does by as much.
+        if (colour.b / tint.b / (colour.g / tint.g) > 1 + TUFT_TINT.hue * TUFT_TINT.blue + 0.2) dry++;
+        all++;
+      }
+    }
+    expect(all).toBe(grass.count);
+    // One colour a tile before; eight bits a channel make neighbours collide.
+    expect(seenColours.size).toBeGreaterThan(1000);
+    expect(dry / all).toBeGreaterThan(TUFT_TINT.dry * 0.8);
+    expect(dry / all).toBeLessThan(TUFT_TINT.dry * 1.2);
     grass.dispose();
   });
 });

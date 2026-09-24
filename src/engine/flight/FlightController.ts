@@ -12,14 +12,24 @@ import { DECK_Y, SEA_LEVEL, fieldSeeds } from '../terrain/WorldSampler';
 import { wrapAngle } from './angles';
 import type { SkyPulls } from './SkyPulls';
 
-/** Level airspeed, fastest climb and fastest descent, m/s. */
+/**
+ * Level airspeed, fastest climb and fastest descent, m/s. The climb and the
+ * descent were 11 and 16 until the owner asked for a third more of both.
+ */
 export const SPEED = 40;
-export const CLIMB = 11;
-export const DESCENT = 16;
+export const CLIMB = 14.3;
+export const DESCENT = 20.8;
 /** Hard floor over ground and obstacles, m. */
 export const MIN_CLEARANCE = 25;
-/** Ceiling, m above sea level. */
-export const MAX_ALTITUDE = 1400;
+/**
+ * Ceiling, m above sea level. What bounds it is how far the world reaches: the
+ * terrain window is 4.2 km to a side and the far fog has covered everything by
+ * 4.1 km from the eye, so the higher the flight the smaller the disc of ground
+ * it can see. At 2000 m that disc is still 3.6 km across and reads as land; at
+ * 2600 a level look is fog and a look down a washed-out stain. It was 1400,
+ * from fly-with-me, until the deck rose to 800 and left only 600 m over it.
+ */
+export const MAX_ALTITUDE = 2000;
 /** Longest simulation step; a longer frame is clamped by the loop. */
 export const MAX_STEP = 0.05;
 export const AIM = {
@@ -38,11 +48,13 @@ export const SCHEDULE = { period: 300, high: 200 };
 export const GUST = { length: 2.2, lengthSpread: 2, every: 7, everySpread: 9 };
 /**
  * Airspeed trades with the climb: a dive gains it, a climb spends it. Level
- * flight is SPEED; a full descent reaches about 59 m/s and a full climb falls
- * to 27, both inside the clamp. The look-ahead scales with it, so a faster
- * figure looks proportionally further down its own path.
+ * flight is SPEED; a full descent reaches about 59 m/s and a full climb would
+ * fall to 27 and is held at the clamp's 30. `perVy` came down from 1.2 when the
+ * climb and descent went up by a third, so the figure dives steeper and not
+ * faster. The look-ahead scales with it, so a faster figure looks
+ * proportionally further down its own path.
  */
-export const AIRSPEED = { min: 30, max: 62, perVy: 1.2, ease: 1.2 };
+export const AIRSPEED = { min: 30, max: 62, perVy: 0.92, ease: 1.2 };
 /** Flying by hand: what an arrow key asks for. */
 export const MANUAL = { turn: 0.35 };
 /** The ceiling's own margin: terrain that needs more than this turns the flight aside. */

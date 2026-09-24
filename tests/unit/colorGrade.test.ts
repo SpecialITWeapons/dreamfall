@@ -10,7 +10,6 @@ const key = (t: number, zenith: number, sun = 0xffe0b0): PaletteKey => ({
   horizonWarm: new Color(0xf3d6a2),
   upperWarm: new Color(0xb9ccd6),
   glow: new Color(0xf8d29c),
-  below: new Color(0x83a3a8),
   sun: new Color(sun),
   sunI: 3,
   hemiSky: new Color(0xbcd8e8),
