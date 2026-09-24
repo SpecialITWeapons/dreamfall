@@ -4,19 +4,19 @@
 // past; now it reads the deck's one field (`cloudCoverAt`), and between its
 // banks the ground shows through, far below and moving at its own pace.
 //
-// It stands where the deck stands: on the top of the bank under each vertex
-// (`deckTopAt`, whose reads it shares), which is a region's base plus the bank's own depth, so the
-// sea over a high region is higher than the sea over a low one. Where a bank
-// thins, the surface goes down its side to the base rather than sinking a few
-// metres, so a bank is a body with a flank the sun can light and not a stain
-// on a plane.
+// It lies at one level for a region, `DECK.sea` over the deck's base, so the
+// sea over a high region is higher than the sea over a low one, and where a
+// bank thins it thins with it into the gap rather than stepping down. It had
+// sides once -- the surface followed each bank's own top and went down its
+// flank to the base -- and the owner read the result as cliffs of cloud: a
+// bank's depth and its towers are the clusters' to show (`Clouds.ts`), and
+// the sea is what they stand in.
 //
 // The surface is atmosphere, not land inside its own height fog, so its light
-// is painted directly: a normal from the slope of the whole surface -- the
-// bank and the folds on it -- wraps the light round the sunward flanks, warm
-// while the sun is low, blushing opposite it; the flanks darken toward the
-// base, the hollows keep the sky's blue, an edge against the sun is lined with
-// silver, and the moon lights it all at night. The far sea fades into the same
+// is painted directly: a normal from the slope of the surface and the folds on
+// it wraps the light round the sunward faces, warm while the sun is low,
+// blushing opposite it; the hollows keep the sky's blue, a fold against the
+// sun is lined with silver, and the moon lights it all at night. The far sea fades into the same
 // horizon the sky draws.
 //
 // The grid is dense under the flyer and opens out with distance, and it moves
@@ -27,7 +27,6 @@ import { MeshBasicNodeMaterial, type Node } from 'three/webgpu';
 import {
   Fn,
   cameraPosition,
-  clamp,
   dot,
   float,
   length,
@@ -43,7 +42,7 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
-import { COVER, DECK } from './CloudCover';
+import { DECK } from './CloudCover';
 import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
@@ -126,35 +125,26 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
       .add(mx_noise_float(q.mul(0.006).sub(u.time.mul(0.012))).mul(14.0));
   };
   /**
-   * The surface over a world point, m. Where the field is cloud the top of the
-   * bank with its folds on it; down the bank's flank to its base as the field
-   * thins, steeply, so the flank is a wall and not a ramp.
+   * The surface over a world point, m: the region's sea level with the folds
+   * on it, worn as much as there is cloud, and a thinning bank sagging a
+   * little as it goes -- a slope of tens of metres, never a wall.
    */
-  const shoulder = (cover: Node<'float'>) => smoothstep(0.02, COVER.bank[1], cover);
-  /** The top of the bank over a base, for a field this solid: `deckTopAt`, sharing its reads. */
-  const topOver = (base: Node<'float'>, cover: Node<'float'>) =>
-    base.add(DECK.thin).add(smoothstep(COVER.bank[0], COVER.bank[1], cover).mul(DECK.thick - DECK.thin));
   const surfaceAt = (p: Node<'vec2'>) => {
-    const cover = cloudCoverAt(u, p),
-      base = deckBaseAt(u, p);
-    const top = topOver(base, cover)
-      .sub(CLOUD_SEA_DROP)
+    const cover = cloudCoverAt(u, p);
+    return deckBaseAt(u, p)
+      .add(DECK.sea - CLOUD_SEA_DROP)
       .add(heapAt(p).mul(cover))
       .add(
         sin(p.x.mul(0.006).add(u.time.mul(0.2)))
           .mul(4.0)
           .mul(cover),
-      );
-    return mix(base, top, shoulder(cover));
+      )
+      .sub(float(1).sub(cover).mul(30));
   };
   const cover = cloudCoverAt(u, worldXZ);
   const heap = heapAt(worldXZ);
-  const base = deckBaseAt(u, worldXZ),
-    top = topOver(base, cover);
-  // The normal from the whole surface's slope: a bank's flank faces out of the
-  // bank, a fold's face out of the fold.
-  // Wider than the grid's core, so the normal is the bank's and not a crease
-  // where the flank meets the top.
+  // The normal from the surface's slope, over a step wider than the grid's
+  // core so it is the fold's and not the grid's.
   const STEP = 36;
   const here = surfaceAt(worldXZ);
   const slopeX = surfaceAt(worldXZ.add(vec2(STEP, 0)))
@@ -176,14 +166,9 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   const moonlit = smoothstep(u.uMoonDir.y.sub(0.6), u.uMoonDir.y.add(0.3), dot(n, u.uMoonDir)).mul(
     u.uMoonLight,
   );
-  // How far up its own bank a point is: a flank darkens toward the base, where
-  // the bank's own body stands between it and the sky.
-  const up = clamp(positionWorld.y.sub(base).div(max(top.sub(base), 1)), 0, 1);
   const hollow = smoothstep(26, -32, heap).mul(cover);
-  const shade = mix(u.uUpper.mul(0.6), u.uCloudWhite, 0.25)
-    .mul(float(1).sub(hollow.mul(0.3)))
-    .mul(mix(0.72, 1, up));
-  // A flank seen against the sun is lined with light: it faces away from the
+  const shade = mix(u.uUpper.mul(0.6), u.uCloudWhite, 0.25).mul(float(1).sub(hollow.mul(0.3)));
+  // A fold seen against the sun is lined with light: it faces away from the
   // eye and the sun is behind it.
   const rim = pow(s, 6).mul(float(1).sub(n.y)).mul(1.6).clamp(0, 1);
   const surface = Fn(() => {
@@ -196,12 +181,10 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   const far = max(u.uWhiteout, smoothstep(2000, 4300, length(positionWorld.sub(cameraPosition))));
   material.colorNode = mix(surface, horizon.horizonTint(view), far);
   // Seen only from over it: a stretch of the sea above the camera -- a higher
-  // region's bank, or its flank -- is the dome's and the puffs' to draw. The
-  // flank stays solid down to near its base and fades there, into the gap.
-  // The far edge goes as the far fog has: a flank out there is a coarse wall
-  // of the grid, and in the haze it reads as a streak rather than a bank.
+  // region's -- is the dome's and the clusters' to draw. A bank's edge
+  // dissolves into the gap, and the far edge goes as the far fog has.
   material.opacityNode = smoothstep(-60, 10, cameraPosition.y.sub(positionWorld.y))
-    .mul(smoothstep(0.02, 0.2, cover))
+    .mul(smoothstep(0.1, 0.5, cover))
     .mul(float(1).sub(smoothstep(3400, 4400, length(positionWorld.sub(cameraPosition)))))
     .mul(0.94);
   material.positionNode = vec3(positionLocal.x, surfaceAt(worldXZ), positionLocal.z);

@@ -56,6 +56,8 @@ export const DECK_UNDERSIDE = {
   far: [3000, 15000],
   closed: 0.9,
   opacity: 0.95,
+  /** The height over the horizon, as the view's y, under which the deck thins away. */
+  horizon: 0.26,
 } as const;
 
 export function createSkyDome(
@@ -84,7 +86,9 @@ export function createSkyDome(
       u.uNight.mul(0.14).sub(0.14).add(opening),
       u.uNight.mul(0.08).add(0.34).add(opening),
       mass,
-    ).mul(smoothstep(0.014, 0.15, dir.y));
+      // Thinning over the lowest fifteen degrees: ending closer in, the layer
+      // and the deck under it ruled a line along the horizon.
+    ).mul(smoothstep(0.0, 0.26, dir.y));
     return vec2(mass, mask);
   });
   const celestialVisibility = Fn(([dir]: [Node<'vec3'>]) =>
@@ -220,7 +224,10 @@ export function createSkyDome(
       closing,
     )
       .mul(step(0.0, rise))
-      .mul(step(0.0, y));
+      // Thinning into the air over the last few degrees above the horizon
+      // rather than ending on it: cut at the horizon, the deck was a ruled
+      // line with the whole ceiling above it and clear sky below.
+      .mul(smoothstep(0.0, DECK_UNDERSIDE.horizon, y));
     // Flat grey bellies, lighter where a bank thins to its edge, and the air in
     // front of them as they go further off. A belly is the cloud's own white in
     // its own shadow: the sky's blue in it read as haze rather than as cloud.

@@ -289,7 +289,11 @@ page works under a Pages subdirectory.
   is solid (`deckTop`, 120 to 350 m). Everything that used to read one number
   reads `deckAt` where it stands -- the atmosphere under the camera, the sea and
   its fog per fragment, the dome where the ray meets the base, the crossing
-  over the deepest bank the region can hold (`base + DECK.thick`).
+  over the deepest bank the region can hold (`base + DECK.thick`). The sea is
+  the exception on purpose: it lies at one level a region (`base + DECK.sea`)
+  and dissolves at a bank's edge, because following each bank's top made
+  cliffs of cloud; a bank's depth and towers are the clusters' to show, and a
+  cluster is never much taller than wide (`CLUSTER.tallest`).
 - **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
   camera-facing quads standing from the base to the bank's top, a tower over a
   solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
@@ -299,7 +303,13 @@ page works under a Pages subdirectory.
   A cluster lies along the wind and is cut flat at its base in the shader
   (the `floor` attribute); how long, tall, puffed, ragged and soft-based it is
   is `CloudForm`, which `?dev=1` moves live -- "print" gives the JSON to make
-  the new defaults in `CLOUD_FORM`.
+  the new defaults in `CLOUD_FORM`. Flying into a cluster whitens the view:
+  the layout measures the camera against a soft ellipsoid of each cluster
+  (`ClusterLayout.inside`) and the whiteout takes the larger of that and the
+  deck's band, because a tower or a cloud met at its edge is not in the band.
+  Nothing in the sky may end on the horizon: the painted layer and the deck's
+  underside thin away over the lowest fifteen degrees, and each cluster lifts
+  its own base up to `CLUSTER.lift` over the region's, or the sky is ruled.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery

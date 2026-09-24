@@ -56,6 +56,12 @@ export const DECK = {
   /** How deep a bank is at its thinning edge and in its middle, m. */
   thin: 120,
   thick: 350,
+  /**
+   * Where the cloud sea lies over the base, m: one level for a region, half way
+   * up a bank. The sea followed each bank's own top once, and a bank's top
+   * rises 230 m over the few hundred metres of its edge: from beside, a cliff.
+   */
+  sea: 235,
   /** Lattice cells of the base's noise over the repeating square: regions of about five km. */
   regions: 4,
   /** The steepest the base may tilt, m a m: a region's lie, never a bank's edge. */

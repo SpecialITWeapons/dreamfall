@@ -32,8 +32,11 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
     get exposure() {
       return exposure;
     },
-    /** `deck` is where the deck stands over the camera (`deckAt`). */
-    update(cameraY: number, follow: Vector3, deck: DeckAt) {
+    /**
+     * `deck` is where the deck stands over the camera (`deckAt`); `cluster` is
+     * how far the camera is inside one of the near clouds (`Clouds.inside`).
+     */
+    update(cameraY: number, follow: Vector3, deck: DeckAt, cluster = 0) {
       const pal = clock.palette;
       clock.skyBodies(clock.phase, sunDir, moonDir);
       const sy = sunDir.y;
@@ -78,7 +81,9 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       // and came out over the deck into a white haze on every side.
       const inside =
         sstep(deck.base - 40, deck.base + 30, cameraY) * (1 - sstep(deck.top - 70, deck.top, cameraY));
-      u.uWhiteout.value = inside * 0.996 * deck.bank;
+      // A cluster flown into is white too, wherever it stands: a tower over
+      // the bank, or a cloud met at its edge, is not in the band.
+      u.uWhiteout.value = Math.max(inside * deck.bank, cluster) * 0.996;
     },
   };
 }

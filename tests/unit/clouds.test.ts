@@ -170,6 +170,48 @@ describe('the cloud form', () => {
     expect(Math.abs(long.area / round.area - 1)).toBeLessThan(0.02);
   });
 
+  it('never stands a cluster much taller than it is wide, however deep the bank', () => {
+    // A column taller than its footprint read as a tree: a trunk and a crown.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    for (const one of clusterShapes(42).slice(0, 12)) {
+      const out = createClusterLayout();
+      layoutClusters([one], solid, out, { ...frame({ x: one.x, y: 0, z: one.z }), wind: { x: 0, z: 12 } });
+      let low = Infinity,
+        high = -Infinity;
+      for (let k = 0; k < out.count; k++) {
+        low = Math.min(low, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
+        high = Math.max(high, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
+      }
+      expect(high - low).toBeLessThanOrEqual(one.radius * CLUSTER.tallest + 1e-6);
+    }
+  });
+
+  it('knows when the camera is inside a cluster, and whitens only there', () => {
+    // One cluster over a solid bank: in its middle the camera is inside, below
+    // its flat base and far to its side it is not.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    const [one] = clusterShapes(42);
+    const inside = (dx: number, y: number, dz = 0) => {
+      const out = createClusterLayout();
+      const f = {
+        ...frame({ x: one!.x + dx, y, z: one!.z + dz }),
+        bx: one!.x,
+        bz: one!.z,
+        wind: { x: 0, z: 12 },
+      };
+      return layoutClusters([one!], solid, out, f).inside;
+    };
+    // its own base is the region's plus its lift
+    const mid = 800 + one!.lift + 60;
+    expect(inside(0, mid)).toBeGreaterThan(0.8);
+    expect(inside(0, 700)).toBe(0);
+    expect(inside(3000, 900)).toBe(0);
+    expect(inside(0, 2000)).toBe(0);
+    // long with the wind (z here): further along it than across it is still inside
+    const r = one!.radius;
+    expect(inside(0, mid, r * 1.3)).toBeGreaterThan(inside(r * 1.3, mid, 0));
+  });
+
   it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {
     const out = createClusterLayout();
     layoutClusters(clusterShapes(42), cover, out, frame({ x: 0, y: 0, z: 0 }));
@@ -185,9 +227,9 @@ describe('the cloud form', () => {
 
   it('is changed on a running world through the clouds themselves', () => {
     const clouds = createClouds(42, createSkyUniforms(createDayClock().look, cover), cover);
-    clouds.setForm({ stretch: 2.5, floor: 40 });
+    clouds.setForm({ stretch: 2.5, floor: 100 });
     expect(clouds.form.stretch).toBe(2.5);
-    expect(clouds.form.floor).toBe(40);
+    expect(clouds.form.floor).toBe(100);
     clouds.dispose();
   });
 });

@@ -53,7 +53,8 @@ import {
   vec3,
 } from 'three/tsl';
 import { mulberry32, sstep } from '../terrain/noise';
-import { deckTop, type CloudCover } from './CloudCover';
+import { DECK, deckTop, type CloudCover } from './CloudCover';
+import { CLOUD_SEA_DROP } from './CloudSea';
 import type { SkyUniforms } from './SkyUniforms';
 
 const VENUS = vec3(0.86, 0.46, 0.52);
@@ -69,6 +70,14 @@ export const CLUSTER = {
   radius: [120, 260] as const,
   /** How far a tower stands over the bank's top, m, at most. */
   tower: 170,
+  /** How tall a cluster may stand, over its radius. */
+  tallest: 1.1,
+  /**
+   * How far over the region's base a cluster's own base may stand, m. The
+   * region's clouds share a base, but not to the metre: every flat bottom at
+   * one height ruled a line across the whole sky.
+   */
+  lift: 140,
   /** Where the far clusters are gone, m: the fog has them by then. */
   far: [2300, 2900] as const,
 };
@@ -93,11 +102,11 @@ export interface CloudForm {
 
 /** Each number's range and where it starts: the panel's sliders, and the clamp on `set`. */
 export const CLOUD_FORM: { [K in keyof CloudForm]: readonly [min: number, max: number, start: number] } = {
-  stretch: [1, 3, 1.8],
+  stretch: [2, 4, 3],
   height: [0.5, 1.6, 1],
-  puff: [0.6, 1.6, 1.15],
+  puff: [1.3, 1.8, 1.55],
   rag: [0, 0.8, 0.4],
-  floor: [2, 120, 30],
+  floor: [90, 120, 105],
 };
 
 /** A form at its starting values. */
@@ -130,6 +139,8 @@ export interface ClusterShape {
   radius: number;
   /** How much of a tower it grows over a solid bank, 0..1. */
   tower: number;
+  /** How far over the region's base its own base stands, m. */
+  lift: number;
   sprites: Array<{ ox: number; oy: number; oz: number; size: number }>;
 }
 
@@ -162,6 +173,7 @@ export function clusterShapes(seed: number): ClusterShape[] {
       drift: 0.95 + r() * 0.1,
       radius: CLUSTER.radius[0] + (CLUSTER.radius[1] - CLUSTER.radius[0]) * r(),
       tower: r() * r(),
+      lift: r() * CLUSTER.lift,
       sprites,
     });
   }
@@ -178,6 +190,12 @@ export interface ClusterLayout {
   floor: Float32Array;
   /** How many of them are drawn. */
   count: number;
+  /**
+   * How far the camera is inside a cluster, 0..1: the deepest of them. The
+   * whiteout reads it, because the deck's band says nothing about a tower
+   * standing over the bank or a cluster met at its edge.
+   */
+  inside: number;
   /** The same, unsorted, as the sweep finds them. */
   scratch: {
     sprite: Float32Array;
@@ -197,6 +215,7 @@ export function createClusterLayout(): ClusterLayout {
   return {
     ...arrays(),
     count: 0,
+    inside: 0,
     scratch: { ...arrays(), dist: new Float32Array(CLUSTER_SPRITES), order: [] },
   };
 }
@@ -223,7 +242,8 @@ export function layoutClusters(
 ): ClusterLayout {
   const { sprite: pos, shape, floor, dist, order } = out.scratch;
   const F = CLUSTER.field;
-  let n = 0;
+  let n = 0,
+    inside = 0;
   order.length = 0;
   // A cluster lies along the wind, give or take a little of its own: a cloud
   // is drawn out by the air it rides, and a field of them lines up.
@@ -243,21 +263,48 @@ export function layoutClusters(
     // GPU read the one field at one place.
     const bank = sstep(0.35, 0.8, cover.at(px - f.wind.x * f.t, pz - f.wind.z * f.t));
     if (bank <= 0.001) continue;
-    const base = cover.baseAt(px, pz),
-      top = deckTop(base, bank);
-    const height = (top - base + CLUSTER.tower * c.tower * sstep(0.7, 1, bank)) * form.height;
+    const region = cover.baseAt(px, pz),
+      top = deckTop(region, bank);
+    // The cluster's own base: its region's, a little higher for some.
+    const base = region + c.lift;
     const radius = c.radius * (0.55 + 0.45 * bank);
+    // As deep as the bank, and a tower over a solid one, but never much taller
+    // than it is wide: a column of sprites taller than its footprint read as a
+    // tree, trunk and crown.
+    const height =
+      // Lifted, a cluster keeps its crown where the bank's top is and is only
+      // shallower: lifted whole it stood out of the sea from above.
+      Math.min(
+        Math.max(top - base, 60) + CLUSTER.tower * c.tower * sstep(0.7, 1, bank),
+        radius * CLUSTER.tallest,
+      ) * form.height;
     // The heading the cluster's long axis takes: the wind's, turned by up to a
     // fifth of a right angle either way.
     const heading = windAngle + ((c.rot - Math.PI) / Math.PI) * 0.35;
     const sin = Math.sin(heading),
       cos = Math.cos(heading);
-    // From over the deck the bank's top is the sea's to draw: a sprite buried
-    // under it is let go.
-    const over = sstep(top - 40, top + 40, f.camera.y);
+    // From over the sea the sea is what a bank is: a sprite buried under its
+    // level is let go, and what stands out of it stays.
+    const sea = region + DECK.sea - CLOUD_SEA_DROP;
+    const over = sstep(sea - 40, sea + 40, f.camera.y);
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
     const fade = sstep(0.15, 0.6, bank);
+    // Is the camera in it? A soft ellipsoid the size of what the sprites
+    // cover -- the offsets, and half a sprite past them -- long with the
+    // wind, cut flat at the base as the sprites are.
+    {
+      const reach = 0.45 * form.puff;
+      const dx = f.camera.x - px,
+        dz = f.camera.z - pz;
+      const a = (dx * sin + dz * cos) / (radius * (along + reach)),
+        b = (dx * cos - dz * sin) / (radius * (across + reach)),
+        half = (height + reach * radius) / 2,
+        v = (f.camera.y - (base + half)) / half;
+      const r = Math.hypot(a, b, v);
+      const here = (1 - sstep(0.55, 1, r)) * sstep(base - 10, base + 30, f.camera.y) * fade;
+      if (here > inside) inside = here;
+    }
     for (const s of c.sprites) {
       const size = s.size * radius * (0.7 + 0.3 * bank) * form.puff;
       // `oz` runs along the long axis (x = sin, z = cos of the heading), `ox` across it.
@@ -271,7 +318,9 @@ export function layoutClusters(
         dy = sy - f.camera.y,
         dz = sz - f.camera.z;
       const d = Math.hypot(dx, dy, dz);
-      const buried = 1 - over * (1 - sstep(top + 20, top + 70, sy));
+      // A lifted cluster's bottom row stands near the sea's level: it is let
+      // go too, or the sea is dotted with the tops of balls.
+      const buried = 1 - over * (1 - sstep(sea + 30, sea + 90, sy));
       const alpha =
         sstep(size * 0.9, size * 2, d) * (1 - sstep(CLUSTER.far[0], CLUSTER.far[1], d)) * buried * fade;
       if (alpha <= 0.003) continue;
@@ -297,6 +346,7 @@ export function layoutClusters(
     out.floor[i] = floor[k]!;
   }
   out.count = n;
+  out.inside = inside;
   return out;
 }
 
@@ -326,8 +376,8 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
   const rag = mx_noise_float(vec3(q.mul(1.6).add(seedXZ), u.time.mul(0.04)))
     .mul(0.7)
     .add(mx_noise_float(vec3(q.mul(4.2).sub(seedXZ), u.time.mul(0.06))).mul(0.3));
-  // A cumulus has a flat base, all of a region's at one height: whatever of a
-  // round sprite hangs below its cluster's base is cut away, softly.
+  // A cumulus has a flat base, a region's all at about one height: whatever of
+  // a round sprite hangs below its cluster's base is cut away, softly.
   const above = positionWorld.y.sub(floorY);
   // Ragged, but never to the quad's own edge, or the edge shows as a straight cut.
   const edge = smoothstep(1, 0.82, max(q.x.abs(), q.y.abs()));
@@ -413,6 +463,10 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
       setCloudForm(form, change);
       uRag.value = form.rag;
       uFloor.value = form.floor;
+    },
+    /** How far the camera is inside a cluster, 0..1, as of the last update. */
+    get inside() {
+      return layout.inside;
     },
     /** How many sprites the last frame drew. */
     get drawn() {

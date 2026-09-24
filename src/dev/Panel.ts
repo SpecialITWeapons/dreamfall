@@ -231,7 +231,7 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   });
 
   section('clouds');
-  reading('sprites drawn', () => String(world.clouds.drawn));
+  reading('sprites drawn · inside', () => `${world.clouds.drawn} · ${fixed(world.clouds.inside, 2)}`);
   // One slider a number of the form, labelled with its value. The world
   // clamps, so the panel only has to say what was asked for.
   const forms = world.clouds.ranges;

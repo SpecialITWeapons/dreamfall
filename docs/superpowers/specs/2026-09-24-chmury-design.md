@@ -164,8 +164,10 @@ papierze (dysk wisiał pod nią o ~70% swojego rozmiaru). Zrobione:
   kąta prostego na gromadę; `stretch` wydłuża ją, zachowując powierzchnię
   (√s wzdłuż, 1/√s w poprzek).
 - **Panel.** `?dev=1` ma sekcję `clouds` z suwakami `CloudForm`: `stretch`
-  (1–3), `height` (0,5–1,6 głębokości ławicy), `puff` (0,6–1,6 rozmiaru
-  sprite'a), `rag` (0–0,8 poszarpania), `floor` (2–120 m miękkości spodu),
+  (2–4, start 3), `height` (0,5–1,6 głębokości ławicy), `puff` (1,3–1,8
+  rozmiaru sprite'a, start 1,55), `rag` (0–0,8 poszarpania), `floor` (90–120 m
+  miękkości spodu, start 105) -- zakresy `stretch`, `puff` i `floor` ustawił
+  właściciel po zabawie suwakami, starty to ich środki,
   plus „reset form” i „print” (JSON formy do konsoli, do wklejenia jako nowe
   wartości startowe w `CLOUD_FORM`). Zmiana działa na żywym świecie.
 - Przy okazji: dysk wygasa przed brzegiem kwadu (poszarpanie wypychało go
@@ -175,6 +177,55 @@ papierze (dysk wisiał pod nią o ~70% swojego rozmiaru). Zrobione:
 Następne w kolejce, jeśli dalej będzie za mało natury: więcej mniejszych
 sprite'ów na koronie (kalafior), typy chmur zależne od udziału zachmurzenia,
 gromady stawiane w punktach wybranych z pola zamiast losowanych w polu.
+
+## 7b. Bez klifów (po drugim obejrzeniu)
+
+Właściciel: „teraz mamy klify chmurowe”. Morze szło za wierzchołkiem każdej
+ławicy, a wierzchołek na brzegu ławicy rośnie o 230 m na kilkuset metrach,
+więc nawet bez boków do podstawy wierzch robił stopień, a z boku była ściana.
+Gromady z kolei rosły na całą głębokość ławicy plus wieżę przy szerokości
+100–190 m i wyglądały jak drzewa.
+
+- Morze leży na jednym poziomie w regionie: `base + DECK.sea` (235 m) minus
+  `CLOUD_SEA_DROP`, z fałdami. Na brzegu ławicy rozpływa się w przezroczystość
+  (`smoothstep(0,1..0,5)` pokrycia) i opada najwyżej o 30 m. Żadnych boków.
+- Głębokość ławicy i wieże pokazują tylko gromady. Z góry zostają te sprite'y,
+  które stoją nad poziomem morza.
+- Gromada nie jest wyższa niż 1,1 swojego promienia (`CLUSTER.tallest`).
+
+Wierzchołek ławicy (`deckTop`) nadal steruje bielą, `uAbove` i przejściem
+autopilota; morze jest tylko obrazem.
+
+## 7c. Biel w gromadzie
+
+Właściciel: wlot w pojedynczą chmurę nie dawał bieli. Biel szła tylko z pasma
+pokładu (od podstawy do wierzchołka) razy pełność ławicy pod kamerą, więc
+wieża nad ławicą albo gromada spotkana na brzegu przelatywały bez śladu,
+a sprite'y przy tym gasły z bliska.
+
+Teraz `layoutClusters` przy okazji ustawiania gromad mierzy kamerę względem
+miękkiej elipsoidy każdej z nich (rozmiar tego, co pokrywają sprite'y:
+przesunięcia plus pół sprite'a, wydłużona z wiatrem, ucięta na podstawie)
+i daje `inside` 0..1, najgłębszą z nich. `uWhiteout = max(pasmo · ławica,
+inside) · 0,996`. Na seedzie 42, przelot na 120 m nad podstawą: biel narasta
+przez ok. 10 s wlotu, jest pełna w środku i schodzi na wylocie. Panel pokazuje
+`inside` obok liczby sprite'ów.
+
+## 7d. Bez linijki na horyzoncie
+
+Właściciel: „granica jest bardzo wyraźna, wszystkie systemy chmurowe ustawiają
+się od jakiejś wysokości”. Trzy rzeczy kończyły się w tym samym miejscu:
+malowana warstwa na kopule wygasała w pierwszych 8° nad horyzontem, spód
+pokładu na kopule był ucięty dokładnie na horyzoncie (`step(0, y)`), a każda
+gromada w regionie miała płaski spód na tej samej wysokości.
+
+- Warstwa malowana i spód pokładu wygasają łagodnie przez najniższe ~15°
+  (`smoothstep(0, 0,26, y)`, `DECK_UNDERSIDE.horizon`), więc niebo przechodzi
+  w mgłę horyzontu zamiast kończyć się kreską.
+- Każda gromada ma własne podniesienie podstawy, 0–140 m nad podstawą regionu
+  (`CLUSTER.lift`). Spody dalej są płaskie, ale nie leżą na jednej linii.
+  Wierzchołek zostaje przy wierzchołku ławicy, więc podniesiona gromada jest
+  płytsza, nie wyższa.
 
 ## 8. Czego nie zmieniamy
 

@@ -60,6 +60,7 @@ const stub = () => {
       ranges: { stretch: [1, 3, 1.8], rag: [0, 0.8, 0.4] },
       form: { stretch: 1.8, rag: 0.4 },
       drawn: 640,
+      inside: 0.25,
       set(change: Record<string, number>) {
         Object.assign(this.form, change);
         calls.clouds.push(change);
