@@ -6,7 +6,7 @@
 // under none of them.
 import type { Node } from 'three/webgpu';
 import { Fn, float, smoothstep, texture } from 'three/tsl';
-import { COVER } from './CloudCover';
+import { COVER, DECK } from './CloudCover';
 import type { SkyUniforms } from './SkyUniforms';
 
 export const CLOUD_SHADOW = { depth: 0.3 };
@@ -26,6 +26,20 @@ export function cloudCoverAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float
  */
 export function cloudBankAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float'> {
   return smoothstep(COVER.bank[0], COVER.bank[1], cloudCoverAt(u, worldXZ));
+}
+
+/** The deck's base over a world point, m: where the point is, not against the wind (`cover.baseAt`). */
+export function deckBaseAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float'> {
+  return texture(u.deckBase, worldXZ.div(u.uCoverPeriod))
+    .r.mul(DECK.base[1] - DECK.base[0])
+    .add(DECK.base[0]);
+}
+
+/** The top of the bank over a world point, m: the CPU's `deckTop`, one field and one wind. */
+export function deckTopAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float'> {
+  return deckBaseAt(u, worldXZ)
+    .add(DECK.thin)
+    .add(cloudBankAt(u, worldXZ).mul(DECK.thick - DECK.thin));
 }
 
 /** Light reaching a world point through the clouds, 1 - depth .. 1. */

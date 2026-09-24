@@ -230,6 +230,51 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     if (site.textContent !== text) site.textContent = text;
   });
 
+  section('clouds');
+  reading('sprites drawn', () => String(world.clouds.drawn));
+  // One slider a number of the form, labelled with its value. The world
+  // clamps, so the panel only has to say what was asked for.
+  const forms = world.clouds.ranges;
+  const sliders: Array<() => void> = [];
+  for (const key of Object.keys(forms) as Array<keyof typeof forms>) {
+    const [min, max] = forms[key];
+    const row = make('div', 'row');
+    const value = make('span');
+    row.append(make('span', '', key), value);
+    const slider = make('input');
+    slider.type = 'range';
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String((max - min) / 100);
+    const show = () => {
+      const now = world.clouds.form[key];
+      value.textContent = fixed(now, 2);
+      if (doc.activeElement !== slider) slider.value = String(now);
+    };
+    slider.addEventListener('input', () => {
+      world.clouds.set({ [key]: Number(slider.value) });
+      show();
+      draw();
+    });
+    show();
+    sliders.push(show);
+    panel.append(row, slider);
+  }
+  const cloudButtons = make('div', 'wrap');
+  button(
+    'reset form',
+    () => {
+      const start: Record<string, number> = {};
+      for (const key of Object.keys(forms) as Array<keyof typeof forms>) start[key] = forms[key][2];
+      world.clouds.set(start);
+      for (const show of sliders) show();
+      draw();
+    },
+    cloudButtons,
+  );
+  button('print', () => console.log('cloud form', JSON.stringify(world.clouds.form)), cloudButtons);
+  panel.append(cloudButtons);
+
   section('scenery');
   reading('trees · props', () => `${scenery?.trees ?? 0} · ${scenery?.props ?? 0}`);
   reading('buildings', () => {

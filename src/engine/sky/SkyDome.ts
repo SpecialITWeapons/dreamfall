@@ -35,11 +35,9 @@ import {
   vec2,
   vec3,
 } from 'three/tsl';
-import { CLOUD_SEA_DROP } from './CloudSea';
-import { cloudCoverAt } from './CloudShadow';
+import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
-import { DECK_Y } from '../terrain/WorldSampler';
 
 const VENUS = vec3(0.86, 0.46, 0.52);
 const SPARSE_STAR_AXIS = normalize(vec3(0.36, 0.5, -0.79));
@@ -200,9 +198,14 @@ export function createSkyDome(
     // the shadows read, so a flyer under it sees the banks and the gaps it will
     // look down on once it has climbed through -- in parallax, because this is
     // where the view ray meets the sea's own plane and not a direction.
-    const rise = float(DECK_Y - CLOUD_SEA_DROP).sub(cameraPosition.y);
+    // The deck's base is a region's and tilts no more than a fifth, so the ray
+    // meets it where it meets the plane of the base under the camera, moved
+    // once to the plane of the base at that first guess.
+    const eye = cameraPosition.xz.add(u.uWorldOrigin);
+    const guess = eye.add(dir.xz.mul(deckBaseAt(u, eye).sub(cameraPosition.y).div(y.max(0.0005))));
+    const rise = deckBaseAt(u, guess).sub(cameraPosition.y);
     const along = rise.div(y.max(0.0005));
-    const hit = cameraPosition.xz.add(u.uWorldOrigin).add(dir.xz.mul(along));
+    const hit = eye.add(dir.xz.mul(along));
     // The field is 80 m a texel and its banks a kilometre across, which from
     // under them is a soft stain; a finer noise carried with them rags their
     // edges and breaks up their bellies, and a narrower edge than the sea's

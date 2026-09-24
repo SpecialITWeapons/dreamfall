@@ -16,7 +16,7 @@ import {
 import { wrapAngle } from '../../src/engine/flight/angles';
 import type { SkyPulls } from '../../src/engine/flight/SkyPulls';
 import { createObstacles } from '../../src/engine/scenery/Obstacles';
-import { DECK_Y } from '../../src/engine/terrain/WorldSampler';
+import { DECK } from '../../src/engine/sky/CloudCover';
 
 const flat = () => 0;
 const fly = (c: FlightController, seconds: number, dt = 0.05) => {
@@ -94,7 +94,8 @@ describe('createFlightController', () => {
       ymax = Math.max(ymax, c.state.y);
     }
     expect(ymax).toBeLessThanOrEqual(MAX_ALTITUDE);
-    expect(c.state.y).toBeGreaterThan(DECK_Y + 100);
+    // over the deepest bank the default deck can hold, whatever drifts under it
+    expect(c.state.y).toBeGreaterThan((DECK.base[0] + DECK.base[1]) / 2 + DECK.thick + 100);
     expect(c.state.cloudSchedule).toBeCloseTo(1, 3);
     const low = createFlightController({ seed: 3, groundAt: flat, schedule: () => 0, start: { y: 900 } });
     fly(low, 120);
@@ -110,7 +111,7 @@ describe('createFlightController', () => {
     for (let i = 0; i < 7200; i++) {
       c.step(0.05);
       minClearance = Math.min(minClearance, c.clearance());
-      if (c.state.y > DECK_Y) above = true;
+      if (c.state.y > (DECK.base[0] + DECK.base[1]) / 2 + DECK.thick) above = true;
       const s = c.state;
       for (const v of [s.x, s.y, s.z, s.heading, s.vy, s.bank, s.pitch, s.windPhase, s.gust])
         finite &&= Number.isFinite(v);
@@ -119,6 +120,19 @@ describe('createFlightController', () => {
     expect(above).toBe(true);
     expect(minClearance).toBeGreaterThanOrEqual(MIN_CLEARANCE - 1e-9);
     expect(Math.abs(c.state.bank)).toBeLessThan(1);
+  });
+  it('crosses the deck where the deck is: higher where its region holds it higher', () => {
+    const at = (base: number) => {
+      const c = createFlightController({ seed: 3, groundAt: flat, schedule: () => 1, deckBase: () => base });
+      fly(c, 120);
+      return c.state.y;
+    };
+    const low = at(DECK.base[0]),
+      high = at(DECK.base[1]);
+    expect(low).toBeGreaterThan(DECK.base[0] + DECK.thick + 100);
+    expect(high).toBeGreaterThan(DECK.base[1] + DECK.thick + 100);
+    expect(high).toBeLessThanOrEqual(MAX_ALTITUDE);
+    expect(high - low).toBeGreaterThan(400);
   });
   it('clips the aim to the envelope and hands the vertical back after release', () => {
     const c = createFlightController({ seed: 5, groundAt: flat, schedule: () => 0 });

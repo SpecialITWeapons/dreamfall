@@ -13,7 +13,6 @@ import {
 } from 'three';
 import { uniform } from 'three/tsl';
 import type { Look } from '../render/ColorGrade';
-import { DECK_Y } from '../terrain/WorldSampler';
 import type { CloudCover } from './CloudCover';
 
 export function createSkyUniforms(look: Look, cover: CloudCover) {
@@ -25,6 +24,13 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
   cloudCover.magFilter = cloudCover.minFilter = LinearFilter;
   cloudCover.generateMipmaps = false;
   cloudCover.needsUpdate = true;
+  // The deck's base, which stays where it is while the cover drifts: the GPU's
+  // `deckBaseAt` and the CPU's `cover.baseAt` read these same bytes.
+  const deckBase = new DataTexture(cover.base, cover.texels, cover.texels, RedFormat, UnsignedByteType);
+  deckBase.wrapS = deckBase.wrapT = RepeatWrapping;
+  deckBase.magFilter = deckBase.minFilter = LinearFilter;
+  deckBase.generateMipmaps = false;
+  deckBase.needsUpdate = true;
   return {
     /** Shader motion follows simulation time, including pause and hidden tabs. */
     time: uniform(0),
@@ -50,11 +56,10 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     /** The rose belt opposite a low sun. */
     uVenusI: uniform(0),
     uFogDensity: uniform(look.fogDensity),
-    /** 1 when the camera is above the cloud deck. */
+    /** 1 when the camera is above the cloud deck's top where it flies. */
     uAbove: uniform(0),
     /** 1 while crossing the deck. */
     uWhiteout: uniform(0),
-    uDeck: uniform(DECK_Y),
     uCloudWhite: uniform(cloudWhite.clone()),
     uCloudBodies: uniform(0),
     /** World position of the local frame's origin (the floating origin), for shaders that read the world. */
@@ -64,6 +69,8 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     /** Where the deck has cloud, 0..1, repeating every `uCoverPeriod` metres (sky/CloudCover.ts). */
     cloudCover,
     uCoverPeriod: uniform(cover.period),
+    /** The deck's base over the same square, 0..1 of `DECK.base` (sky/CloudCover.ts). */
+    deckBase,
     cloudWhite,
     moonColor: new Color(look.moon.color),
     fogDensity: look.fogDensity,

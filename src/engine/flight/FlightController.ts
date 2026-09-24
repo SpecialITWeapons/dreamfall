@@ -8,7 +8,8 @@
 // gusts of suit flutter in place of wing beats.
 import { createObstacles, type Obstacle, type Obstacles } from '../scenery/Obstacles';
 import { mulberry32, perlin2 } from '../terrain/noise';
-import { DECK_Y, SEA_LEVEL, fieldSeeds } from '../terrain/WorldSampler';
+import { DECK } from '../sky/CloudCover';
+import { SEA_LEVEL, fieldSeeds } from '../terrain/WorldSampler';
 import { wrapAngle } from './angles';
 import type { SkyPulls } from './SkyPulls';
 
@@ -111,6 +112,12 @@ export interface FlightDeps {
   random?: () => number;
   /** How far the figure hangs under its center, m (Avatar.bounds.below). */
   below?: number;
+  /**
+   * The deck's base over a world point, m (`CloudCover.baseAt`): a crossing
+   * goes over the deepest bank that region can hold. The middle of the range
+   * by default.
+   */
+  deckBase?: (x: number, z: number) => number;
   /** A remembered flight to continue, or a start. */
   start?: Partial<Omit<FlightState, 'low'>> & { low?: Partial<LowPass> };
   /** Tests: force the schedule high (1) or low (0). */
@@ -153,6 +160,12 @@ export function createFlightController(deps: FlightDeps): FlightController {
   const dayPhase = deps.dayPhase ?? (() => 0.3);
   const random = deps.random ?? mulberry32(deps.seed ^ 0xf11e);
   const below = deps.below ?? 0;
+  const deckBase = deps.deckBase ?? (() => (DECK.base[0] + DECK.base[1]) / 2);
+  /**
+   * Over the deck: over the top of the deepest bank at this place. The base is
+   * a region's and does not move, so neither does this, whatever the banks do.
+   */
+  const deckTopAt = (x: number, z: number) => deckBase(x, z) + DECK.thick;
   const { S1, S2 } = fieldSeeds(deps.seed);
   const { low: lowStart, ...start } = deps.start ?? {};
   const x0 = start.x ?? 0,
@@ -269,7 +282,7 @@ export function createFlightController(deps: FlightDeps): FlightController {
         // Hand it back where the pilot left it rather than where the schedule
         // would have been: a crossing stands a while longer if they left the
         // figure over the deck, exactly as it does when they let go of the stick.
-        state.cloudOrigin = state.t - (state.y > DECK_Y ? 210 : 0);
+        state.cloudOrigin = state.t - (state.y > deckTopAt(state.x, state.z) ? 210 : 0);
       } else {
         hold = state.y;
         pulls?.release();
@@ -342,7 +355,9 @@ export function createFlightController(deps: FlightDeps): FlightController {
         ahead + 110 - 80 * low + 40 * (1 - 0.6 * low) * n1(s.t * 0.03, S1 + 4),
         SEA_LEVEL + 55 - 32 * low,
       );
-      const high = DECK_Y + 190 + 30 * n1(s.t * 0.05, S1 + 8);
+      // A crossing goes over the deepest bank the region can hold, so it is over
+      // the deck whatever bank drifts under it: 1720 m at the most, under the ceiling.
+      const high = deckTopAt(s.x, s.z) + 140 + 30 * n1(s.t * 0.05, S1 + 8);
       let target = autopilot ? cruise + (high - Math.min(cruise, high)) * s.cloudSchedule : hold;
       // The envelope: never above the ceiling, never closer to the ground ahead
       // than the clearance plus a margin, so the hard floor below stays a last resort.
@@ -378,7 +393,7 @@ export function createFlightController(deps: FlightDeps): FlightController {
             s.aim = 0;
             // a crossing stands a while longer if the figure was left over the
             // deck; under it, a full low stretch follows
-            s.cloudOrigin = s.t - (s.y > DECK_Y ? 210 : 0);
+            s.cloudOrigin = s.t - (s.y > deckTopAt(s.x, s.z) ? 210 : 0);
           }
         }
       }

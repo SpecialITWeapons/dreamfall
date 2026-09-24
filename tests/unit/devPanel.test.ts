@@ -20,6 +20,7 @@ const stub = () => {
     jumps: [] as Array<[number, number, number]>,
     layers: [] as Array<[string, boolean]>,
     measured: 0,
+    clouds: [] as Array<Record<string, number>>,
   };
   const world = {
     seed: 42,
@@ -55,6 +56,15 @@ const stub = () => {
       { id: 'frost', weight: 0 },
     ],
     siteNear: () => ({ id: 'village:0,0', x: 1500, z: 1600, radius: 180, lots: 24 }),
+    clouds: {
+      ranges: { stretch: [1, 3, 1.8], rag: [0, 0.8, 0.4] },
+      form: { stretch: 1.8, rag: 0.4 },
+      drawn: 640,
+      set(change: Record<string, number>) {
+        Object.assign(this.form, change);
+        calls.clouds.push(change);
+      },
+    },
     layers: {
       names: [...on.keys()],
       visible: (name: string) => on.get(name) ?? false,
@@ -194,6 +204,25 @@ describe('dev panel', () => {
     // the dearest biomes first, because that is the question being asked
     expect(text()).toContain('alpine 0.90 · meadow 0.40');
     expect(document.querySelector('#dev .bad')).not.toBeNull();
+  });
+
+  it('moves the clouds from a slider per number of their form, and puts them back', () => {
+    const { world, calls, raw } = stub();
+    panel = createDevPanel(document, world);
+    expect(text()).toContain('640');
+    const sliders = [...document.querySelectorAll<HTMLInputElement>('#dev input[type=range]')].filter(
+      (input) => input.max === '3',
+    );
+    expect(sliders).toHaveLength(1);
+    const stretch = sliders[0]!;
+    stretch.value = '2.6';
+    stretch.dispatchEvent(new Event('input'));
+    expect(calls.clouds.at(-1)).toEqual({ stretch: 2.6 });
+    expect(raw.clouds.form.stretch).toBe(2.6);
+    expect(text()).toContain('2.60');
+    const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset form')!;
+    (reset as HTMLButtonElement).click();
+    expect(calls.clouds.at(-1)).toEqual({ stretch: 1.8, rag: 0.4 });
   });
 
   it('takes itself and its styles away on dispose', () => {

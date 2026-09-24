@@ -11,7 +11,7 @@ import { swatchColor, validateLibrary, type Biome, type Library } from '../../li
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { emptyMix, layerMix } from './audio/AmbienceModel';
-import { OPENING, createOpening, type OpeningFrame } from './sim/Opening';
+import { OPENING, createOpening, openingStart, type OpeningFrame } from './sim/Opening';
 import { hazeAt } from './sky/Haze';
 import { HUMAN_BOUNDS, type Avatar, type FlightPose } from './avatar/Avatar';
 import { TPP, applyCameraPose, createChaseCamera, type ChaseCamera } from './flight/ChaseCamera';
@@ -26,9 +26,9 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { bankAt, createCloudCover } from './sky/CloudCover';
-import { createCloudSea } from './sky/CloudSea';
-import { createClouds } from './sky/Clouds';
+import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
+import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
+import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
 import { createHorizon, installFog } from './sky/Fog';
 import { createLights } from './sky/Lights';
 import { createMilkyWay } from './sky/MilkyWay';
@@ -41,6 +41,18 @@ import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/Terra
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
+
+/** The near clouds' form, as the dev panel and the browser tests reach it. */
+export interface CloudFormControl {
+  /** Each number's range and where it starts. */
+  readonly ranges: { readonly [K in keyof CloudForm]: readonly [number, number, number] };
+  /** A copy of the form now. */
+  readonly form: CloudForm;
+  /** Changes what it names, each number clamped to its range. */
+  set(change: Partial<CloudForm>): void;
+  /** How many sprites the last frame drew. */
+  readonly drawn: number;
+}
 
 export interface WorldOptions {
   seed: number;
@@ -98,6 +110,10 @@ export interface World {
    */
   readonly layers: Layers;
   readonly wind: Wind;
+  /** Where the deck stands over a world point now: its base, the top of the bank there, how solid it is. */
+  deckAt(x: number, z: number): DeckAt;
+  /** What the near clouds look like, and the way to change it while the world runs. */
+  readonly clouds: CloudFormControl;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
@@ -158,16 +174,22 @@ export function createWorld(opts: WorldOptions): World {
   // The opening plays for a first flight and never for a continued one: a
   // remembered flight is somebody coming back, and thirty seconds of titles is
   // not what they came back for. A page that asked for less motion skips it too.
-  const opening = createOpening(!resume && !(opts.reducedMotion ?? false));
+  // Before the opening and the simulation: the opening climbs through the deck
+  // over the start, and the flight reads the deck's base to cross it.
+  const cloudCover = createCloudCover(opts.seed);
+  const deck = deckAt(cloudCover, 0, 0, 0, wind);
+  const start = openingStart(deck);
+  const opening = createOpening(!resume && !(opts.reducedMotion ?? false), start.climb);
   const sim = createSimulation({
     seed: opts.seed,
     groundAt: heightAt,
     obstacles,
     below: HUMAN_BOUNDS.below,
     resume,
-    // High enough that the climb has a deck to go through. Nothing else about
+    deckBase: cloudCover.baseAt,
+    // Under the deck's base, so the climb goes through it. Nothing else about
     // the start moves: the flight's own clearance still owns the first frame.
-    startY: opening.live ? OPENING.startY : undefined,
+    startY: opening.live ? start.y : undefined,
   });
   const { state } = sim;
   // a remembered flight never resumes inside the ground it may have been saved over
@@ -179,7 +201,6 @@ export function createWorld(opts: WorldOptions): World {
     clock.evalPalette();
   }
   const look = clock.look;
-  const cloudCover = createCloudCover(opts.seed);
   const uniforms = createSkyUniforms(look, cloudCover);
   uniforms.uWind.value.set(wind.x, wind.z);
   const horizon = createHorizon(uniforms);
@@ -370,14 +391,22 @@ export function createWorld(opts: WorldOptions): World {
     scenery?.update(state.x, state.z, camera.position.y, moved);
     uniforms.time.value = state.t;
     uniforms.uWorldOrigin.value.set(origin.x, origin.z);
-    clouds.update(state.x, state.z, state.t, camera.position, origin.x, origin.z, wind);
-    cloudSea.update(origin.localX(state.x), origin.localZ(state.z));
+    camera.updateMatrixWorld();
+    clouds.update(state.x, state.z, state.t, camera.position, camera.matrixWorld, origin.x, origin.z, wind);
+    cloudSea.update(origin.localX(state.x), origin.localZ(state.z), origin.x, origin.z);
     skyDome.follow(camera.position);
     follow.set(origin.localX(state.x), state.y, origin.localZ(state.z));
     atmosphere.update(
       camera.position.y,
       follow,
-      bankAt(cloudCover, origin.worldX(camera.position.x), origin.worldZ(camera.position.z), state.t, wind),
+      deckAt(
+        cloudCover,
+        origin.worldX(camera.position.x),
+        origin.worldZ(camera.position.z),
+        state.t,
+        wind,
+        deck,
+      ),
     );
     // The biome's own air, over the palette's. It goes on after the atmosphere
     // because the atmosphere copies the palette every frame, so this is a tint
@@ -394,8 +423,15 @@ export function createWorld(opts: WorldOptions): World {
       uniforms.uHorizonWarm.value.lerp(haze, hazed * 0.6);
     }
     post.setExposure(atmosphere.exposure);
-    cloudSea.mesh.visible = uniforms.uAbove.value > 0.001;
-    clouds.mesh.visible = uniforms.uCloudBodies.value > 0.001;
+    // Over the lowest top the sea can have, not over the one under the camera:
+    // a lower region's banks are seen from over them while this one's are
+    // still overhead, and the sea hides whatever of itself is above the eye.
+    cloudSea.mesh.visible = camera.position.y > DECK.base[0] + DECK.thin - CLOUD_SEA_DROP - 60;
+    // Inside a bank the white is the whole picture, and a cluster round the
+    // camera is a stack of screen-sized sprites: on a software rasteriser a
+    // third of the frame for nothing anybody can see.
+    clouds.mesh.visible =
+      uniforms.uCloudBodies.value > 0.001 && uniforms.uWhiteout.value < 0.85 && clouds.drawn > 0;
     sample.vy = state.vy;
     sample.gust = state.gust;
     sample.rush = state.speed / SPEED;
@@ -435,6 +471,19 @@ export function createWorld(opts: WorldOptions): World {
     atmosphere,
     post,
     wind,
+    deckAt: (x, z) => deckAt(cloudCover, x, z, state.t, wind),
+    clouds: {
+      ranges: CLOUD_FORM,
+      get form() {
+        return { ...clouds.form };
+      },
+      set(change) {
+        clouds.setForm(change);
+      },
+      get drawn() {
+        return clouds.drawn;
+      },
+    },
     get galaxy() {
       return { baked: galaxy.baked, bakeMs: galaxy.bakeMs };
     },
@@ -515,6 +564,7 @@ export function createWorld(opts: WorldOptions): World {
       clouds.dispose();
       cloudSea.dispose();
       uniforms.cloudCover.dispose();
+      uniforms.deckBase.dispose();
       avatar.dispose();
       lights.dispose();
       scene.clear();
