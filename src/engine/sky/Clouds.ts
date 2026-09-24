@@ -181,6 +181,12 @@ export interface ClusterLayout {
   floor: Float32Array;
   /** How many of them are drawn. */
   count: number;
+  /**
+   * How far the camera is inside a cluster, 0..1: the deepest of them. The
+   * whiteout reads it, because the deck's band says nothing about a tower
+   * standing over the bank or a cluster met at its edge.
+   */
+  inside: number;
   /** The same, unsorted, as the sweep finds them. */
   scratch: {
     sprite: Float32Array;
@@ -200,6 +206,7 @@ export function createClusterLayout(): ClusterLayout {
   return {
     ...arrays(),
     count: 0,
+    inside: 0,
     scratch: { ...arrays(), dist: new Float32Array(CLUSTER_SPRITES), order: [] },
   };
 }
@@ -226,7 +233,8 @@ export function layoutClusters(
 ): ClusterLayout {
   const { sprite: pos, shape, floor, dist, order } = out.scratch;
   const F = CLUSTER.field;
-  let n = 0;
+  let n = 0,
+    inside = 0;
   order.length = 0;
   // A cluster lies along the wind, give or take a little of its own: a cloud
   // is drawn out by the air it rides, and a field of them lines up.
@@ -267,6 +275,21 @@ export function layoutClusters(
     // A thinning bank has smaller clusters, and fainter ones, rather than a
     // scatter of little balls.
     const fade = sstep(0.15, 0.6, bank);
+    // Is the camera in it? A soft ellipsoid the size of what the sprites
+    // cover -- the offsets, and half a sprite past them -- long with the
+    // wind, cut flat at the base as the sprites are.
+    {
+      const reach = 0.45 * form.puff;
+      const dx = f.camera.x - px,
+        dz = f.camera.z - pz;
+      const a = (dx * sin + dz * cos) / (radius * (along + reach)),
+        b = (dx * cos - dz * sin) / (radius * (across + reach)),
+        half = (height + reach * radius) / 2,
+        v = (f.camera.y - (base + half)) / half;
+      const r = Math.hypot(a, b, v);
+      const here = (1 - sstep(0.55, 1, r)) * sstep(base - 10, base + 30, f.camera.y) * fade;
+      if (here > inside) inside = here;
+    }
     for (const s of c.sprites) {
       const size = s.size * radius * (0.7 + 0.3 * bank) * form.puff;
       // `oz` runs along the long axis (x = sin, z = cos of the heading), `ox` across it.
@@ -306,6 +329,7 @@ export function layoutClusters(
     out.floor[i] = floor[k]!;
   }
   out.count = n;
+  out.inside = inside;
   return out;
 }
 
@@ -422,6 +446,10 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
       setCloudForm(form, change);
       uRag.value = form.rag;
       uFloor.value = form.floor;
+    },
+    /** How far the camera is inside a cluster, 0..1, as of the last update. */
+    get inside() {
+      return layout.inside;
     },
     /** How many sprites the last frame drew. */
     get drawn() {

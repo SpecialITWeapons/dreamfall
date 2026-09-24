@@ -52,6 +52,8 @@ export interface CloudFormControl {
   set(change: Partial<CloudForm>): void;
   /** How many sprites the last frame drew. */
   readonly drawn: number;
+  /** How far the camera is inside a cluster, 0..1: it whitens the view as the deck does. */
+  readonly inside: number;
 }
 
 export interface WorldOptions {
@@ -407,6 +409,7 @@ export function createWorld(opts: WorldOptions): World {
         wind,
         deck,
       ),
+      clouds.inside,
     );
     // The biome's own air, over the palette's. It goes on after the atmosphere
     // because the atmosphere copies the palette every frame, so this is a tint
@@ -482,6 +485,9 @@ export function createWorld(opts: WorldOptions): World {
       },
       get drawn() {
         return clouds.drawn;
+      },
+      get inside() {
+        return clouds.inside;
       },
     },
     get galaxy() {

@@ -196,6 +196,21 @@ Gromady z kolei rosły na całą głębokość ławicy plus wieżę przy szeroko
 Wierzchołek ławicy (`deckTop`) nadal steruje bielą, `uAbove` i przejściem
 autopilota; morze jest tylko obrazem.
 
+## 7c. Biel w gromadzie
+
+Właściciel: wlot w pojedynczą chmurę nie dawał bieli. Biel szła tylko z pasma
+pokładu (od podstawy do wierzchołka) razy pełność ławicy pod kamerą, więc
+wieża nad ławicą albo gromada spotkana na brzegu przelatywały bez śladu,
+a sprite'y przy tym gasły z bliska.
+
+Teraz `layoutClusters` przy okazji ustawiania gromad mierzy kamerę względem
+miękkiej elipsoidy każdej z nich (rozmiar tego, co pokrywają sprite'y:
+przesunięcia plus pół sprite'a, wydłużona z wiatrem, ucięta na podstawie)
+i daje `inside` 0..1, najgłębszą z nich. `uWhiteout = max(pasmo · ławica,
+inside) · 0,996`. Na seedzie 42, przelot na 120 m nad podstawą: biel narasta
+przez ok. 10 s wlotu, jest pełna w środku i schodzi na wylocie. Panel pokazuje
+`inside` obok liczby sprite'ów.
+
 ## 8. Czego nie zmieniamy
 
 - Malowane chmury na kopule (wyższa warstwa) i gwiazdy za nimi.

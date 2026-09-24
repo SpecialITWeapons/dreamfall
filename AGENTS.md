@@ -303,7 +303,10 @@ page works under a Pages subdirectory.
   A cluster lies along the wind and is cut flat at its base in the shader
   (the `floor` attribute); how long, tall, puffed, ragged and soft-based it is
   is `CloudForm`, which `?dev=1` moves live -- "print" gives the JSON to make
-  the new defaults in `CLOUD_FORM`.
+  the new defaults in `CLOUD_FORM`. Flying into a cluster whitens the view:
+  the layout measures the camera against a soft ellipsoid of each cluster
+  (`ClusterLayout.inside`) and the whiteout takes the larger of that and the
+  deck's band, because a tower or a cloud met at its edge is not in the band.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery

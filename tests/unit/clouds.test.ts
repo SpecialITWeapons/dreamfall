@@ -186,6 +186,30 @@ describe('the cloud form', () => {
     }
   });
 
+  it('knows when the camera is inside a cluster, and whitens only there', () => {
+    // One cluster over a solid bank: in its middle the camera is inside, below
+    // its flat base and far to its side it is not.
+    const solid = { ...cover, at: () => 1, baseAt: () => 800 };
+    const [one] = clusterShapes(42);
+    const inside = (dx: number, y: number, dz = 0) => {
+      const out = createClusterLayout();
+      const f = {
+        ...frame({ x: one!.x + dx, y, z: one!.z + dz }),
+        bx: one!.x,
+        bz: one!.z,
+        wind: { x: 0, z: 12 },
+      };
+      return layoutClusters([one!], solid, out, f).inside;
+    };
+    expect(inside(0, 900)).toBeGreaterThan(0.9);
+    expect(inside(0, 700)).toBe(0);
+    expect(inside(3000, 900)).toBe(0);
+    expect(inside(0, 2000)).toBe(0);
+    // long with the wind (z here): further along it than across it is still inside
+    const r = one!.radius;
+    expect(inside(0, 900, r * 1.3)).toBeGreaterThan(inside(r * 1.3, 900, 0));
+  });
+
   it("gives every sprite its cluster's base, where the deck's base is, to cut it flat", () => {
     const out = createClusterLayout();
     layoutClusters(clusterShapes(42), cover, out, frame({ x: 0, y: 0, z: 0 }));
