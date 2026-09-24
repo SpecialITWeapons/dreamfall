@@ -404,6 +404,38 @@ describe('the streamed ring', () => {
     for (const s of inside) expect(s.share).toBeCloseTo(0.52, 5);
     for (const s of outside) expect(s.share).toBeCloseTo(1, 5);
   });
+  it("keeps a tree off a house by the house's own reach, and lets one stand in its garden", () => {
+    // metrics says a cottage reaches 6 m; the margin is 3 (scenery/Claims.ts)
+    const house = lotAt(40, -20);
+    const answers: boolean[] = [];
+    const probes: Array<[number, number]> = [
+      [house.x + 9 - 0.5, house.z],
+      [house.x + 9 + 0.5, house.z],
+    ];
+    const r = ring(library([asker(probes, answers)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [house] })),
+    });
+    r.ring.update(0, 0, false);
+    expect(answers).toEqual([true, false]);
+  });
+  it('keeps a scattered prop off the plan, and still stands the one the plan asked for', () => {
+    const road: RoadSpec = {
+      points: [
+        [-300, 0],
+        [300, 0],
+      ],
+      width: 40,
+    };
+    const well = lotAt(0, 120, 0, 'stones');
+    const r = ring(library([everywhere('woods', 0, { stones: 1 })], [stones]), {
+      sites: oneSite(planOf({ x: 0, z: 0, roads: [road], lots: [well] })),
+    });
+    r.ring.update(0, 0, false);
+    const scattered = r.props.filter((p) => !(p.x === well.x && p.z === well.z));
+    expect(scattered.length).toBeGreaterThan(10);
+    expect(scattered.filter((p) => toRoad(road, p.x, p.z) <= road.width / 2)).toEqual([]);
+    expect(r.props.some((p) => p.x === well.x && p.z === well.z)).toBe(true);
+  });
   it('keeps the scatter off a plan: nothing in a reservation, nothing on a road', () => {
     const plain = ring(library([everywhere('woods', 10)]));
     plain.ring.update(0, 0, false);

@@ -303,9 +303,6 @@ export function planTown(site, params, kit) {
     // kilometres is its recipe's own stonework or it is a smudge.
     tint: 'white',
   });
-  // Its own ground, not the plaza's: it stands on the rim, so half its footprint
-  // is outside the circle the plaza reserved.
-  kit.reserve(landmarkX, landmarkZ, depth * 0.7);
   taken.add(landmarkX, landmarkZ);
 
   // 4. The lots, in two passes over every street the town laid, the ring
@@ -414,7 +411,8 @@ export function planTown(site, params, kit) {
     // it is the last number this lot takes from the stream, so adding one
     // changes every building after it and none before.
     const tint = palette[Math.min(palette.length - 1, Math.floor(site.random() * palette.length))];
+    // No reservation: the ring claims a building's ground by its baked shape
+    // (scenery/Claims.ts), so the country's trees stand between the houses.
     kit.structure(structure, lot.x, lot.z, { yaw: facing(lot.ux, lot.uz, lot.shoulder), floors, tint });
-    kit.reserve(lot.x, lot.z, depth * 0.7);
   }
 }
