@@ -14,8 +14,8 @@ test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
 interface, posture, the authored figure and its file, the outfit), `terrain/`
 (noise, base fields, heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
-ring, claimed ground, settlement lattice, pools, tree kit, structure kit, road
-kit, painted textures, ground shade, grass), `sky/`
+ring, claimed ground, settlement lattice, road network and routes, pools, tree
+kit, structure kit, road kit, painted textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
 (ambience model and sound graph), `render/` (color grade, lighting model,
 display chain), `time/` (day clock). `three` is aliased to
@@ -37,7 +37,7 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`,
-  `scenery/Claims.ts`) import neither
+  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -388,6 +388,23 @@ page works under a Pages subdirectory.
   street to trees. The ring fills the index at every rebuild and the grass
   reads the same one; a plan that arrives after its grass tiles were written
   has those tiles written again, once.
+- **Roads join settlements** that share land, and every road ends at one at
+  both ends: it is how a village is found from the air. The pairs are the
+  relative neighbourhood graph over every seated site, edges up to 14 km
+  (`RoadNetwork.ts`); a route is a pure function of the seed and the pair,
+  searched from the end with the smaller id (`Route.ts`: A* over the base
+  height on a 48 m grid, a slow noise that bends it on the flat, Chaikin, a
+  sway that fades on slopes, 40 m bends and 20 m hairpins). Past 12 % a
+  grade is a **cost, not a wall**: this world tilts 10 % over the median 48 m
+  step, and a wall at 12 % joined one pair in fourteen where nine have a land
+  way at all -- the sea decides which pairs are joined. A route is 14 to 45 ms,
+  so it runs in a worker (`routes.worker.ts`); `Roads.ts` asks for the pairs
+  near the flight and keeps them by pair, and `Sites.charted` seats the sites
+  it needs without queueing a plan for any. It is drawn to the edge of a
+  settlement whose plan is not built and into its street once it is
+  (`stretchOf`), a kilometre a mesh, widened with distance so it stays a line
+  from altitude, in its country's `params.road`, and it cuts a ride through the
+  trees (`ROUTE_CLEARING`).
 - Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
   two heights and then slices it along the wall into panes with piers between
   them, `slabOf` taking one slice at a time (splitting at each plane in turn

@@ -197,10 +197,14 @@ i dwa środki osad.
 
 - A* po siatce 48 m, na wysokości bazowej samplera, w korytarzu bbox pary
   + 3 km.
-- Ląd poniżej 3 m jest ścianą. Limit spadku 12%, żeby zbocza wymuszały
-  serpentyny. Jeśli pomiar na trzech seedach pokaże, że 12% odrzuca więcej niż
-  10% par łączących się przy 25%, limit rośnie do najniższej wartości, która
-  mieści się w tym progu.
+- Ląd poniżej 3 m jest ścianą. Do 12% spadek jest tani; powyżej każdy krok
+  kosztuje `400 × (spadek − 0,12)²`, a ścianą jest dopiero urwisko (60%).
+  **Zmiana po pomiarze (2026-09-24):** pierwotnie limit 12% był ścianą. Ten
+  świat ma medianę spadku 10% na kroku 48 m, a co czwarty krok ponad 23%;
+  ściana na 12% łączyła na seedzie 42 jedną parę z czternastu, a lądem da się
+  połączyć dziewięć. Przy koszcie zamiast ściany o połączeniu decyduje tylko
+  woda (67 ze 161 par na trzech seedach, tyle samo co bez żadnego limitu),
+  a droga wspina się 15–18% na 95% kroków.
 - Koszt kroku: `bieg × (1 + 40 × spadek² + a × szum)`.
 - Trasa dłuższa niż 2,5 × linia prosta jest odrzucana (objazd całego
   półwyspu).
@@ -227,6 +231,12 @@ Rzeźba `R` to spadek wysokości bazowej mierzony w skali 250 m wzdłuż trasy.
 Wagi i progi (`a`, granice `R`, amplitudy) dostraja plan pomiarem krętości
 (długość trasy / linia prosta) w trzech klasach terenu na trzech seedach.
 Cel: płasko 1,1–1,25, pagórki 1,2–1,4, góry do 1,8.
+
+**Po pomiarze (2026-09-24):** stałe progi klas nie pasują do tego świata:
+średni spadek pod parą przekracza 15% prawie wszędzie, więc na „płasko"
+wypadła jedna para, a w „góry" pięćdziesiąt. Klasy to więc tercyle rzeźby
+samych par. Zmierzona krętość to 1,25–1,37 we wszystkich trzech; test trzyma
+ją w 1,1–1,6, a spadek drogi (95. percentyl) poniżej 22%.
 
 ### 5.4 Gdzie się liczy
 

@@ -1184,6 +1184,29 @@ test('the flight does not fly through the village', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('a road leaves the village for the next one, and stands from altitude', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  await teleport(page, VILLAGE, 1200);
+  // The routes come from a worker, a few tens of milliseconds each, and the
+  // ring rebuilds when one arrives.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = window.__world!;
+          w.step(0.05);
+          return w.scenery!.routeChunks;
+        }),
+      { timeout: 60_000 },
+    )
+    .toBeGreaterThan(0);
+  const stats = await page.evaluate(() => window.__world!.scenery!);
+  expect(stats.routes).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
 test('the plan queue does not stall a frame', async ({ page }) => {
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
