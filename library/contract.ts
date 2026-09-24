@@ -540,15 +540,6 @@ export interface AmbienceSpec {
   /** The colour of the air over this country, and how much of the horizon it may take. */
   fogTint?: SceneryColor;
   fogTintAmount?: number;
-  /**
-   * This entry stands **in** a country rather than being one: its weight under
-   * the flyer goes to the biomes beside it, and what it names here is added on
-   * top. A settlement says this, because a village in a jungle sounds like the
-   * jungle with a bell in it, and its air is the jungle's air -- without it the
-   * settlement's own weight crowds the country out of the mix, and the village
-   * is a hole in the sound and the haze exactly where the church is.
-   */
-  inherit?: boolean;
 }
 
 /**
@@ -856,8 +847,6 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
           !(Number.isFinite(air.fogTintAmount) && air.fogTintAmount >= 0)
         )
           errors.push(`${where}.ambience.fogTintAmount: ${air.fogTintAmount} is not an amount`);
-        if (air.inherit !== undefined && typeof air.inherit !== 'boolean')
-          errors.push(`${where}.ambience.inherit: not a boolean`);
       }
     }
     if (biome?.sites) {

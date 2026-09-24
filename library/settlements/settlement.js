@@ -14,6 +14,9 @@
  * their numbers and in the plan that reads them, and in nothing else. That is
  * why the parameters carry the settlement's own id and name -- a factory that
  * knew the word "village" could only ever make one.
+ *
+ * It stands in a country (`inherit`): the ground, the grass and the trees
+ * under it are the country's, the trees thinned to a clearing.
  */
 import { defineBiome } from '../contract';
 
@@ -28,16 +31,12 @@ import { defineBiome } from '../contract';
  * @property {number} odds
  * @property {[number, number]} radius
  * @property {{ strength: number, feather: number }} plateau
- * @property {{ land: number, minTemp: number, maxSlope: number, maxCut?: number }} ground
+ * @property {{ land: number, maxSlope: number, maxCut?: number, minTemp?: number }} ground `minTemp` is for a settlement that refuses the cold; none in this library does.
+ * @property {number} clearing The share of the country's trees and props that stands on its ground, 0..1.
  * @property {Record<string, number>} buildings
  * @property {string} [landmark] The one building placed by name rather than drawn by weight.
- * @property {{ species: Record<string, number>, density: number, props?: Record<string, number>, grass?: { tint: import('../contract').SceneryColor, density: number } }} [scenery] What grows on the ground it claims.
  * @property {import('../contract').SceneryColor[]} [palette]
- * @property {{ base: import('../contract').SceneryColor, alt: import('../contract').SceneryColor, rock: import('../contract').SceneryColor }} [paint]
  */
-
-/** Trodden ground, if the settlement does not say otherwise: earth where people walk. */
-const PAINT = { base: 'clay', alt: 'ochre', rock: 'rockPale' };
 
 /**
  * @template {SettlementParams} P
@@ -47,18 +46,17 @@ const PAINT = { base: 'clay', alt: 'ochre', rock: 'rockPale' };
  */
 export function settlement(params, plan) {
   const { cell, salt } = params.lattice;
-  const paint = params.paint ?? PAINT;
   return defineBiome({
     id: params.id,
     name: params.name,
-    params: { base: paint.base, alt: paint.alt, rock: paint.rock },
+    params: {},
     presence: {
       type: 'lattice',
       cell,
       salt,
       // The range, not its top: the hook draws this cell's own width out of the
       // same lattice stream the site finder draws it from, so the ground that
-      // is painted and flattened is the ground the settlement covers. Handing
+      // is flattened is the ground the settlement covers. Handing
       // it `radius[1]` claimed the widest a settlement of this kind could be,
       // whatever this one turned out to be -- and for a town that is five
       // hundred metres of levelled, painted nothing around a town that reads
@@ -81,27 +79,17 @@ export function settlement(params, plan) {
       feather: params.plateau.feather,
       strength: params.plateau.strength,
     },
-    // What grows on it. A settlement that sows nothing is a disc of bare paint
-    // as wide as its presence, because its own weight is what crowds the
-    // country's biomes -- and their trees and their grass -- out of the ground
-    // it stands on. The lots' reservations do the thinning: the same density
-    // over the whole disc comes out sparse where the houses are.
-    populate: params.scenery ? { type: 'scatter', ...params.scenery } : undefined,
-    // Earth where people walk, with the grass of the country around it coming
-    // back at the edges through the weight of the biome.
-    ground: {
-      type: 'layers',
-      layers: [
-        { color: paint.base },
-        { color: paint.alt, mask: 'noise', scale: 0.03, salt: 5, from: -0.1, to: 0.5 },
-        { color: paint.rock, mask: 'slope', from: 0.3, to: 0.5 },
-      ],
-    },
-    // A settlement stands in a country and sounds like it: the birds and the
-    // crickets are the country's, handed through, and what is added is the
-    // bell -- more of it where there is a landmark to hang one in. Its air is
-    // the country's air too, so a village is not a hole in the jungle's haze.
-    ambience: { inherit: true, layers: { bells: params.landmark ? 0.6 : 0.3 } },
+    // It stands in a country and is painted and sown by it. It used to paint a
+    // disc of its own -- clay for a village, grey-green for a town -- and sow
+    // its own three species, and from the air that read as a patch cut out of
+    // the country rather than a place in it: the owner's words were that the
+    // separate ground under the houses did not look good. Now its weight is its
+    // presence and its plateau, and everything that grows or is painted there
+    // is the country's, its trees and props thinned to a clearing.
+    inherit: { trees: params.clearing },
+    // A settlement sounds like its country with a bell in it -- more of one
+    // where there is a landmark to hang it in -- and its air is the country's.
+    ambience: { layers: { bells: params.landmark ? 0.6 : 0.3 } },
     sites: {
       cell,
       salt,
@@ -117,8 +105,10 @@ export function settlement(params, plan) {
       // point: the site finder seats a settlement at the lattice centre, so
       // `fits` is evaluated there and answers exactly as the hook does. A
       // third number here would be a third lottery, and the ground would be
-      // painted for settlements that never arrive.
-      fits: (f) => f.baseHeight >= params.ground.land && f.temp >= params.ground.minTemp,
+      // flattened for settlements that never arrive.
+      fits: (f) =>
+        f.baseHeight >= params.ground.land &&
+        (params.ground.minTemp === undefined || f.temp >= params.ground.minTemp),
       build: (site, kit) => plan(site, params, kit),
     },
   });

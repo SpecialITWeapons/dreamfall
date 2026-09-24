@@ -301,9 +301,9 @@ export function createWorld(opts: WorldOptions): World {
   // sound and the picture never disagree about which biome this is.
   const slotIds = new Uint8Array(3),
     slotWeights = new Float32Array(3);
-  // Who stands in a country, for the sound and the air: the entry's own flag,
-  // or the older one on its ambience while the library still says that.
-  const inherits = (biome: Biome) => biome.inherit !== undefined || biome.ambience?.inherit === true;
+  // Who stands in a country, for the sound and the air: a village in a jungle
+  // sounds like the jungle with a bell in it, and its air is the jungle's.
+  const inherits = (biome: Biome) => biome.inherit !== undefined;
   const ambienceSpecs = library.biomes.map((biome) =>
     biome.ambience || inherits(biome)
       ? { layers: biome.ambience?.layers, inherit: inherits(biome) }
