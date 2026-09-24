@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { MIN_CLEARANCE } from '../../src/engine/flight/FlightController';
 import { GALAXY_HEADING } from '../../src/engine/flight/SkyPulls';
 import { ORBIT } from '../../src/engine/flight/Steering';
+import { DECK_Y } from '../../src/engine/terrain/WorldSampler';
 import type { WorldDebug } from '../../src/page/Debug';
 
 declare global {
@@ -1674,19 +1675,22 @@ test('the opening plays once, and anything at all ends it', async ({ page }) => 
 
   // It starts at dawn with a card over it, and under the cloud deck: the climb
   // is the act with something to see and it needs something to climb through.
+  // The deck is the engine's own number, read and not copied: this said 520
+  // for as long as it took the deck to move to 800, and then failed on every
+  // run with the flight starting exactly where it should.
   const early = await run(2);
   expect(early.card).toBeGreaterThan(0.5);
   expect(early.done).toBe(false);
   expect(early.phase).toBeGreaterThan(0.1);
   expect(early.phase).toBeLessThan(0.2);
   const start = early.y;
-  expect(start).toBeLessThan(520);
+  expect(start).toBeLessThan(DECK_Y);
 
   // The card goes before the flight does anything worth watching, and the
   // climb takes the figure over the deck.
   const mid = await run(16);
   expect(mid.card).toBe(0);
-  expect(mid.y).toBeGreaterThan(520);
+  expect(mid.y).toBeGreaterThan(DECK_Y);
   expect(mid.done).toBe(false);
 
   // It ends itself and hands the flight back.
