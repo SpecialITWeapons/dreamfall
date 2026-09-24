@@ -63,6 +63,13 @@ export interface Site {
 export interface Sites {
   /** Every site whose own ground is within reach of (x, z); nearest first. */
   near(x: number, z: number, reach: number, out: Site[]): Site[];
+  /**
+   * Every site seated within `reach`, nearest first, and no plan queued for
+   * any of them: what the road network plans between, tens of kilometres out,
+   * where a plan would be built for nobody. Its own cache, forgotten past the
+   * reach it was last asked for.
+   */
+  charted(x: number, z: number, reach: number, out: Site[]): Site[];
   /** The plan of a site, or null while it is still queued. */
   planFor(site: Site): SitePlan | null;
   /** Builds queued plans until the budget runs out; called once a frame. */
@@ -99,6 +106,8 @@ export function createSites(deps: {
   // What the lattice carries, by cell: a site, or nothing. Nothing is worth
   // remembering too -- it is the answer to the same question.
   const found = new Map<string, Site | null>();
+  /** The same answers for `charted`, kept apart so a chart never queues a plan. */
+  const charts = new Map<string, Site | null>();
   const plans = new Map<string, SitePlan>();
   const queue: Site[] = [];
   let built = 0;
@@ -277,6 +286,44 @@ export function createSites(deps: {
       }
       out.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
       forget(x, z, reach);
+      return out;
+    },
+    charted(x, z, reach, out) {
+      out.length = 0;
+      // Forget what the last reach took in and this one does not, empty cells
+      // included: a chart thirty kilometres wide, dragged across a long flight,
+      // would otherwise keep every cell it ever touched.
+      for (const [key, site] of charts) {
+        if (site) {
+          if (Math.hypot(site.x - x, site.z - z) > reach + KEEP_PAD) charts.delete(key);
+          continue;
+        }
+        const entry = settled.find((e) => key.startsWith(`${e.biome.id}:`));
+        const [gx, gz] = key
+          .slice(key.indexOf(':') + 1)
+          .split(',')
+          .map(Number);
+        const cell = entry?.spec.cell ?? 0;
+        if (Math.hypot((gx! + 0.5) * cell - x, (gz! + 0.5) * cell - z) > reach + KEEP_PAD + cell)
+          charts.delete(key);
+      }
+      for (const entry of settled) {
+        const cell = entry.spec.cell;
+        const span = reach + entry.spec.radius[1];
+        for (let gz = Math.floor((z - span) / cell); gz <= Math.floor((z + span) / cell); gz++)
+          for (let gx = Math.floor((x - span) / cell); gx <= Math.floor((x + span) / cell); gx++) {
+            const key = `${entry.biome.id}:${gx},${gz}`;
+            let site = charts.get(key);
+            if (site === undefined) {
+              // The ring's own answer when it has one, so the two never hold two
+              // objects for one village; a seat otherwise, which queues nothing.
+              site = found.has(key) ? found.get(key)! : seat(entry, gx, gz);
+              charts.set(key, site);
+            }
+            if (site && Math.hypot(site.x - x, site.z - z) <= span) out.push(site);
+          }
+      }
+      out.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
       return out;
     },
     planFor: (site) => plans.get(site.id) ?? null,

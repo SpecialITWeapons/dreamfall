@@ -21,12 +21,15 @@ import {
   type Species,
 } from '../../../library/contract';
 import { CELL_TREES, resolvePopulate } from '../../../library/standard/index.js';
+import { countryOf, standingOf } from '../terrain/Country';
 import { createFields } from '../terrain/Fields';
 import type { Heightfield } from '../terrain/Heightfield';
 import { sstep } from '../terrain/noise';
 import { hash2, mulberry32 } from '../terrain/noise';
 import { SLOTS, type WorldSampler } from '../terrain/WorldSampler';
-import { OBSTACLE_CELL, type Obstacles } from './Obstacles';
+import { createClaims, type ClaimShapes, type Claims } from './Claims';
+import type { Obstacles } from './Obstacles';
+import { ROUTE_WIDTH, stretchOf, type RoadRoute } from './Roads';
 import { cellKey, type Overrides } from './Overrides';
 import type { Site, Sites } from './Sites';
 
@@ -62,23 +65,7 @@ const LAND = 3;
  * everything lit is an office block, and neither is a village at night.
  */
 const WAKE: [number, number] = [0.22, 0.6];
-/** The claim index's cell, m: the obstacles' own, because the question has the same shape. */
-const CLAIM_CELL = OBSTACLE_CELL;
 const TAU = Math.PI * 2;
-
-/**
- * One piece of ground a site plan speaks for: a road's segment with its half
- * width, or a reservation, which is the same thing with no length. One shape
- * answers both, so the index holds one kind of record.
- */
-interface Claim {
-  x0: number;
-  z0: number;
-  x1: number;
-  z1: number;
-  /** Squared, because that is the only way the query ever asks. */
-  r2: number;
-}
 
 export interface TreeInstance {
   species: string;
@@ -134,6 +121,12 @@ export interface ScenerySink {
    * mesh per plan and drops the ones a rebuild stopped offering.
    */
   site(plan: SitePlan): void;
+  /**
+   * A road between settlements, as much of it as is drawn: offered whole every
+   * rebuild that covers it, after the plans, and dropped by the pools the
+   * rebuild it is not offered. Optional: a sink that draws no roads needs none.
+   */
+  route?(id: string, points: Array<[number, number]>): void;
   end(): void;
 }
 
@@ -177,6 +170,10 @@ export interface RingDeps {
   metrics: SceneryMetrics;
   /** The settlements. Without them nothing is spoken for and the ring sows as it always did. */
   sites?: Sites;
+  /** The ground the plans speak for; shared with the grass. The ring fills it. */
+  claims?: Claims;
+  /** The roads between settlements. Without them the settlements stand alone. */
+  roads?: { near(x: number, z: number, reach: number, out: RoadRoute[]): RoadRoute[] };
   sink: ScenerySink;
   /** What a prop's place() is handed; the baking half of it is never called here. */
   propKit: PropKit;
@@ -231,6 +228,13 @@ export function createRing(deps: RingDeps): Ring {
   const fields = createFields(sampler);
   const slotIds = new Uint8Array(4);
   const slotWeights = new Float32Array(4);
+  // The country under the cell. A settlement's slot is its presence and its
+  // plateau, not a planting: its share goes to the biomes beside it, and what
+  // they sow is thinned by `clearing` (terrain/Country.ts).
+  const standing = standingOf(biomes);
+  const countryIds = new Uint8Array(4);
+  const countryWeights = new Float32Array(4);
+  let clearing = 1;
   const blended = new Color();
   const scratch = new Color();
 
@@ -244,66 +248,49 @@ export function createRing(deps: RingDeps): Ring {
   let here = fields.at(0, 0);
   let roll: () => number = () => 0;
 
-  // The ground the site plans in reach speak for, in a hash grid of 64 m cells
-  // -- the obstacles' cell, for the obstacles' reason. occupied() is asked once
-  // per tree, three times a cell and seventeen hundred cells a rebuild, so it
-  // may not walk the plans: each claim is written into every cell it touches,
-  // once per rebuild, and the query reads the single cell it lands in.
-  const claims = new Map<string, Claim[]>();
+  // The ground the site plans in reach speak for (scenery/Claims.ts), refilled
+  // from nothing at every rebuild. A house claims its ground by its baked
+  // shape, as its obstacle does, never by what its plan says.
+  const claims = deps.claims ?? createClaims();
   const nearby: Site[] = [];
-
-  const claim = (x0: number, z0: number, x1: number, z1: number, r: number) => {
-    const record: Claim = { x0, z0, x1, z1, r2: r * r };
-    const cx0 = Math.floor((Math.min(x0, x1) - r) / CLAIM_CELL),
-      cx1 = Math.floor((Math.max(x0, x1) + r) / CLAIM_CELL),
-      cz0 = Math.floor((Math.min(z0, z1) - r) / CLAIM_CELL),
-      cz1 = Math.floor((Math.max(z0, z1) + r) / CLAIM_CELL);
-    for (let cz = cz0; cz <= cz1; cz++)
-      for (let cx = cx0; cx <= cx1; cx++) {
-        const key = `${cx},${cz}`,
-          bucket = claims.get(key);
-        if (bucket) bucket.push(record);
-        else claims.set(key, [record]);
-      }
+  const routesNear: RoadRoute[] = [];
+  /** What of each road in reach is drawn this rebuild, by route. */
+  const drawn = new Map<string, Array<[number, number]>>();
+  const footprints = new Map((library.structures ?? []).map((entry) => [entry.id, entry.footprint] as const));
+  const shapes: ClaimShapes = {
+    building(id, floors) {
+      const shape = metrics.structure(id, floors);
+      if (!shape) return null;
+      const footprint = footprints.get(id);
+      return footprint ? { radius: shape.radius, footprint } : { radius: shape.radius };
+    },
   };
 
   /** Reads the plans in reach into the index, from nothing, at every rebuild. */
   const indexPlans = (x: number, z: number) => {
     claims.clear();
-    if (!sites) return;
-    for (const site of sites.near(x, z, radius, nearby)) {
-      // A site still in the queue has no plan yet, so it speaks for no ground:
-      // the same frame has nothing of it to build either.
-      const plan = sites.planFor(site);
-      if (!plan) continue;
-      for (const spot of plan.reservations) claim(spot.x, spot.z, spot.x, spot.z, spot.radius);
-      for (const road of plan.roads) {
-        const half = road.width / 2;
-        for (let i = 1; i < road.points.length; i++) {
-          const a = road.points[i - 1]!,
-            b = road.points[i]!;
-          claim(a[0], a[1], b[0], b[1], half);
-        }
+    drawn.clear();
+    if (sites)
+      for (const site of sites.near(x, z, radius, nearby)) {
+        // A site still in the queue has no plan yet, so it speaks for no ground:
+        // the same frame has nothing of it to build either.
+        const plan = sites.planFor(site);
+        if (plan) claims.add(plan, shapes);
       }
+    // The roads between them, as far as each is drawn: into a street where the
+    // settlement's plan is built, to its edge where it is not. The claim is
+    // named by how much is drawn, so the grass rewrites its tiles when a plan
+    // arriving moves an end.
+    if (!deps.roads) return;
+    for (const route of deps.roads.near(x, z, radius, routesNear)) {
+      const points = stretchOf(route, sites?.planFor(route.a) ?? null, sites?.planFor(route.b) ?? null);
+      if (points.length < 2) continue;
+      drawn.set(route.id, points);
+      claims.addRoute(`${route.id}#${points.length}`, points, ROUTE_WIDTH);
     }
   };
 
-  const occupied = (x: number, z: number) => {
-    // A world with no settlements pays one comparison per tree for the question.
-    if (claims.size === 0) return false;
-    const bucket = claims.get(`${Math.floor(x / CLAIM_CELL)},${Math.floor(z / CLAIM_CELL)}`);
-    if (!bucket) return false;
-    for (const c of bucket) {
-      const dx = c.x1 - c.x0,
-        dz = c.z1 - c.z0,
-        len2 = dx * dx + dz * dz;
-      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - c.x0) * dx + (z - c.z0) * dz) / len2)) : 0;
-      const ox = x - (c.x0 + t * dx),
-        oz = z - (c.z0 + t * dz);
-      if (ox * ox + oz * oz <= c.r2) return true;
-    }
-    return false;
-  };
+  const occupied = (x: number, z: number) => claims.trees(x, z);
 
   const cell: Cell = {
     size,
@@ -322,22 +309,24 @@ export function createRing(deps: RingDeps): Ring {
       return here;
     },
     weight(id) {
-      for (let s = 0; s < SLOTS; s++) if (biomes[slotIds[s]!]?.id === id) return slotWeights[s]!;
+      for (let s = 0; s < SLOTS; s++) if (biomes[countryIds[s]!]?.id === id) return countryWeights[s]!;
       return 0;
     },
     mix(id) {
+      // A prop is thinned in a settlement exactly as a tree is: the country's
+      // boulders, a clearing's share of them.
       let sum = 0;
       for (let s = 0; s < SLOTS; s++) {
-        const weight = slotWeights[s]!;
-        if (weight > 0) sum += weight * (wants[slotIds[s]!]?.[id] ?? 0);
+        const weight = countryWeights[s]!;
+        if (weight > 0) sum += weight * (wants[countryIds[s]!]?.[id] ?? 0);
       }
-      return sum;
+      return sum * clearing;
     },
     blend(param) {
       blended.setRGB(0, 0, 0);
       for (let s = 0; s < SLOTS; s++) {
-        const weight = slotWeights[s]!,
-          color = palette[slotIds[s]!]?.get(param);
+        const weight = countryWeights[s]!,
+          color = palette[countryIds[s]!]?.get(param);
         if (weight > 0 && color) {
           blended.r += weight * color.r;
           blended.g += weight * color.g;
@@ -438,6 +427,7 @@ export function createRing(deps: RingDeps): Ring {
    * that was built in the queue, or it reads nothing.
    */
   const raise = (x: number, z: number) => {
+    for (const [id, points] of drawn) sink.route?.(id, points);
     if (!sites) return;
     for (const site of sites.near(x, z, radius, nearby)) {
       const plan = sites.planFor(site);
@@ -542,6 +532,7 @@ export function createRing(deps: RingDeps): Ring {
         read = false;
         cellTrees = 0;
         heightfield.weightsAt(ccx, ccz, slotIds, slotWeights);
+        clearing = countryOf(slotIds, slotWeights, standing, countryIds, countryWeights);
         // The layer is asked before any hook runs, and while it is empty it does
         // not even cost the key.
         const override = overrides.size === 0 ? null : overrides.for(cellKey(ix, iz));
@@ -563,15 +554,21 @@ export function createRing(deps: RingDeps): Ring {
         for (let p = 0; p < propEntries.length; p++) {
           const entry = propEntries[p]!;
           roll = stream(propSalt[p]!);
-          for (const put of entry.place(cell, propKit) ?? []) standProp(entry.id, put);
+          // A scattered prop keeps off a plan as a tree does. A prop the plan
+          // asked for is the plan's own and is stood by `raise`, not here.
+          for (const put of entry.place(cell, propKit) ?? [])
+            if (!occupied(put.x, put.z)) standProp(entry.id, put);
         }
         for (let s = 0; s < SLOTS; s++) {
-          const weight = slotWeights[s]!;
+          // The floor is the country's own share: which biomes get a say in a
+          // cell is not changed by a village standing on it, only how much of
+          // what they sow comes up.
+          const weight = countryWeights[s]!;
           if (weight < POPULATE_FLOOR) continue;
-          const entry = sown[slotIds[s]!];
+          const entry = sown[countryIds[s]!];
           if (!entry) continue;
-          share = weight;
-          roll = stream(biomeSalt[slotIds[s]!]!);
+          share = weight * clearing;
+          roll = stream(biomeSalt[countryIds[s]!]!);
           entry.hook(cell, kit);
         }
       }

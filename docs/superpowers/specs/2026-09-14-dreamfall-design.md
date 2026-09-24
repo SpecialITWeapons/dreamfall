@@ -452,6 +452,11 @@ bo 16 m texela nie oddałoby ulicy.
 
 ## 8. Generator osad (`library/settlements/`)
 
+> **Zmiana z 2026-09-24:** osada stoi w kraju (grunt, trawa, drzewa i rekwizyty
+> są krajowe, drzewa przerzedzone do polany), działki nie są rezerwowane, a
+> szansa wioski wynosi 0,75. Szczegóły:
+> `2026-09-24-osady-w-kraju-i-drogi-design.md`.
+
 Biom z kodu nad standardowymi hakami, jeden moduł `settlement(params)`
 zwracający wpis biomu. Parametry:
 

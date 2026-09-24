@@ -160,6 +160,27 @@ describe('buildRoads', () => {
     expect(() => buildRoads([long], flat)).not.toThrow();
   });
 
+  it('paints a road the colour of the country under each vertex, and says which way each rim spreads', () => {
+    const geometry = buildRoads([road(5, [0, 0, 100, 0])], {
+      heightAt: () => 0,
+      colorAt: (x, _z, out) => out.setRGB(x < 50 ? 0.2 : 0.8, 0.5, 0.5),
+      spread: true,
+    })!;
+    const color = geometry.getAttribute('color'),
+      position = geometry.getAttribute('position'),
+      spread = geometry.getAttribute('spread');
+    expect(spread.itemSize).toBe(3);
+    for (let i = 0; i < position.count; i++) {
+      expect(color.getX(i)).toBeCloseTo(position.getX(i) < 50 ? 0.2 : 0.8, 6);
+      // a rim sits its half width out along its own spread, whose y is the
+      // direction's z: the spread lies in the ground's own plane
+      expect(spread.getZ(i)).toBeCloseTo(2.5, 6);
+      expect(Math.abs(position.getZ(i))).toBeCloseTo(2.5, PLACES);
+      expect(Math.sign(spread.getY(i))).toBe(Math.sign(position.getZ(i)));
+    }
+    // five buffers, well inside the eight a pipeline may bind
+    expect(Object.keys(geometry.attributes)).toHaveLength(5);
+  });
   it('builds nothing out of nothing', () => {
     expect(buildRoads([], flat)).toBeNull();
     expect(buildRoads([road(6, [])], flat)).toBeNull();

@@ -540,15 +540,23 @@ export interface AmbienceSpec {
   /** The colour of the air over this country, and how much of the horizon it may take. */
   fogTint?: SceneryColor;
   fogTintAmount?: number;
+}
+
+/**
+ * What an entry that stands **in** a country rather than being one keeps for
+ * itself. Its ground, its snow, its grass, its trees and props, its sound and
+ * its air are the country's around it: its weight in the window still carries
+ * its presence and its height hook -- a settlement's plateau -- and for all the
+ * rest it is handed to the slots beside it. A settlement says this, because a
+ * village painted its own disc of clay and sowed its own trees, and from the
+ * air that read as a patch cut out of the jungle rather than a village in it.
+ */
+export interface InheritSpec {
   /**
-   * This entry stands **in** a country rather than being one: its weight under
-   * the flyer goes to the biomes beside it, and what it names here is added on
-   * top. A settlement says this, because a village in a jungle sounds like the
-   * jungle with a bell in it, and its air is the jungle's air -- without it the
-   * settlement's own weight crowds the country out of the mix, and the village
-   * is a hole in the sound and the haze exactly where the church is.
+   * The share of the country's trees and props that stands on this entry's
+   * ground, 0..1: a settlement is a clearing, not a wood and not a bald patch.
    */
-  inherit?: boolean;
+  trees: number;
 }
 
 export interface Biome {
@@ -559,10 +567,13 @@ export interface Biome {
   params: Record<string, string | number>;
   presence: Presence;
   height?: HeightHook;
-  ground: GroundHook;
+  /** Required, unless the entry stands in a country (`inherit`); then it has none. */
+  ground?: GroundHook;
   populate?: PopulateHook;
   sites?: SitesSpec;
   ambience?: AmbienceSpec;
+  /** This entry stands in a country: see `InheritSpec`. */
+  inherit?: InheritSpec;
   /** Default true: the world's snow layer. */
   snow?: boolean;
   /** Default true: sand at sea level. */
@@ -782,7 +793,18 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
     const where = `biome ${biome?.id}`;
     if (!biome?.presence) errors.push(`${where}: needs a presence hook`);
     else hookType(`${where}.presence`, biome.presence, PRESENCE_TYPES);
-    if (!biome?.ground) errors.push(`${where}: needs a ground hook`);
+    if (biome?.inherit !== undefined) {
+      // An entry that stands in a country is painted and sown by it. A ground
+      // or a scatter of its own would never be read, and a field nothing reads
+      // is a promise nobody keeps.
+      const trees = (biome.inherit as { trees?: unknown } | null)?.trees;
+      if (typeof trees !== 'number' || !(trees >= 0 && trees <= 1))
+        errors.push(`${where}.inherit.trees: ${String(trees)} is not a share of 0..1`);
+      if (biome.ground) errors.push(`${where}: stands in a country and paints no ground of its own`);
+      if (biome.populate) errors.push(`${where}: stands in a country and sows nothing of its own`);
+      if (biomes[0] === biome)
+        errors.push(`${where}: the first biome takes unclaimed ground and cannot stand in a country`);
+    } else if (!biome?.ground) errors.push(`${where}: needs a ground hook`);
     else hookType(`${where}.ground`, biome.ground, GROUND_TYPES);
     if (biome?.height) {
       hookType(`${where}.height`, biome.height, HEIGHT_TYPES);
@@ -825,8 +847,6 @@ export function validateLibrary({ biomes, species = [], props = [], structures =
           !(Number.isFinite(air.fogTintAmount) && air.fogTintAmount >= 0)
         )
           errors.push(`${where}.ambience.fogTintAmount: ${air.fogTintAmount} is not an amount`);
-        if (air.inherit !== undefined && typeof air.inherit !== 'boolean')
-          errors.push(`${where}.ambience.inherit: not a boolean`);
       }
     }
     if (biome?.sites) {

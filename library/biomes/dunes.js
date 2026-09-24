@@ -6,7 +6,7 @@ import { defineBiome } from '../contract';
 export default defineBiome({
   id: 'dunes',
   name: 'Dune sea',
-  params: { base: 'sandPale', alt: 'ochre', rock: 'rockPale' },
+  params: { base: 'sandPale', alt: 'ochre', rock: 'rockPale', road: 'barkDark' },
   presence: { type: 'climatePoint', point: [0.86, 0.12, 0.3] },
   ground: {
     type: 'layers',

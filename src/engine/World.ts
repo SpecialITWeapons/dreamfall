@@ -7,7 +7,7 @@
 // figure and the camera get their poses converted through it.
 import { Color, PerspectiveCamera, Scene, Vector3 } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
-import { swatchColor, validateLibrary, type Library } from '../../library/contract';
+import { swatchColor, validateLibrary, type Biome, type Library } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
 import { createAmbience, type Ambience } from './audio/Ambience';
 import { emptyMix, layerMix } from './audio/AmbienceModel';
@@ -301,8 +301,13 @@ export function createWorld(opts: WorldOptions): World {
   // sound and the picture never disagree about which biome this is.
   const slotIds = new Uint8Array(3),
     slotWeights = new Float32Array(3);
+  // Who stands in a country, for the sound and the air: a village in a jungle
+  // sounds like the jungle with a bell in it, and its air is the jungle's.
+  const inherits = (biome: Biome) => biome.inherit !== undefined;
   const ambienceSpecs = library.biomes.map((biome) =>
-    biome.ambience ? { layers: biome.ambience.layers, inherit: biome.ambience.inherit } : undefined,
+    biome.ambience || inherits(biome)
+      ? { layers: biome.ambience?.layers, inherit: inherits(biome) }
+      : undefined,
   );
   const mix = emptyMix();
   const mixInput = { ids: slotIds, weights: slotWeights, specs: ambienceSpecs, solar: 0, altitude: 0 };
@@ -311,12 +316,12 @@ export function createWorld(opts: WorldOptions): World {
   // country's air is kept even with no tint of its own, because the slot it
   // holds has to hand its weight on.
   const hazeSpecs = library.biomes.map((biome) =>
-    biome.ambience === undefined || (biome.ambience.fogTint === undefined && !biome.ambience.inherit)
+    biome.ambience?.fogTint === undefined && !inherits(biome)
       ? undefined
       : {
-          color: new Color(biome.ambience.fogTint === undefined ? 0 : swatchColor(biome.ambience.fogTint)),
-          amount: biome.ambience.fogTint === undefined ? 0 : (biome.ambience.fogTintAmount ?? 0.2),
-          inherit: biome.ambience.inherit,
+          color: new Color(biome.ambience?.fogTint === undefined ? 0 : swatchColor(biome.ambience.fogTint)),
+          amount: biome.ambience?.fogTint === undefined ? 0 : (biome.ambience.fogTintAmount ?? 0.2),
+          inherit: inherits(biome),
         },
   );
   const haze = new Color();

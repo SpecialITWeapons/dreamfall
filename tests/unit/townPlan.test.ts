@@ -175,12 +175,11 @@ describe('planTown', () => {
     expect(tightest).toBeGreaterThan(0);
   });
 
-  it('speaks for the ground it built on: the plaza and every building', () => {
-    const { lots, reservations } = plan();
-    const covered = (x: number, z: number) =>
-      reservations.some((r) => Math.hypot(r.x - x, r.z - z) <= r.radius);
-    expect(covered(0, 0)).toBe(true); // the plaza itself
-    for (const lot of lots) expect(covered(lot.x, lot.z)).toBe(true);
+  it('reserves the plaza and nothing else: a building claims its own ground by its baked shape', () => {
+    const { reservations } = plan();
+    expect(reservations).toHaveLength(1);
+    expect(Math.hypot(reservations[0]!.x, reservations[0]!.z)).toBe(0);
+    expect(reservations[0]!.radius).toBe(TOWN.plaza.radius);
   });
 
   it('rings the town with one closed road', () => {

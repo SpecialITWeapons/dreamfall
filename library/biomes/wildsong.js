@@ -6,7 +6,7 @@ import { defineBiome } from '../contract';
 export default defineBiome({
   id: 'wildsong',
   name: 'Wildsong hills',
-  params: { base: 'meadow', alt: 'steppe', rock: 'rock' },
+  params: { base: 'meadow', alt: 'steppe', rock: 'rock', road: 'clay' },
   presence: { type: 'climatePoint', point: [0.5, 0.5, 0.35] },
   ground: {
     type: 'layers',

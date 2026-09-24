@@ -173,8 +173,9 @@ export function planVillage(site, params, kit) {
           const tint = palette[Math.min(palette.length - 1, Math.floor(site.random() * palette.length))];
           // Facing the street: the house turns its front to the axis it stands on.
           const yaw = Math.atan2(ux, uz) + (shoulder > 0 ? 0 : Math.PI);
+          // No reservation: the ring claims a house's ground by its baked
+          // shape (scenery/Claims.ts), so a tree may stand in its garden.
           kit.structure(structure, x, z, { yaw, floors, tint });
-          kit.reserve(x, z, params.lots.depth * 0.7);
         }
       }
     }
@@ -212,7 +213,7 @@ export function planVillage(site, params, kit) {
       const x = here[0] - (dz / len) * shoulder * hedges.offset,
         z = here[1] + (dx / len) * shoulder * hedges.offset;
       // Behind the houses, not through them: the offset clears the lots' own
-      // reservations, and what breaks the run is the village ending, a slope no
+      // gardens, and what breaks the run is the village ending, a slope no
       // hedge would be planted up, or another lane crossing -- a hedge laid over
       // a road is the fault this whole arrangement exists to avoid.
       const crossed = streets.some(

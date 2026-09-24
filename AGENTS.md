@@ -14,8 +14,8 @@ test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
 interface, posture, the authored figure and its file, the outfit), `terrain/`
 (noise, base fields, heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
-ring, settlement lattice, pools, tree kit, structure kit, road kit, painted
-textures, ground shade, grass), `sky/`
+ring, claimed ground, settlement lattice, road network and routes, pools, tree
+kit, structure kit, road kit, painted textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
 (ambience model and sound graph), `render/` (color grade, lighting model,
 display chain), `time/` (day clock). `three` is aliased to
@@ -36,7 +36,8 @@ page works under a Pages subdirectory.
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`,
-  `render/Layers.ts`, `terrain/HookCost.ts`) import neither
+  `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`,
+  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -265,7 +266,7 @@ page works under a Pages subdirectory.
   sky takes a little less of the tint than the fog does; it is capped at
   `MAX_HAZE` and fades out above the low air, because a biome may colour a
   horizon and never repaint one. An entry that stands **in** a country -- a
-  settlement -- says `ambience.inherit`: its slot's weight goes to the biomes
+  settlement -- says `inherit`: its slot's weight goes to the biomes
   beside it in both the haze and the sound, and what it names is added on top,
   so a village is not a hole in the jungle's air with a bell in it.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
@@ -312,11 +313,12 @@ page works under a Pages subdirectory.
   and `Grass.mesh` is the group of them.
 - The grass window is **a set of tiles written a rim at a time**, and the whole
   of what makes that correct is that a tile's tufts are a pure function of its
-  own coordinates: nothing in the placement may read where the flyer is, or
-  approaching a meadow would change it. Crossing a cell drops the tiles that
-  left, moves the last live tuft into each hole, and writes only the arrivals;
-  only an origin jump rewrites everything, because only then are the matrices
-  wrong. Three numbers move together: a tile is taken by its centre so a tuft
+  own coordinates and of the plans built over it: nothing in the placement may
+  read where the flyer is, or approaching a meadow would change it. Crossing a
+  cell drops the tiles that left, moves the last live tuft into each hole, and
+  writes only the arrivals; a plan that arrives late rewrites the tiles under
+  it; only an origin jump rewrites everything, because only then are the
+  matrices wrong. Three numbers move together: a tile is taken by its centre so a tuft
   may stand 45 m past `REACH`, which makes `GRASS_FADE[1] <= REACH - STEP - 45`,
   and `CEILING` has to clear the fade or crossing it hides visible grass.
 
@@ -347,13 +349,15 @@ page works under a Pages subdirectory.
   not stand in for planting: a hedge squared off around a plot, on the argument
   that the scatter would fill it, came out an empty green frame lying on bare
   clay. A hedgerow beside a lane needs nothing inside it to read.
-- A settlement **sows the ground it claims**: its own weight is what crowds the
-  country's biomes out of it, so a settlement with no `populate` is a disc of
-  bare paint as wide as its presence. No thinning toward the middle is needed --
-  the lots' reservations already refuse a tree where the houses are -- but the
-  density has to be a real fraction of the country's, because those reservations
-  do less than they look: the village read 1.7 trees a hectare inside and 1.7
-  outside until its own density came down to 0.3.
+- A settlement **stands in its country** (`inherit: { trees }`): its weight
+  is its presence and its plateau, and the ground, the snow, the grass, the
+  trees and the props, the sound and the air under it are the country's
+  beside it (`terrain/Country.ts`, and the same sums in nodes in
+  `TerrainMesh`). Its trees and props are the country's thinned to `trees`
+  (0.4, a clearing). It used to paint its own disc and sow its own species,
+  and the owner read that as a patch cut out of the country. The first biome
+  of the registry may not inherit: it takes the ground no presence claims,
+  which is also where a texel with no country in its slots goes.
 - `maxSlope` refuses a lattice **cell** whose centre is steep, measured across
   `LATTICE_SLOPE_PROBE`; `maxCut` fades the settlement where the ground has run
   too far from its centre, in metres. They were one number until a town asked,
@@ -378,9 +382,31 @@ page works under a Pages subdirectory.
   fault the ring's own tree ceiling has -- and what the pools then refuse is
   counted in `SceneryStats.buildingsRefused`, because a `continue` is how a
   settlement quietly loses two hundred houses.
-- `cell.occupied` reads the plans' reservations and roads out of a hash grid
-  filled at every rebuild, which is why the forest keeps off the square and the
-  road.
+- `scenery/Claims.ts` is the one answer to "may something stand here", asked
+  two ways: a tree or a scattered prop keeps off a road, a reservation (a
+  plaza) and a house by the house's **baked reach plus 3 m**; a tuft of grass
+  keeps off the road and the house's footprint and nothing else. A plan
+  reserves no ground for its lots: 16.8 m round every lot closed the whole
+  street to trees. The ring fills the index at every rebuild and the grass
+  reads the same one; a plan that arrives after its grass tiles were written
+  has those tiles written again, once.
+- **Roads join settlements** that share land, and every road ends at one at
+  both ends: it is how a village is found from the air. The pairs are the
+  relative neighbourhood graph over every seated site, edges up to 14 km
+  (`RoadNetwork.ts`); a route is a pure function of the seed and the pair,
+  searched from the end with the smaller id (`Route.ts`: A* over the base
+  height on a 48 m grid, a slow noise that bends it on the flat, Chaikin, a
+  sway that fades on slopes, 40 m bends and 20 m hairpins). Past 12 % a
+  grade is a **cost, not a wall**: this world tilts 10 % over the median 48 m
+  step, and a wall at 12 % joined one pair in fourteen where nine have a land
+  way at all -- the sea decides which pairs are joined. A route is 14 to 45 ms,
+  so it runs in a worker (`routes.worker.ts`); `Roads.ts` asks for the pairs
+  near the flight and keeps them by pair, and `Sites.charted` seats the sites
+  it needs without queueing a plan for any. It is drawn to the edge of a
+  settlement whose plan is not built and into its street once it is
+  (`stretchOf`), a kilometre a mesh, widened with distance so it stays a line
+  from altitude, in its country's `params.road`, and it cuts a ride through the
+  trees (`ROUTE_CLEARING`).
 - Windows are **panes, not a belt**: `kit.windows` cuts a floor's band at its
   two heights and then slices it along the wall into panes with piers between
   them, `slabOf` taking one slice at a time (splitting at each plane in turn

@@ -14,6 +14,7 @@ import type { Origin } from '../sim/Origin';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from '../terrain/Heightfield';
 import type { WorldSampler } from '../terrain/WorldSampler';
+import { createClaims } from './Claims';
 import { createGrass } from './Grass';
 import type { GroundShade } from './GroundShade';
 import type { Obstacles } from './Obstacles';
@@ -21,6 +22,7 @@ import { createOverrides } from './Overrides';
 import { createPaintedTextures, createSceneryMaterials } from './Painted';
 import { createPools } from './Pools';
 import { createRing, type ScenerySink, type TreeInstance } from './Ring';
+import { createRoads } from './Roads';
 import { createSites, type Site } from './Sites';
 
 /** What a frame gives the plan queue, ms. A village costs about one of these. */
@@ -59,6 +61,12 @@ export interface SceneryStats {
   grassMs: number;
   /** What the species, the props and their textures cost to bake, once. */
   bakeMs: number;
+  /** Roads between settlements built, waiting for the worker, and refused for having no land way. */
+  routes: number;
+  routesQueued: number;
+  routesRefused: number;
+  /** Kilometre pieces of those roads standing in the ring. */
+  routeChunks: number;
 }
 
 export interface Scenery {
@@ -94,7 +102,18 @@ export function createScenery(deps: {
     textures,
   });
   const pools = createPools({ library, textures, materials, uniforms: deps.uniforms, origin, heightfield });
-  const grass = createGrass({ seed, library, heightfield, materials, shade, uniforms: deps.uniforms });
+  // The ground the plans speak for: the ring fills it at every rebuild, and the
+  // grass, updated after the ring in the same frame, reads the same one.
+  const claims = createClaims();
+  const grass = createGrass({
+    seed,
+    library,
+    heightfield,
+    materials,
+    shade,
+    uniforms: deps.uniforms,
+    claims,
+  });
   const bakeMs = Math.round(performance.now() - bakeStarted);
   for (const mesh of pools.meshes) scene.add(mesh);
   scene.add(pools.roads);
@@ -131,6 +150,7 @@ export function createScenery(deps: {
     prop: (prop) => pools.sink.prop(prop),
     structure: (building) => pools.sink.structure(building),
     site: (plan) => pools.sink.site(plan),
+    route: (id, points) => pools.sink.route?.(id, points),
     end() {
       pools.sink.end();
       shadeRecords.length = shadeCount;
@@ -139,6 +159,9 @@ export function createScenery(deps: {
 
   const overrides = createOverrides();
   const sites = createSites({ library, sampler, heightfield, overrides });
+  // The roads between the settlements, searched in a worker as the flight
+  // comes near them; the ring draws what of each is in its reach.
+  const roads = createRoads({ seed, sites });
   const ring = createRing({
     seed,
     library,
@@ -149,10 +172,13 @@ export function createScenery(deps: {
     metrics: pools.metrics,
     propKit: pools.propKit,
     sites,
+    claims,
+    roads,
     sink,
   });
 
-  let rebuilds = 0;
+  let rebuilds = 0,
+    seenRoutes = 0;
   let sitesMs = 0;
   const nearby: Site[] = [];
   return {
@@ -167,7 +193,12 @@ export function createScenery(deps: {
       const started = performance.now();
       sites.work(SITE_BUDGET_MS);
       sitesMs = performance.now() - started;
-      if (ring.update(x, z, moved || sites.built > planned)) {
+      // The network is looked at every kilometre and its routes arrive from the
+      // worker; one arriving is a rebuild, as a plan arriving is.
+      roads.update(x, z);
+      const routed = roads.version !== seenRoutes;
+      seenRoutes = roads.version;
+      if (ring.update(x, z, moved || sites.built > planned || routed)) {
         rebuilds++;
         shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
       }
@@ -201,6 +232,10 @@ export function createScenery(deps: {
         grassMs: Math.round(grass.ms * 10) / 10,
         sitesMs: Math.round(sitesMs * 100) / 100,
         bakeMs,
+        routes: roads.built,
+        routesQueued: roads.queued,
+        routesRefused: roads.refused,
+        routeChunks: pools.routePieces,
       };
     },
     groups: {
@@ -212,6 +247,7 @@ export function createScenery(deps: {
     },
     sample: (i) => samples[i] ?? null,
     dispose() {
+      roads.dispose();
       for (const mesh of pools.meshes) scene.remove(mesh);
       scene.remove(pools.roads);
       scene.remove(grass.mesh);

@@ -99,6 +99,18 @@ describe('createSites', () => {
       expect.arrayContaining(first.map((f) => f.split('@')[0]!)),
     );
   });
+  it('charts the sites of a wide reach without queueing a plan for any of them', () => {
+    const s = sites(library([village()]));
+    const charted = s.charted(0, 0, 3000, []);
+    expect(charted.length).toBeGreaterThan(0);
+    expect(s.queued).toBe(0);
+    // the same places the ring would find, by the same ids
+    const found = s
+      .near(0, 0, 3000, [])
+      .map((site) => site.id)
+      .sort();
+    expect(charted.map((site) => site.id).sort()).toEqual(found);
+  });
   it('leaves a sparse lattice sparse: a six-kilometre grid over a coast carries one village', () => {
     // Not a failure of the finder. Nine cells around the origin, three of them
     // carrying, their centres four to eleven kilometres out, and seed 42's

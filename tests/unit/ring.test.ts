@@ -26,6 +26,7 @@ import {
   TREE_RADIUS,
   createRing,
   type PropInstance,
+  type RingDeps,
   type SceneryMetrics,
   type ScenerySink,
   type StructureInstance,
@@ -86,7 +87,8 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
   const trees: TreeInstance[] = [],
     props: PropInstance[] = [],
     buildings: StructureInstance[] = [],
-    plans: SitePlan[] = [];
+    plans: SitePlan[] = [],
+    routes: Array<{ id: string; points: Array<[number, number]> }> = [];
   let begun = 0,
     ended = 0;
   const sink: ScenerySink = {
@@ -96,6 +98,7 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
       props.length = 0;
       buildings.length = 0;
       plans.length = 0;
+      routes.length = 0;
     },
     tree(t) {
       if (trees.length >= capacity) return false;
@@ -115,11 +118,14 @@ const collector = (capacity = Infinity, houses = Infinity, standings = Infinity)
     site(plan) {
       plans.push(plan);
     },
+    route(id, points) {
+      routes.push({ id, points });
+    },
     end() {
       ended++;
     },
   };
-  return { sink, trees, props, buildings, plans, counts: () => ({ begun, ended }) };
+  return { sink, trees, props, buildings, plans, routes, counts: () => ({ begun, ended }) };
 };
 
 /** A biome that asks instead of planting: what does the ground say about these points? */
@@ -135,6 +141,32 @@ const asker = (points: Array<[number, number]>, answers: boolean[]): Biome =>
       points.forEach(([x, z], i) => (answers[i] = cell.occupied(x, z)));
     },
   });
+
+/** A country that remembers what share of each cell it was handed. */
+const recorder = (
+  id: string,
+  presence: number,
+  shares: Array<{ x: number; z: number; share: number }>,
+): Biome =>
+  defineBiome({
+    id,
+    name: id,
+    params: {},
+    presence: () => presence,
+    ground,
+    populate: (cell) => {
+      shares.push({ x: cell.center.x, z: cell.center.z, share: cell.share });
+    },
+  });
+
+/** A settlement 150 m across the middle of the world, standing in whatever is there. */
+const camp = defineBiome({
+  id: 'camp',
+  name: 'camp',
+  params: {},
+  presence: (f) => (Math.hypot(f.x, f.z) < 150 ? 1 : 0),
+  inherit: { trees: 0.4 },
+});
 
 /** A plan carrying nothing but the ground it speaks for. */
 const planOf = (parts: {
@@ -176,12 +208,14 @@ const oneSite = (plan: SitePlan): Sites => {
     fields: {} as Fields,
     random: () => 0.5,
   };
+  const near: Sites['near'] = (x, z, reach, out) => {
+    out.length = 0;
+    if (Math.hypot(site.x - x, site.z - z) <= reach + site.radius) out.push(site);
+    return out;
+  };
   return {
-    near(x, z, reach, out) {
-      out.length = 0;
-      if (Math.hypot(site.x - x, site.z - z) <= reach + site.radius) out.push(site);
-      return out;
-    },
+    near,
+    charted: near,
     planFor: (asked) => (asked.id === site.id ? plan : null),
     work: () => {},
     built: 1,
@@ -212,6 +246,7 @@ const ring = (
     maxTrees?: number;
     radius?: number;
     sites?: Sites;
+    roads?: RingDeps['roads'];
     /** What the pools will take before they start turning things away. */
     houses?: number;
     standings?: number;
@@ -235,6 +270,7 @@ const ring = (
       overrides: createOverrides(opts.overrides),
       metrics,
       sites: opts.sites,
+      roads: opts.roads,
       sink: sink.sink,
       propKit: {
         sstep: (a: number, b: number, x: number) => Math.max(0, Math.min(1, (x - a) / (b - a || 1))),
@@ -362,6 +398,88 @@ describe('the streamed ring', () => {
     with_.ring.update(0, 0, false);
     expect(with_.props.length).toBeGreaterThan(0);
     expect(with_.trees.map((t) => `${t.x},${t.z}`)).toEqual(without.trees.map((t) => `${t.x},${t.z}`));
+  });
+  it('sows a settlement with the country it stands in, thinned to its clearing', () => {
+    // The wood claims a quarter everywhere and the camp all of its disc, so the
+    // camp holds 0.8 of a cell and the wood 0.2. The wood used to sow 0.2 of
+    // that cell and the camp its own trees; now the wood has the whole cell,
+    // cleared by the camp's share: 1 - 0.8 * (1 - 0.4).
+    const shares: Array<{ x: number; z: number; share: number }> = [];
+    const r = ring(library([recorder('woods', 0.25, shares), camp]), { radius: 300 });
+    r.ring.update(0, 0, false);
+    const inside = shares.filter((s) => Math.hypot(s.x, s.z) < 100);
+    const outside = shares.filter((s) => Math.hypot(s.x, s.z) > 250);
+    expect(inside.length).toBeGreaterThan(0);
+    expect(outside.length).toBeGreaterThan(0);
+    for (const s of inside) expect(s.share).toBeCloseTo(0.52, 5);
+    for (const s of outside) expect(s.share).toBeCloseTo(1, 5);
+  });
+  it("keeps a tree off a house by the house's own reach, and lets one stand in its garden", () => {
+    // metrics says a cottage reaches 6 m; the margin is 3 (scenery/Claims.ts)
+    const house = lotAt(40, -20);
+    const answers: boolean[] = [];
+    const probes: Array<[number, number]> = [
+      [house.x + 9 - 0.5, house.z],
+      [house.x + 9 + 0.5, house.z],
+    ];
+    const r = ring(library([asker(probes, answers)]), {
+      sites: oneSite(planOf({ x: 0, z: 0, lots: [house] })),
+    });
+    r.ring.update(0, 0, false);
+    expect(answers).toEqual([true, false]);
+  });
+  it('keeps a scattered prop off the plan, and still stands the one the plan asked for', () => {
+    const road: RoadSpec = {
+      points: [
+        [-300, 0],
+        [300, 0],
+      ],
+      width: 40,
+    };
+    const well = lotAt(0, 120, 0, 'stones');
+    const r = ring(library([everywhere('woods', 0, { stones: 1 })], [stones]), {
+      sites: oneSite(planOf({ x: 0, z: 0, roads: [road], lots: [well] })),
+    });
+    r.ring.update(0, 0, false);
+    const scattered = r.props.filter((p) => !(p.x === well.x && p.z === well.z));
+    expect(scattered.length).toBeGreaterThan(10);
+    expect(scattered.filter((p) => toRoad(road, p.x, p.z) <= road.width / 2)).toEqual([]);
+    expect(r.props.some((p) => p.x === well.x && p.z === well.z)).toBe(true);
+  });
+  it('offers a road between settlements to the pools, and keeps the wood off it', () => {
+    const a: Site = {
+      id: 'village:0,0',
+      biome: 'village',
+      x: -900,
+      z: 0,
+      radius: 150,
+      yaw: 0,
+      fields: {} as Fields,
+      random: () => 0.5,
+    };
+    const b: Site = { ...a, id: 'village:1,0', x: 900 };
+    const route = {
+      id: 'village:0,0|village:1,0',
+      a,
+      b,
+      points: Array.from({ length: 76 }, (_, i) => [-900 + i * 24, 0] as [number, number]),
+    };
+    const roads: RingDeps['roads'] = {
+      near: (_x, _z, _reach, out) => {
+        out.length = 0;
+        out.push(route);
+        return out;
+      },
+    };
+    const r = ring(library([everywhere('woods', 10)]), { roads });
+    r.ring.update(0, 0, false);
+    expect(r.routes.map((x) => x.id)).toEqual([route.id]);
+    // no plan at either end: the road stops at both edges
+    const drawn = r.routes[0]!.points;
+    expect(drawn[0]![0]).toBeGreaterThanOrEqual(-900 + 150);
+    expect(drawn.at(-1)![0]).toBeLessThanOrEqual(900 - 150);
+    expect(r.trees.length).toBeGreaterThan(10);
+    expect(r.trees.filter((t) => Math.abs(t.z) <= 2.5 + 5 && Math.abs(t.x) < 700)).toEqual([]);
   });
   it('keeps the scatter off a plan: nothing in a reservation, nothing on a road', () => {
     const plain = ring(library([everywhere('woods', 10)]));

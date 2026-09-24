@@ -85,7 +85,7 @@ describe('validateLibrary', () => {
         biome({ id: 'typo', ambience: { fogTint: 'rockRose', fogTintAmount: 0.2 } }),
         biome({ id: 'loud', ambience: { layers: { birds: 1.5, owls: 0.2 } as never } }),
         biome({ id: 'thick', ambience: { fogTint: 'frost', fogTintAmount: -1 } }),
-        biome({ id: 'fine', ambience: { layers: { birds: 0.5 }, fogTint: 'frost', inherit: true } }),
+        biome({ id: 'fine', ambience: { layers: { birds: 0.5 }, fogTint: 'frost' } }),
       ],
     });
     const all = errors.join('\n');
@@ -94,6 +94,39 @@ describe('validateLibrary', () => {
     expect(all).toContain('biome loud.ambience.layers.birds: 1.5 is not a share of 0..1');
     expect(all).toContain('biome thick.ambience.fogTintAmount: -1 is not an amount');
     expect(all).not.toContain('biome fine');
+  });
+  it('lets an entry stand in a country, and then it paints and sows nothing of its own', () => {
+    const camp = (over: Partial<Biome> = {}): Biome =>
+      defineBiome({
+        id: 'camp',
+        name: 'Camp',
+        params: {},
+        presence: { type: 'climatePoint', point: [0.5, 0.5, 0.5], radius: 0.12 },
+        inherit: { trees: 0.4 },
+        ...over,
+      });
+    // standing in a country with no ground of its own is the whole point
+    expect(validateLibrary({ biomes: [biome(), camp()] })).toEqual([]);
+    const errors = validateLibrary({
+      biomes: [
+        biome(),
+        camp({ id: 'painted', ground }),
+        camp({ id: 'sown', populate: { type: 'scatter', species: {}, density: 0 } }),
+        camp({ id: 'dense', inherit: { trees: 1.5 } }),
+        camp({ id: 'nan', inherit: { trees: Number.NaN } }),
+        biome({ id: 'bare', ground: undefined }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome painted: stands in a country and paints no ground of its own');
+    expect(all).toContain('biome sown: stands in a country and sows nothing of its own');
+    expect(all).toContain('biome dense.inherit.trees: 1.5 is not a share of 0..1');
+    expect(all).toContain('biome nan.inherit.trees: NaN is not a share of 0..1');
+    expect(all).toContain('biome bare: needs a ground hook');
+    // the first biome takes the ground nobody claims, so it has to be a country
+    expect(validateLibrary({ biomes: [camp(), biome()] })).toContain(
+      'biome camp: the first biome takes unclaimed ground and cannot stand in a country',
+    );
   });
   it('refuses colors in params outside the envelope, naming the path', () => {
     const errors = validateLibrary({
@@ -381,7 +414,10 @@ describe('the library itself', () => {
     for (const biome of library.biomes) {
       expect(biome.kind).toBe('biome');
       expect(biome.name.length).toBeGreaterThan(2);
-      expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock']);
+      // an entry standing in a country paints nothing, so it has nothing to paint with
+      if (biome.inherit) expect(biome.params).toEqual({});
+      // the road's colour is the country's too, chosen against its own ground
+      else expect(Object.keys(biome.params)).toEqual(['base', 'alt', 'rock', 'road']);
     }
   });
   it('ships nine species and two props, and names only ids it baked', () => {
@@ -390,12 +426,9 @@ describe('the library itself', () => {
     expect(library.props).toHaveLength(2);
     expect(validateLibrary(library)).toEqual([]);
     const baked = new Set(library.species!.map((s) => s.id));
-    // Every biome grows something baked, the settlements included. They used to
-    // grow nothing, on the theory that it was what kept their ground a village
-    // and not a wood; what it actually kept was a disc of bare paint as wide as
-    // the presence, because a settlement's own weight crowds the country's
-    // biomes out of the ground it stands on and then sows nothing there.
+    // Every country grows something baked; a settlement grows its country's.
     for (const biome of library.biomes) {
+      if (biome.inherit) continue;
       const sown = biome.populate as ScatterSpec;
       expect(sown.type).toBe('scatter');
       expect(Object.keys(sown.species).length).toBeGreaterThan(0);
@@ -403,17 +436,16 @@ describe('the library itself', () => {
       for (const id of Object.keys(sown.props ?? {}))
         expect(library.props!.some((p) => p.id === id)).toBe(true);
     }
-    // and a settlement grows less than the country: it is a place people cleared
+    // A settlement sows nothing of its own: it stands in a country, and the
+    // country's trees come up on it at a clearing's share -- neither the wood
+    // around it nor the bare disc of paint it was when it sowed for itself.
     const settled = library.biomes.filter((b) => b.sites);
     expect(settled.map((b) => b.id)).toEqual(['village', 'town']);
-    const wildest = Math.max(
-      ...library.biomes.filter((b) => !b.sites).map((b) => (b.populate as ScatterSpec).density),
-    );
     for (const biome of settled) {
-      expect((biome.populate as ScatterSpec).density).toBeLessThan(wildest);
-      // and the grass is the half of it that shows: without one, the ground a
-      // settlement claims is balder than the meadow it was cut out of
-      expect((biome.populate as ScatterSpec).grass!.density).toBeGreaterThan(0);
+      expect(biome.populate).toBeUndefined();
+      expect(biome.ground).toBeUndefined();
+      expect(biome.inherit!.trees).toBeGreaterThan(0);
+      expect(biome.inherit!.trees).toBeLessThan(1);
     }
     // one species grows its own way, so the bake hook has a live example
     expect(library.species!.find((s) => s.id === 'cypress')!.bake).toBeTypeOf('function');
@@ -441,7 +473,7 @@ describe('the library itself', () => {
       // the settlement stands in a country and says so: its sound is the
       // country's, with a bell added
       if (biome.sites) {
-        expect(biome.ambience?.inherit, `${biome.id} stands in a country`).toBe(true);
+        expect(biome.inherit, `${biome.id} stands in a country`).toBeDefined();
         expect(biome.ambience?.layers?.bells, `${biome.id} has a bell`).toBeGreaterThan(0);
         continue;
       }
@@ -458,6 +490,7 @@ describe('the library itself', () => {
   });
   it('paints every biome out of the swatch book, undercoat first', () => {
     for (const biome of createLibrary().biomes) {
+      if (biome.inherit) continue;
       const ground = biome.ground as { type: string; layers: Array<{ color: string; mask?: string }> };
       expect(ground.type).toBe('layers');
       expect(ground.layers[0]!.mask).toBeUndefined(); // the undercoat takes no mask

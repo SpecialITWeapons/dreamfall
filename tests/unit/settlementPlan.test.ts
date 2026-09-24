@@ -127,12 +127,13 @@ describe('planVillage', () => {
           VILLAGE.lots.depth * 0.6,
         );
   });
-  it('speaks for the ground it built on: every house is inside a reservation', () => {
+  it('reserves no ground for its houses: a house claims its own by its baked shape', () => {
+    // The ring measures a house the way it measures its obstacle
+    // (scenery/Claims.ts). A plan that reserved 16.8 m round every lot closed
+    // the whole street to trees, lots being 24 m apart.
     const { lots, reservations } = plan();
-    for (const lot of lots) {
-      const covered = reservations.some((r) => Math.hypot(r.x - lot.x, r.z - lot.z) <= r.radius);
-      expect(covered).toBe(true);
-    }
+    expect(lots.length).toBeGreaterThan(0);
+    expect(reservations).toEqual([]);
   });
   it('asks only for buildings the registry baked, at floors they have', () => {
     const structures = createLibrary().structures ?? [];

@@ -52,14 +52,14 @@ export const TOWN = {
    * county, and the streets have their own slope rule for what is left.
    *
    * The feather stays at 300 and not wider, which is the other half of the same
-   * trade: the feather is also how far the town's own ground colour reaches, so
-   * every metre of it is a metre of painted disc with no town on it. At half
-   * strength the rim lets down 45 m over those 300, which is a shoulder.
+   * trade: every metre of it is a metre of levelled ground with no town on it.
+   * At half strength the rim lets down 45 m over those 300, which is a
+   * shoulder.
    */
   plateau: { strength: 0.5, feather: 300 },
   /**
    * What ground a town will stand on, read twice -- by the presence hook, which
-   * paints and flattens, and by the site finder, which seats the town -- and
+   * flattens, and by the site finder, which seats the town -- and
    * the same numbers both times.
    *
    * `maxSlope` is the village's, and deliberately: measured on seed 42 over the
@@ -80,7 +80,7 @@ export const TOWN = {
    * ground keeps the part of it that is flat and lets the rest go, instead of
    * cutting a table out of a hillside.
    */
-  ground: { land: 12, minTemp: 0.25, maxSlope: 0.45, maxCut: 120 },
+  ground: { land: 12, maxSlope: 0.45, maxCut: 120 },
   roads: {
     /**
      * The ring road: a closed walk at this share of the radius, in this many
@@ -161,20 +161,11 @@ export const TOWN = {
    */
   storeys: { cottage: [1, 3], barn: [1, 2], mill: [3, 4] },
   /**
-   * What grows on the ground a town claims, and much less of it than a village
-   * has: a town paves what it walks on, and its lots leave less ground over.
-   * The species are the ones that stand in a row where somebody put them.
+   * The country's trees between the buildings and along the streets, at a
+   * clearing's share: a town is not a wood, and it is not the pale disc it was
+   * when it painted a kilometre of its own ground.
    */
-  scenery: {
-    species: { cypress: 1, oak: 0.5 },
-    // Higher than a village's 0.3 and still thinner on the ground, because half
-    // a town's disc is reserved: two thousand lots at `depth * 0.7` apiece cover
-    // about a million square metres of the two a 800 m town has, so the scatter
-    // only ever sees the other half. What is left is trees between the houses
-    // and along the streets, which is what a town has.
-    density: 0.45,
-    grass: { tint: 'grassCool', density: 0.6 },
-  },
+  clearing: 0.4,
   /**
    * A town's whitewash. Paler and more uniform than the village's on purpose:
    * the village is a handful of farms that painted themselves, the town is a
@@ -182,20 +173,4 @@ export const TOWN = {
    * exactly what their recipe painted.
    */
   palette: ['white', 'white', 'white', 'barkPale', 'canopyCold', 'grassCool'],
-  /**
-   * Its ground, and this is the one number here chosen from a photograph rather
-   * than from an argument. It was stone over clay -- paler and stonier than the
-   * village, because a town paves what it walks on -- and from a kilometre and a
-   * half up a full plateau in that palette reads as a bald sand dune with specks
-   * on it. What a town looks like from the air is roofs and streets on green,
-   * not a quarry, so the ground under it goes grey-green and the stone becomes
-   * the patches people wore into it. It costs nothing: the same three-layer
-   * painter, three different swatches.
-   *
-   * Green and not grey-green, in the end. What tells a town from the country
-   * around it should be its roofs and its streets, not a kilometre-wide change
-   * of ground colour: the paler the disc, the more it reads from the air as a
-   * thing that happened to the terrain rather than a place on it.
-   */
-  paint: { base: 'paleGreen', alt: 'stoneWarm', rock: 'rockPale' },
 };
