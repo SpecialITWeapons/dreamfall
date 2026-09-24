@@ -214,7 +214,10 @@ export function createTerrain(deps: {
       ]),
     ),
   );
-  const hooks = biomes.map((biome) => resolveGround(biome.ground));
+  // An entry that stands in a country has no ground of its own and no branch:
+  // its share of a fragment is handed to the country beside it below.
+  const hooks = biomes.map((biome) => (biome.ground ? resolveGround(biome.ground) : null));
+  const inherits = biomes.map((biome) => biome.inherit !== undefined);
   const colorNode = Fn(() => {
     const ground = vec3(0).toVar();
     // How much of this fragment belongs to biomes that want the world's snow.
@@ -234,15 +237,37 @@ export function createTerrain(deps: {
       // a byte texture reads back normalised, so the index comes home times 255
       const id = [slots.x, slots.y, slots.z].map((c) => c.mul(255).round());
       const share = [weights.y, weights.z, weights.w];
+      // How much of this fragment is a country at all. A slot naming an entry
+      // that stands in one -- a settlement -- is counted out, and the rest is
+      // spread back over one, which is `countryOf` (terrain/Country.ts) in
+      // nodes: the ring sows by that function, and a ground that disagreed
+      // with it would paint a meadow under a wood.
+      const countryIn = (slot: number) =>
+        inherits.reduce(
+          (acc: Node<'float'>, inherit, k) => (inherit ? acc.sub(step(id[slot]!.sub(k).abs(), 0.5)) : acc),
+          float(1),
+        );
+      const country = share
+        .map((w, slot) => w.mul(countryIn(slot)))
+        .reduce((a, b) => a.add(b))
+        .toVar();
+      // Nobody here is a country: the first biome takes it, the sampler's own
+      // rule for ground no presence claims.
+      const unclaimed = float(1).sub(step(0.0001, country));
       const total = float(0).toVar();
       biomes.forEach((_biome, k) => {
-        // this fragment's share of this biome: the slots that name it, added up
+        const hook = hooks[k];
+        if (!hook) return;
+        // this fragment's share of this biome: the slots that name it, added
+        // up, as a share of the country rather than of the whole fragment
         const mask = share
           .map((w, slot) => w.mul(step(id[slot]!.sub(k).abs(), 0.5)))
           .reduce((a, b) => a.add(b))
+          .div(country.max(0.0001))
           .toVar();
+        if (k === 0) mask.addAssign(unclaimed);
         If(mask.greaterThan(BRANCH_FLOOR), () => {
-          const out = hooks[k]!({ ...context, weight: mask, params: biomeParams[k]! } as GroundCtx);
+          const out = hook({ ...context, weight: mask, params: biomeParams[k]! } as GroundCtx);
           ground.addAssign(out.albedo.mul(mask));
           total.addAssign(mask);
           if (biomes[k]!.snow !== false) snowShare.addAssign(mask);

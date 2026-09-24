@@ -95,6 +95,39 @@ describe('validateLibrary', () => {
     expect(all).toContain('biome thick.ambience.fogTintAmount: -1 is not an amount');
     expect(all).not.toContain('biome fine');
   });
+  it('lets an entry stand in a country, and then it paints and sows nothing of its own', () => {
+    const camp = (over: Partial<Biome> = {}): Biome =>
+      defineBiome({
+        id: 'camp',
+        name: 'Camp',
+        params: {},
+        presence: { type: 'climatePoint', point: [0.5, 0.5, 0.5], radius: 0.12 },
+        inherit: { trees: 0.4 },
+        ...over,
+      });
+    // standing in a country with no ground of its own is the whole point
+    expect(validateLibrary({ biomes: [biome(), camp()] })).toEqual([]);
+    const errors = validateLibrary({
+      biomes: [
+        biome(),
+        camp({ id: 'painted', ground }),
+        camp({ id: 'sown', populate: { type: 'scatter', species: {}, density: 0 } }),
+        camp({ id: 'dense', inherit: { trees: 1.5 } }),
+        camp({ id: 'nan', inherit: { trees: Number.NaN } }),
+        biome({ id: 'bare', ground: undefined }),
+      ],
+    });
+    const all = errors.join('\n');
+    expect(all).toContain('biome painted: stands in a country and paints no ground of its own');
+    expect(all).toContain('biome sown: stands in a country and sows nothing of its own');
+    expect(all).toContain('biome dense.inherit.trees: 1.5 is not a share of 0..1');
+    expect(all).toContain('biome nan.inherit.trees: NaN is not a share of 0..1');
+    expect(all).toContain('biome bare: needs a ground hook');
+    // the first biome takes the ground nobody claims, so it has to be a country
+    expect(validateLibrary({ biomes: [camp(), biome()] })).toContain(
+      'biome camp: the first biome takes unclaimed ground and cannot stand in a country',
+    );
+  });
   it('refuses colors in params outside the envelope, naming the path', () => {
     const errors = validateLibrary({
       biomes: [biome({ id: 'neon', params: { base: '#00ff00', alt: 'meadow' } })],
