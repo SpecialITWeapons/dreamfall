@@ -28,7 +28,7 @@ import {
   vec3,
 } from 'three/tsl';
 import type { LitMaterial } from '../render/SoftLighting';
-import { createCloudShadow } from '../sky/CloudShadow';
+import { CLOUD_SHADOW, createCloudShadow } from '../sky/CloudShadow';
 import type { Horizon } from '../sky/Fog';
 import { CLOUD_DRIFT } from '../sky/SkyDome';
 import type { SkyUniforms } from '../sky/SkyUniforms';
@@ -135,8 +135,13 @@ export function createWater(deps: {
   const strokePhase = p.y.mul(0.48).add(p.x.mul(0.14)).add(n.x.mul(95)).sub(u.time.mul(0.55));
   const strokeVisible = float(1).sub(smoothstep(0.8, 2.8, fwidth(strokePhase)));
   const strokes = mix(0.38, smoothstep(0.1, 0.8, sin(strokePhase)), strokeVisible);
-  const sheen = smoothstep(0.28, 0.88, glint).mul(strokes).mul(0.32).add(glint.mul(0.065));
   const cloudShadow = createCloudShadow(u);
+  // The sun's glints go out under a bank with the sun itself.
+  const sheen = smoothstep(0.28, 0.88, glint)
+    .mul(strokes)
+    .mul(0.32)
+    .add(glint.mul(0.065))
+    .mul(createCloudShadow(u, CLOUD_SHADOW.sun)(p));
   const material = litMaterial(base.mul(cloudShadow(p)));
   material.positionNode = vec3(positionLocal.x, wave.mul(0.18).add(SEA_LEVEL), positionLocal.z);
   material.normalNode = transformNormalToView(n);

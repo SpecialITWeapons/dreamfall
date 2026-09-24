@@ -29,7 +29,7 @@ export function createLights(scene: Scene, look: Look) {
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.5;
   sun.shadow.radius = 3;
-  sun.shadow.intensity = 0.55 * LOOK.shadowI;
+  sun.shadow.intensity = LOOK.shadow.sun;
   const shadowMatrix = uniform(sun.shadow.matrix);
   const moonColor = look.moon.color;
   const m4 = new Matrix4(),
@@ -59,12 +59,12 @@ export function createLights(scene: Scene, look: Look) {
         sun.position.copy(sunDir);
         sun.color.copy(palette.sun);
         sun.intensity = palette.sunI * sunUp;
-        sun.shadow.intensity = 0.55 * LOOK.shadowI;
+        sun.shadow.intensity = LOOK.shadow.sun;
       } else {
         sun.position.copy(moonDir);
         sun.color.setHex(moonColor);
         sun.intensity = look.moon.intensity * moonLight;
-        sun.shadow.intensity = 0.4 * LOOK.shadowI;
+        sun.shadow.intensity = LOOK.shadow.moon;
       }
       m4.lookAt(sun.position, zero, sun.up);
       const texel = (SHADOW_HALF * 2) / SHADOW_MAP,

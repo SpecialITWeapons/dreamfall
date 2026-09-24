@@ -4,10 +4,14 @@
 // fly-with-me; docs/perf-notes.md there says why the intermediates are 8-bit.
 import {
   ACESFilmicToneMapping,
+  Color,
   FloatType,
+  HalfFloatType,
   NoToneMapping,
   RenderTarget,
   UnsignedByteType,
+  Vector2,
+  Vector3,
   type Camera,
   type PerspectiveCamera,
   type Scene,
@@ -15,15 +19,23 @@ import {
 import { RenderPipeline, type WebGPURenderer } from 'three/webgpu';
 import {
   Fn,
+  If,
+  Loop,
   convertToTexture,
   dot,
   exp,
   float,
+  interleavedGradientNoise,
+  luminance,
+  max,
   mix,
   pass,
   renderOutput,
   saturation,
+  screenCoordinate,
   screenUV,
+  step,
+  uniform,
   vec2,
   vec3,
   vec4,
@@ -32,6 +44,14 @@ import {
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { LOOK } from './ColorGrade';
+
+/**
+ * The sun's shafts: what counts as the sun on the screen (luminance over the
+ * halo), how far from the disc a source may be (screen heights), how far back
+ * toward the sun each pixel looks (share of the way), in how many steps, how
+ * each step weighs against the last, and the whole of it.
+ */
+export const SHAFTS = { threshold: 1.2, reach: 0.22, length: 0.9, samples: 40, decay: 0.965, strength: 0.6 };
 
 export interface Capture {
   width: number;
@@ -45,6 +65,59 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
   const scenePass = pass(scene, camera, { samples: 4 });
   const col = scenePass.getTextureNode();
   const glow = bloom(col, LOOK.bloom.strength, LOOK.bloom.radius, LOOK.bloom.threshold);
+  // Shafts of sunlight: what is brighter than the sun's own halo, near the sun
+  // on the screen, smeared back toward it, so whatever stands in front of the
+  // sun -- a ridge, a tree, the figure, the dense middle of a cloud -- leaves a
+  // dark wedge in the light. Screen space and half resolution: no depth is read,
+  // because anything in front of the disc is darker than it, and the scene pass
+  // is multisampled, which a depth read would have to resolve first.
+  const uSunUV = uniform(new Vector2(0.5, 0.5)),
+    uShafts = uniform(0),
+    uShaftColor = uniform(new Color(1, 1, 1));
+  const aspect = vec2(viewportSize.x.div(viewportSize.y), 1);
+  const HDR = { type: HalfFloatType, depthBuffer: false };
+  const shaftSource = convertToTexture(
+    Fn(() => {
+      const d = screenUV.sub(uSunUV).mul(aspect);
+      const near = exp(
+        dot(d, d)
+          .div(SHAFTS.reach * SHAFTS.reach)
+          .negate(),
+      );
+      return vec4(max(luminance(col.sample(screenUV).rgb).sub(SHAFTS.threshold), 0).mul(near), 0, 0, 1);
+    })(),
+    null,
+    null,
+    HDR,
+  );
+  shaftSource.setResolutionScale(0.5);
+  const shafts = convertToTexture(
+    Fn(() => {
+      const sum = float(0).toVar();
+      If(uShafts.greaterThan(0.001), () => {
+        const stride = uSunUV
+          .sub(screenUV)
+          .mul(SHAFTS.length / SHAFTS.samples)
+          .toVar();
+        const at = screenUV.add(stride.mul(interleavedGradientNoise(screenCoordinate))).toVar();
+        const weight = float(1).toVar();
+        Loop(SHAFTS.samples, () => {
+          at.addAssign(stride);
+          // Clamped to the edge the texture would smear its last row into streaks.
+          const inside = step(0, at.x).mul(step(at.x, 1)).mul(step(0, at.y)).mul(step(at.y, 1));
+          sum.addAssign(shaftSource.sample(at).r.mul(inside).mul(weight));
+          weight.mulAssign(SHAFTS.decay);
+        });
+      });
+      return vec4(vec3(sum.mul(uShafts).div(SHAFTS.samples)), 1);
+    })(),
+    null,
+    null,
+    HDR,
+  );
+  shafts.setResolutionScale(0.5);
+  const sunAt = new Vector3(),
+    facing = new Vector3();
   const pipeline = new RenderPipeline(renderer);
   // The renderer's own tone mapping stays off and the display chain asks for
   // ACES by name. A node material's compiled program is keyed on the renderer's
@@ -58,7 +131,7 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
   pipeline.outputColorTransform = false;
   const LDR = { type: UnsignedByteType, depthBuffer: false };
   const display = convertToTexture(
-    renderOutput(vec4(col.rgb.add(glow.rgb), 1), ACESFilmicToneMapping),
+    renderOutput(vec4(col.rgb.add(glow.rgb).add(shafts.r.mul(uShaftColor)), 1), ACESFilmicToneMapping),
     null,
     null,
     LDR,
@@ -107,6 +180,21 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
     setExposure(v: number) {
       renderer.toneMappingExposure = v;
     },
+    /**
+     * The sun for the shafts: its direction in the world, its colour and how
+     * strong the shafts are (zero skips them). They fade as the sun leaves the
+     * screen and are gone once it is behind the camera.
+     */
+    setSun(dir: Vector3, color: Color, strength: number) {
+      camera.getWorldDirection(facing);
+      sunAt.copy(camera.position).addScaledVector(dir, 1000).project(camera);
+      const ahead = facing.dot(dir);
+      const off = Math.max(Math.abs(sunAt.x), Math.abs(sunAt.y));
+      const fade = Math.min(1, Math.max(0, ahead / 0.2)) * Math.min(1, Math.max(0, (1.6 - off) / 0.5));
+      uSunUV.value.set(sunAt.x * 0.5 + 0.5, 0.5 - sunAt.y * 0.5);
+      uShaftColor.value.copy(color);
+      uShafts.value = strength * fade * SHAFTS.strength;
+    },
     /** A small linear picture of the scene as it stands, before the display chain; for checks that must see what is drawn. */
     capture(width = 192, height = 108): Promise<Capture | null> {
       if (disposed) return Promise.resolve(null);
@@ -153,6 +241,8 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
         captureTargets.clear();
         scenePass.dispose();
         glow.dispose();
+        shaftSource.dispose();
+        shafts.dispose();
         display.dispose();
         softDisplay.dispose();
         pipeline.dispose();

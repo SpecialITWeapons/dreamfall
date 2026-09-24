@@ -9,7 +9,14 @@ import { Fn, float, smoothstep, texture } from 'three/tsl';
 import { COVER, DECK } from './CloudCover';
 import type { SkyUniforms } from './SkyUniforms';
 
-export const CLOUD_SHADOW = { depth: 0.3 };
+/**
+ * How much a bank takes away: `sun` of the sunlight on whatever the sun lights
+ * (it goes through the cast shadow, so the sky's light stays), `depth` of the
+ * whole colour of the water, which takes no cast shadow. It was the ground's
+ * colour, sky light and all, and a third of it: a stain under the cloud rather
+ * than the sun going in, and trees and houses in it kept their sun.
+ */
+export const CLOUD_SHADOW = { depth: 0.3, sun: 0.7 };
 
 /**
  * How much cloud the deck has over a world point, 0..1, carried by the wind:
@@ -43,10 +50,10 @@ export function deckTopAt(u: SkyUniforms, worldXZ: Node<'vec2'>): Node<'float'> 
 }
 
 /** Light reaching a world point through the clouds, 1 - depth .. 1. */
-export function createCloudShadow(u: SkyUniforms) {
+export function createCloudShadow(u: SkyUniforms, depth: number = CLOUD_SHADOW.depth) {
   return Fn(([worldXZ]: [Node<'vec2'>]) => {
     const sunUp = smoothstep(-0.05, 0.1, u.uSunDir.y);
-    return float(1).sub(cloudCoverAt(u, worldXZ).mul(CLOUD_SHADOW.depth).mul(sunUp));
+    return float(1).sub(cloudCoverAt(u, worldXZ).mul(depth).mul(sunUp));
   });
 }
 export type CloudShadow = ReturnType<typeof createCloudShadow>;

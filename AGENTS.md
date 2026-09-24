@@ -121,6 +121,21 @@ page works under a Pages subdirectory.
   keyed to the sun's height read `solar(phase)`.
 - Sky and fog share `horizonTint`; `uSunDir` is always the true sun; the one
   directional light changes direction only at zero intensity.
+- **A clear day is the sun's** (`LOOK.daylight`, weighed by `uDaylight`, the
+  sun well up). Every sun term used to hang on `uLowSun`, so only a sunset had
+  one, and the sky lit the land at two thirds of the sun. By day the sun's key
+  is raised and the sky's lowered; a cast shadow takes `LOOK.shadow.sun` of
+  the sunlight; the clouds' shadow rides the cast shadow (`createSoftShadow`'s
+  `through`), so it dims the sun on everything lit and never the sky's light;
+  `horizonTint` carries the forward scatter around the sun at every height of
+  it; sunlit cloud and the disc sit over white so the bloom finds them; a bank
+  in front of the sun shows it through; leaves and grass let it through
+  (`translucency`, in the lighting model, so a crown in shade stays dark); the
+  eye stops down looking into it (`Atmosphere.glare`); and the display chain
+  draws shafts from it (`SHAFTS`), in screen space and at half resolution,
+  from what is brighter than the halo -- no depth read, because the scene pass
+  is multisampled. `LOOK.bands` is how much of the illustrated response is
+  bands; at its old 0.65 every slope that saw the sun got the same light.
 - The sky dome draws last among the opaque objects (`renderOrder 1`), writes
   no depth, and rides on the camera.
 - The Milky Way is grown, not downloaded: `sky/GalaxyMatter.ts` is the whole of

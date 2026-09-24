@@ -52,6 +52,7 @@ import {
   uniform,
   vec3,
 } from 'three/tsl';
+import { LOOK } from '../render/ColorGrade';
 import { mulberry32, sstep } from '../terrain/noise';
 import { DECK, deckTop, type CloudCover } from './CloudCover';
 import { CLOUD_SEA_DROP } from './CloudSea';
@@ -434,6 +435,8 @@ export function createClouds(seed: number, u: SkyUniforms, cover: CloudCover) {
     const light = mix(u.uCloudWhite, sunCol, u.uLowSun.mul(0.7).add(pow(s, 4).mul(0.3))).toVar();
     light.assign(mix(light, u.uGlow, u.uLowSun.mul(pow(s, 1.5)).mul(0.5)));
     light.assign(mix(light, mix(light, VENUS, 0.5), u.uVenusI.mul(pow(float(1).sub(s), 3)).mul(0.3)));
+    // A cumulus in the sun is the brightest thing in the sky, not paper.
+    light.mulAssign(mix(1, LOOK.daylight.cloudSun, u.uDaylight));
     return mix(shade, light, lit)
       .add(sunCol.mul(rim).mul(0.4))
       .add(sunCol.mul(through))

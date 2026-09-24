@@ -47,6 +47,8 @@ const PAINTED_MEAN = 0.38,
 const BARK_BUMP = 0.015;
 const LEAF_ALPHA_TEST = 0.04,
   LEAF_EMISSIVE = 0.025;
+/** Sunlight let through a leaf and a blade toward an eye looking into the sun (`SoftIllustratedLighting`). */
+const TRANSLUCENCY = { leaf: 1.1, grass: 0.6 };
 /**
  * Where a thing standing on the ground stops being drawn as it reaches the edge
  * of the ring. Low on purpose: the coverage samples are what dissolve it, and a
@@ -402,6 +404,7 @@ export function createSceneryMaterials(deps: {
       const sample = sampleOf(map);
       const m = litMaterial(sample.rgb, {
         basic: { side: DoubleSide, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: true },
+        translucency: TRANSLUCENCY.leaf,
       });
       // Cards are flat and two-sided; lighting them by their own normal would
       // turn a crown into a set of dark squares, so they answer as they face.
@@ -462,6 +465,7 @@ export function createSceneryMaterials(deps: {
       const sample = sampleOf(textures.grass);
       const m = litMaterial(sample.rgb, {
         basic: { side: DoubleSide, alphaTest: GRASS_ALPHA_TEST, alphaToCoverage: true },
+        translucency: TRANSLUCENCY.grass,
       });
       // Blades are lit from above like the ground they stand in, never by the
       // normal of the quad they are painted on.
