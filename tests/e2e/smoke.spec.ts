@@ -667,12 +667,19 @@ test('the registry reaches the page and two climates paint different ground', as
         // is pinned before the jump as well as after it: a step taken from a
         // heading left over from the last visit lands a few metres off, which
         // used to be invisible in the colour of the ground and stopped being so
-        // the day trees stood on it.
+        // the day trees stood on it. The turn rate is pinned for the same reason:
+        // it eases from step to step and arrives at each visit different, the
+        // last step turns the heading by it and places the camera there, and the
+        // pin after that step moves no camera. The picture was taken from a
+        // camera a few hundredths of a degree apart, which is nothing on the
+        // ground and everything on the edge of a tuft or a cloud (0.002 between
+        // two visits, all of it that).
         const pin = () => {
           w.state.x = x;
           w.state.z = z;
           w.state.y = h + 110;
           w.state.heading = 0;
+          w.state.yawRate = 0;
           w.state.bank = 0;
           w.state.pitch = 0;
           w.state.vy = 0;
@@ -742,7 +749,9 @@ test('the registry reaches the page and two climates paint different ground', as
     x && y ? x.colour.reduce((s, v, i) => s + Math.abs(v - y.colour[i]!), 0) / x.colour.length : NaN;
   // The pixels come back 0..1, so these are small numbers on purpose. Measured
   // at seed 42: steppe reads (0.29, 0.31, 0.11) and wildsong (0.17, 0.28, 0.08).
-  expect(apart(shotA, shotAgain)).toBeLessThan(0.002);
+  // Two visits to one place are the same picture to the bit, so the bar is the
+  // one the sky's repeat is held to and not a tolerance for drift.
+  expect(apart(shotA, shotAgain)).toBeLessThan(1e-4);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
   // and the place itself is the same place twice: the same forest, the same
   // meadow, the flight pinned where it was put
