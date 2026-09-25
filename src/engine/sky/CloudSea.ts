@@ -52,6 +52,24 @@ const VENUS = vec3(0.86, 0.46, 0.52);
 /** How far the top of the sea sits under the deck's top, m: the folds reach up into it. */
 export const CLOUD_SEA_DROP = 55;
 /**
+ * How far over the sea's level the camera has to be to see the sea, m: from
+ * none of it at `[0]` to all of it at `[1]`. Under it the sea is the dome's
+ * and the clusters' to draw, and its fog on the ground is not drawn either.
+ */
+export const SEA_SEEN = [-60, 10] as const;
+
+/**
+ * How much the camera sees the sea over a world point from above, 0..1: the
+ * sea's own opacity by height and the fog's under it, so the fog lies on the
+ * ground only where the sea is drawn over it. The fog read whether the camera
+ * was over the top of the bank under the camera instead -- 120 m over the
+ * base in a gap -- and the sea lies 180 m over it: in between, a bank a
+ * kilometre off was a sheet of haze on the ground with no cloud over it.
+ */
+export const seaSeenAt = (u: SkyUniforms, p: Node<'vec2'>) =>
+  smoothstep(SEA_SEEN[0], SEA_SEEN[1], cameraPosition.y.sub(deckBaseAt(u, p).add(DECK.sea - CLOUD_SEA_DROP)));
+
+/**
  * The grid: `core` metres a step out to `coreReach` from the flyer, then steps
  * that open out evenly to `reach`, `steps` of them from one side to the other.
  */
@@ -185,7 +203,7 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   // Seen only from over it: a stretch of the sea above the camera -- a higher
   // region's -- is the dome's and the clusters' to draw. A bank's edge
   // dissolves into the gap, and the far edge goes as the far fog has.
-  material.opacityNode = smoothstep(-60, 10, cameraPosition.y.sub(positionWorld.y))
+  material.opacityNode = smoothstep(SEA_SEEN[0], SEA_SEEN[1], cameraPosition.y.sub(positionWorld.y))
     .mul(smoothstep(0.1, 0.5, cover))
     .mul(float(1).sub(smoothstep(3400, 4400, length(positionWorld.sub(cameraPosition)))))
     .mul(u.uSeaOpacity);

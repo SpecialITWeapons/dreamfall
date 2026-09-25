@@ -22,6 +22,7 @@ import {
 } from 'three/tsl';
 import { LOOK } from '../render/ColorGrade';
 import { DECK } from './CloudCover';
+import { seaSeenAt } from './CloudSea';
 
 /**
  * How far one sees inside a cloud, m: the whiteout covers a thing this far off
@@ -83,8 +84,10 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   const farCover = smoothstep(3600, 4200, distance);
   const air = float(1).sub(float(1).sub(distF).mul(float(1).sub(lowAir)).mul(float(1).sub(farCover)));
   // The typings leave the height fog factor untyped; it is a float. It is the
-  // cloud sea's own fog, so it lies only where the deck has cloud: over a gap
-  // between the banks the ground is seen through the air and nothing else.
+  // cloud sea's own fog, so it lies only where the deck has cloud -- over a gap
+  // between the banks the ground is seen through the air and nothing else --
+  // and only where the sea is drawn over it (`seaSeenAt`): from under the
+  // sea's level a bank is the clusters' and the dome's, not a haze on the ground.
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
   // It rises to the region's deck rather than one height for the world: to the
   // top of its thinnest bank, from the base, which moves only from one region
@@ -93,7 +96,7 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   const seaF = (
     exponentialHeightFogFactor(float(0.0000085), deckBaseAt(u, worldXZ).add(DECK.thin - 30)) as Node<'float'>
   )
-    .mul(u.uAbove)
+    .mul(seaSeenAt(u, worldXZ))
     .mul(cloudBankAt(u, worldXZ))
     .mul(u.uSeaFog)
     .mul(u.uShowSeaFog);
