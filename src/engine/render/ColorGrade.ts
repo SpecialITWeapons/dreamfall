@@ -43,7 +43,8 @@ export const LOOK = {
   bands: { floor: 0.08, share: 0.4 },
   sunI: 1.12,
   hemiI: 1.08,
-  fog: 0.82,
+  /** The far air's density over the palette's. It was 0.82, and the land behind the land was a wall of haze. */
+  fog: 0.55,
   moonI: 1.05,
   /** How much of the direct light a cast shadow takes away, sun and moon. */
   shadow: { sun: 0.82, moon: 0.43 },

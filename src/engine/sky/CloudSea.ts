@@ -188,7 +188,7 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   material.opacityNode = smoothstep(-60, 10, cameraPosition.y.sub(positionWorld.y))
     .mul(smoothstep(0.1, 0.5, cover))
     .mul(float(1).sub(smoothstep(3400, 4400, length(positionWorld.sub(cameraPosition)))))
-    .mul(0.94);
+    .mul(u.uSeaOpacity);
   material.positionNode = vec3(positionLocal.x, surfaceAt(worldXZ), positionLocal.z);
   const geometry = seaGeometry();
   const mesh = new Mesh(geometry, material);

@@ -37,8 +37,12 @@ export const COVER = {
   texels: 256,
   /** Metres a texel covers: the square repeats every `texels * metres`. */
   metres: 80,
-  /** The share of the sky under cloud, lowest and highest, over a region. */
-  range: [0.3, 0.6] as const,
+  /**
+   * The share of the sky under cloud, lowest and highest, over a region. It
+   * was 30 to 60 per cent, and the owner read the sea and its fog as too much
+   * of the world: a flight now sees more gaps than banks.
+   */
+  range: [0.15, 0.35] as const,
   /** How soft a bank's edge is, in the bank field's own units. */
   soft: 0.06,
   /**

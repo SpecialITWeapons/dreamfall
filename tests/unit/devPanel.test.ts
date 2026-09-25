@@ -21,6 +21,7 @@ const stub = () => {
     layers: [] as Array<[string, boolean]>,
     measured: 0,
     clouds: [] as Array<Record<string, number>>,
+    look: [] as Array<Record<string, number>>,
   };
   const world = {
     seed: 42,
@@ -66,6 +67,14 @@ const stub = () => {
       set(change: Record<string, number>) {
         Object.assign(this.form, change);
         calls.clouds.push(change);
+      },
+    },
+    look: {
+      ranges: { sea: [0, 1, 0.6], air: [0, 2, 1] },
+      form: { sea: 0.6, air: 1 },
+      set(change: Record<string, number>) {
+        Object.assign(this.form, change);
+        calls.look.push(change);
       },
     },
     layers: {
@@ -226,6 +235,22 @@ describe('dev panel', () => {
     const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset form')!;
     (reset as HTMLButtonElement).click();
     expect(calls.clouds.at(-1)).toEqual({ stretch: 1.8, rag: 0.4 });
+  });
+
+  it('moves the deck and the air from a slider each, and puts them back', () => {
+    const { world, calls, raw } = stub();
+    panel = createDevPanel(document, world);
+    const air = [...document.querySelectorAll<HTMLInputElement>('#dev input[type=range]')].filter(
+      (input) => input.max === '2',
+    );
+    expect(air).toHaveLength(1);
+    air[0]!.value = '0.4';
+    air[0]!.dispatchEvent(new Event('input'));
+    expect(calls.look.at(-1)).toEqual({ air: 0.4 });
+    expect(raw.look.form.air).toBe(0.4);
+    const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset look')!;
+    (reset as HTMLButtonElement).click();
+    expect(calls.look.at(-1)).toEqual({ sea: 0.6, air: 1 });
   });
 
   it('takes itself and its styles away on dispose', () => {

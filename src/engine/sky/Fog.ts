@@ -67,14 +67,20 @@ export type Horizon = ReturnType<typeof createHorizon>;
 /** Distance fog in the horizon color, a height fog that becomes the cloud sea from above, and the whiteout. */
 export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void {
   const distance = length(positionWorld.sub(cameraPosition));
-  const distF = densityFogFactor(u.uFogDensity).mul(mix(1, 0.55, smoothstep(100, 1000, positionWorld.y)));
+  const distF = densityFogFactor(u.uFogDensity.mul(u.uAir)).mul(
+    mix(1, 0.55, smoothstep(100, 1000, positionWorld.y)),
+  );
   const lowAir = distance
     .div(120)
     .clamp(0, 1)
     .mul(0.055)
     .mul(float(1).sub(smoothstep(200, 800, positionWorld.y)));
-  // Gentle local air; only the far streamed edge needs complete cover.
-  const farCover = smoothstep(2600, 4100, distance);
+  // Gentle local air; only the far streamed edge needs complete cover. That
+  // edge is the terrain's own -- the window ends 4.2 km from the flyer, a square
+  // with the dome behind it -- and the cover hides it and nothing else. It began
+  // at 2600 m, the scenery ring's edge, which the trees fade at by themselves,
+  // and the owner read it as a wall of haze behind the land.
+  const farCover = smoothstep(3600, 4200, distance);
   const air = float(1).sub(float(1).sub(distF).mul(float(1).sub(lowAir)).mul(float(1).sub(farCover)));
   // The typings leave the height fog factor untyped; it is a float. It is the
   // cloud sea's own fog, so it lies only where the deck has cloud: over a gap
@@ -89,6 +95,7 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
   )
     .mul(u.uAbove)
     .mul(cloudBankAt(u, worldXZ))
+    .mul(u.uSeaFog)
     .mul(u.uShowSeaFog);
   const inCloud = u.uWhiteout.mul(float(1).sub(exp(distance.div(WHITEOUT.visibility).negate())));
   const factor = max(max(air, seaF), inCloud);
