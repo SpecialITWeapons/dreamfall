@@ -620,6 +620,65 @@ test('the clouds move with the wind: sixty simulated seconds change the sky unde
   expect(errors).toEqual([]);
 });
 
+test('the deck lays its fog on the ground only where its sea is seen over it', async ({ page }) => {
+  // In a gap between banks, over the deck's base and under its sea, the fog
+  // under a bank a kilometre off was a sheet of haze on the ground with no
+  // cloud over it: it read "over the deck" off the gap's own top, 120 m over the
+  // base, and the sea lies 180 m over it. From there switching the fog off must
+  // change nothing; from over the sea it must.
+  test.slow();
+  // Looking down at the ground, where the fog lies; the default framing is
+  // nearly level and sees mostly sky.
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'dreamfall-settings',
+      JSON.stringify({ volume: 0, muted: true, camera: { yaw: 0, pitch: 0.3, dist: 9 }, view: 'tpp' }),
+    ),
+  );
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const fogCost = (x: number, z: number, over: number) =>
+    page.evaluate(
+      async ({ x, z, over }) => {
+        const w = window.__world!;
+        const d = w.deckAt(x, z);
+        w.jump(x, z, d.base + over - w.heightAt(x, z));
+        w.dayPhase = 0.3;
+        // The ring, the plans and the grass stream in over the frames after a
+        // jump; they settle first, or they are what two pictures differ by.
+        for (let i = 0; i < 120; i++) w.step(0);
+        const shot = async () => {
+          w.frame(0);
+          const c = await w.capture(160, 90);
+          return c ? Array.from(c.data) : [];
+        };
+        const diff = (a: number[], b: number[]) =>
+          a.reduce((s, v, i) => s + Math.abs(v - b[i]!), 0) / a.length;
+        w.layers.set('deck fog', true);
+        // the first picture after a jump is not the second: it is thrown away
+        await shot();
+        const on = await shot();
+        const again = await shot();
+        w.layers.set('deck fog', false);
+        const off = await shot();
+        w.layers.set('deck fog', true);
+        return { bank: d.bank, noise: diff(on, again), fog: diff(on, off) };
+      },
+      { x, z, over },
+    );
+  // A gap with solid banks round it, in the lowest region for 4 km, 100 m over
+  // its base: the sea is over the camera everywhere it could be seen, so no
+  // fog of it may be on the ground. It used to be there at 0.6 of its strength.
+  const under = await fogCost(0, -2500, 100);
+  expect(under.bank).toBeLessThan(0.05);
+  expect(under.noise).toBe(0);
+  expect(under.fog).toBe(0);
+  // over a bank, 450 m over the base: the sea is seen, and its fog with it
+  const over = await fogCost(3000, 3000, 450);
+  expect(over.fog).toBeGreaterThan(0.003);
+  expect(errors).toEqual([]);
+});
+
 test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
   // Five window refills and three renders, on a software rasteriser, and every
   // refill now runs twelve presence hooks over 313 600 texels: this one is slow

@@ -314,7 +314,12 @@ page works under a Pages subdirectory.
   the exception on purpose: it lies at one level a region (`base + DECK.sea`)
   and dissolves at a bank's edge, because following each bank's top made
   cliffs of cloud; a bank's depth and towers are the clusters' to show, and a
-  cluster is never much taller than wide (`CLUSTER.tallest`). How opaque the sea
+  cluster is never much taller than wide (`CLUSTER.tallest`). The sea's fog on
+  the ground lies only where the sea is seen over it (`seaSeenAt`, the sea's
+  own opacity by height, per fragment): it read "over the deck" off the top of
+  the bank under the camera once, 120 m over the base in a gap, and between
+  that and the sea's level a bank off to the side was a sheet of haze on the
+  ground with no cloud over it. How opaque the sea
   is, how much of its fog there is and how thick the far air is are `SKY_LOOK`
   (`sky/SkyUniforms.ts`), which `?dev=1` moves live. The far cover in `Fog.ts`
   hides the **terrain's own edge**, 4.2 km out, and nothing else: started
