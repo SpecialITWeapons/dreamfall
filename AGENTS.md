@@ -551,6 +551,9 @@ page works under a Pages subdirectory.
 runs the first on every push and pull request; the browser tests run on CI only
 when started by hand (Actions, CI, Run workflow), so run them locally before a
 change that touches what the page draws.
+`npm run test:e2e:gpu` runs the same suite on this machine's GPU (ANGLE on
+D3D11, still `?webgl=1`); it is minutes rather than the rasteriser's twenty,
+and it is for a machine with a GPU only.
 Close any browser tab left open for testing when you're done.
 
 ## Maintaining this file
