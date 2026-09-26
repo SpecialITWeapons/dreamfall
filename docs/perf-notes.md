@@ -882,3 +882,99 @@ two seconds. Where it goes is the grid -- 584 000 samples of the body's box
 at 1.5 cm, each asking every chain in reach -- and the escape hatch, unbuilt,
 is a worker, as the galaxy has. The finer grid buys nothing a chase camera
 at three metres can see.
+
+## Far terrain
+
+What the second window (264 texels), the far grid to +-8.2 km, the wider
+water (256 x 64 m against 132 x 64 m) and the deeper cloud sea (200 steps to
+8.2 km against 160 to 4.5 km) cost, on this machine: `main` (merge-base
+`acf0191`) against `claude/dalszy-teren` (`ad82a56`), interleaved by branch
+rather than by round -- `npm run bench` was run whole on one checkout, then
+whole on the other, nothing else on the machine meanwhile, so read this as
+one comparison and not as two independent measurements.
+
+`npm run bench`, SwiftShader, WebGL2, seed 42, 2 rounds of 24 frames, the
+fastest round of each:
+
+| vantage | frame ms, before | frame ms, after | triangles, before | triangles, after | triangles, +% |
+| ------- | ---------------: | --------------: | ----------------: | ---------------: | ------------: |
+| dawn    |           1242.8 |          1440.9 |         1 161 467 |        1 353 915 |       +16.6 % |
+| noon    |           1231.5 |          1418.0 |         1 161 464 |        1 353 917 |       +16.6 % |
+| far     |            910.1 |          1239.5 |         1 145 063 |        1 395 111 |       +21.8 % |
+| deck    |            969.4 |          1286.9 |         1 146 168 |        1 396 221 |       +21.8 % |
+| night   |           1533.5 |          1718.8 |         1 667 915 |        1 860 363 |       +11.5 % |
+
+`frame ms` is the median, the file's own headline stat (see the M5 section
+above on why the fifth percentile lies on a rasteriser with no GPU); draws
+moved by one or two a vantage (47->48 dawn, 50->56 deck) and trees, buildings
+and grass counts are identical before and after at every vantage -- this
+branch touches no scenery, so every triangle and every millisecond above is
+the ground, the water and the cloud sea alone. `best ms` (the fifth
+percentile) was read too and is not printed here: at `night` it reads
+1309.2 before and 271.7 after, which is the bimodal artefact the M5 section
+already named, not the sky getting four times faster.
+
+**far and deck cost the most, relatively, for the least new geometry.** Their
+triangle count rose by the same fifth as dawn and noon's did in absolute
+terms, but their frame cost rose a third rather than a sixth: they are the
+two vantages with no grass to begin with (0 tufts, against 19 563 at dawn and
+noon), so the far grid, the wider water and the deeper cloud sea are a larger
+share of everything drawn there, and altitude (`far` is at the ceiling,
+`deck` is over the cloud sea) puts more of the new reach inside the frustum
+at once. `night`, with the village's own extra trees and grass on top, moved
+the least in relative terms for the same reason in reverse.
+
+Start-up cost and the triangle count at the default start, read with a small
+Playwright script (`window.__world.timings` right after `ready` goes true --
+the veil lifting -- and `window.__world.memory()` once the site queue is
+empty and three more animation frames have drawn), against `npm run preview`
+at `http://localhost:4173/?seed=42&webgl=1`, Chromium with
+`--use-angle=d3d11 --enable-gpu --force_high_performance_gpu
+--ignore-gpu-blocklist` (this machine's discrete GPU, as in Task 1's
+`playwright.gpu.config.ts`, not SwiftShader):
+
+| step (ms from the module's first line) | before | after | delta |
+| -------------------------------------- | -----: | ----: | ----: |
+| `graphics`                             |  1 965 | 1 976 |   +11 |
+| `figure`                               |  2 372 | 2 380 |    +8 |
+| `ground`                               |  2 782 | 2 875 |   +93 |
+| `scenery`                              |  3 018 | 3 134 |  +116 |
+| `sky` (the veil lifts here)            |  7 870 | 8 224 |  +354 |
+
+| at the default start |        before |         after |
+| -------------------- | ------------: | ------------: |
+| geometries           |            52 |            53 |
+| textures             |            38 |            40 |
+| draws                |            47 |            48 |
+| triangles            |     1 043 530 |     1 236 454 |
+| graphics memory      | 120 343 904 B | 127 046 650 B |
+
+Triangles at the default start rose **18.5 %** (+192 924), one more geometry
+(the far grid's mesh) and two more textures, for **354 ms** more of the 8.2 s
+to the veil lifting -- under 5 % of the start, and it lands entirely in
+`sky`'s own share (shader compile and the first real render) rather than in
+`ground`'s fill: the far window's own cost is not marked separately and is
+lost inside a stage that already covers the near window, the materials and
+now the far grid together. `graphics` and `figure` did not move outside
+single-run noise, as expected -- neither reads the terrain. This is one page
+load a build, not an averaged reading, so the smaller deltas (`ground`,
+`scenery`) are read as roughly flat rather than as a precise cost; the
+triangle count and the `sky` total are the two numbers this run actually
+supports.
+
+`npm run check` passes clean on `claude/dalszy-teren` (typecheck, lint,
+format, 483 Vitest tests, build). `npm run test:e2e:gpu`: **43 passed, 1
+failed, 44 ran, 3.0 minutes** (against Task 1's baseline on `main` before any
+far-terrain work: 42 passed, 1 failed, 43 ran, 2.5 minutes -- one more test
+exists now, `smoke.spec.ts:682` "the land reaches past the near window",
+which is this branch's own). `smoke.spec.ts:1566` ("the town costs the frame
+it was measured to cost, and no more") passed this time, where it failed on
+`main` in Task 1 -- both are the same machine-dependent shape assertion
+Task 1 already described (the "exactly one slow frame" test reads differently
+frame to frame on hardware fast enough that 10 ms is a coin flip), not a
+change this branch made. `smoke.spec.ts:204` ("the Milky Way bakes off the
+main thread...") failed, reproducibly -- re-run alone twice, same assertion
+both times (`core` a hair under 1.4x `away`, off by about 4 %). This is the
+failure Task 3's notes already recorded on this GPU at the base commit, with
+the far land narrowing the margin further; nothing here was changed to fix
+or hide it.
