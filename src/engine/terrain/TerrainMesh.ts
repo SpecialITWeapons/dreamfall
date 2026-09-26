@@ -24,8 +24,11 @@ import type { Node } from 'three/webgpu';
 import {
   Fn,
   If,
+  abs,
   float,
+  fract,
   ivec2,
+  max,
   mix,
   mx_noise_float,
   normalize,
@@ -47,10 +50,11 @@ import type { LitMaterial } from '../render/SoftLighting';
 import type { GroundShade } from '../scenery/GroundShade';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
+import { FAR_CELL, FAR_CELLS, MORPH, NEAR_CELLS, NEAR_REACH, gridIndices } from './Lod';
 import { BASE_TEMP_RANGE, CELL } from './WorldSampler';
 
-/** Rendered terrain, cells per side (±4.2 km). */
-export const TERRAIN_CELLS = 528;
+/** Rendered terrain, cells per side (±4.2 km); the far grid goes on from there (terrain/Lod.ts). */
+export const TERRAIN_CELLS = NEAR_CELLS;
 /** A biome under this share of a fragment does not run its hook at all (spec 6.3). */
 const BRANCH_FLOOR = 0.01;
 /**
@@ -64,29 +68,25 @@ const BRANCH_FLOOR = 0.01;
  * weights as 32-bit floats, which keep 1e-30 exactly.
  */
 const COUNTRY_FLOOR = 1e-30;
-export const WATER_CELLS = 132;
-export const WATER_CELL = CELL * 4;
+/** The water reaches as far as the far terrain, on the same anchor. */
+export const WATER_CELLS = FAR_CELLS;
+export const WATER_CELL = FAR_CELL;
 
-/** An indexed grid centered on the origin; the diagonal matches Heightfield.heightAt. */
-export function buildGrid(cells: number, cell: number): BufferGeometry {
+/** An indexed grid centered on the origin; the diagonal matches Heightfield.heightAt. `hole` as in `gridIndices`. */
+export function buildGrid(cells: number, cell: number, hole = 0): BufferGeometry {
   const side = cells + 1,
     count = side * side;
   const positions = new Float32Array(count * 3),
     normals = new Float32Array(count * 3);
-  const indices = count > 65535 ? new Uint32Array(cells * cells * 6) : new Uint16Array(cells * cells * 6);
-  let index = 0;
   for (let z = 0; z <= cells; z++)
     for (let x = 0; x <= cells; x++) {
       const vertex = z * side + x;
       positions[vertex * 3] = (x - cells / 2) * cell;
       positions[vertex * 3 + 2] = (z - cells / 2) * cell;
       normals[vertex * 3 + 1] = 1;
-      if (x < cells && z < cells) {
-        // Same diagonal as heightAt, including at negative world coordinates.
-        indices.set([vertex, vertex + side, vertex + 1, vertex + side + 1, vertex + 1, vertex + side], index);
-        index += 6;
-      }
     }
+  const all = gridIndices(cells, hole);
+  const indices = count > 65535 ? all : Uint16Array.from(all);
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(normals, 3));
@@ -109,6 +109,35 @@ export type TerrainPalette = ReturnType<typeof createTerrainPalette>;
 
 /** Reads one heightfield texel by world cell index; shared with the water for its shore depth. */
 export type LoadCell = (ix: Node<'float'>, iz: Node<'float'>) => Node<'vec4'>;
+
+/**
+ * The height on the exact triangle a grid of `cell` draws, at a world point:
+ * the diagonal of `buildGrid` and `heightAt`, also at negative coordinates.
+ * Bilinear interpolation would draw a different shoreline.
+ */
+export const surfaceHeight = (load: LoadCell, cell: number) =>
+  Fn(([pt]: [Node<'vec2'>]) => {
+    const at = pt.div(cell),
+      base = at.floor(),
+      f = fract(at);
+    const upperTriangle = step(1, f.x.add(f.y));
+    const a = load(base.x.add(upperTriangle), base.y.add(upperTriangle)).x;
+    const b = load(base.x.add(1), base.y).x;
+    const c = load(base.x, base.y.add(1)).x;
+    return a
+      .add(b.sub(a).mul(mix(f.x, float(1).sub(f.y), upperTriangle)))
+      .add(c.sub(a).mul(mix(f.y, float(1).sub(f.x), upperTriangle)));
+  });
+
+/** The normal at a window cell, from central differences over two cells of `cell` metres. */
+const cellNormal = (load: LoadCell, cell: number, ix: Node<'float'>, iz: Node<'float'>) =>
+  normalize(
+    vec3(
+      load(ix.sub(1), iz).x.sub(load(ix.add(1), iz).x),
+      cell * 2,
+      load(ix, iz.sub(1)).x.sub(load(ix, iz.add(1)).x),
+    ),
+  );
 
 // The world with no library at all: the swatches the ground was painted with
 // before the biomes owned it. Nothing in the page takes this path, but the
@@ -160,9 +189,17 @@ export function createTerrain(deps: {
   biomes?: Biome[];
   /** The scenery's shade sheet; without it the ground lights exactly as it did before there was one. */
   shade?: GroundShade;
+  /** Metres a cell and cells a side of the grid; the near window's by default. */
+  cell?: number;
+  cells?: number;
+  /** Cells either side of the middle left out (terrain/Lod.ts `HOLE`): the far grid's, where the near one lies. */
+  hole?: number;
+  /** The far terrain's loader: given, this grid's last `MORPH` metres go over into the far surface. */
+  coarse?: LoadCell;
 }) {
   const { heightfield: hf, uniforms: u, litMaterial, palette } = deps;
   const biomes = deps.biomes ?? [];
+  const cell = deps.cell ?? CELL;
   const size = hf.size;
   const texture = new DataTexture(hf.data, size, size, RGBAFormat, FloatType);
   texture.magFilter = texture.minFilter = NearestFilter;
@@ -183,16 +220,21 @@ export function createTerrain(deps: {
     textureLoad(slotTexture, ivec2(ix.mod(size).toInt(), iz.mod(size).toInt()));
   const wx = positionLocal.x.add(uAnchor.x),
     wz = positionLocal.z.add(uAnchor.y);
-  const ix = wx.div(CELL).add(0.5).floor(),
-    iz = wz.div(CELL).add(0.5).floor();
-  const hv = loadCell(ix, iz).x;
-  const surfaceNormal = normalize(
-    vec3(
-      loadCell(ix.sub(1), iz).x.sub(loadCell(ix.add(1), iz).x),
-      CELL * 2,
-      loadCell(ix, iz.sub(1)).x.sub(loadCell(ix, iz.add(1)).x),
-    ),
-  );
+  const ix = wx.div(cell).add(0.5).floor(),
+    iz = wz.div(cell).add(0.5).floor();
+  const ownHeight = loadCell(ix, iz).x;
+  const ownNormal = cellNormal(loadCell, cell, ix, iz);
+  // The near grid's rim goes over into the far surface, so on the edge the two
+  // grids are one surface and there is no crack between them to see the dome through.
+  let hv: Node<'float'> = ownHeight;
+  let surfaceNormal: Node<'vec3'> = ownNormal;
+  if (deps.coarse) {
+    const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
+    const fx = wx.div(FAR_CELL).add(0.5).floor(),
+      fz = wz.div(FAR_CELL).add(0.5).floor();
+    hv = mix(ownHeight, surfaceHeight(deps.coarse, FAR_CELL)(vec2(wx, wz)), rim);
+    surfaceNormal = normalize(mix(ownNormal, cellNormal(deps.coarse, FAR_CELL, fx, fz), rim));
+  }
   const normalV = varying(surfaceNormal).normalize();
   const slope = float(1).sub(normalV.y);
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
@@ -330,7 +372,7 @@ export function createTerrain(deps: {
   if (deps.shade) material.aoNode = deps.shade.aoNode(worldXZ);
   material.positionNode = vec3(positionLocal.x, hv, positionLocal.z);
   material.normalNode = transformNormalToView(normalV);
-  const mesh = new Mesh(buildGrid(TERRAIN_CELLS, CELL), material);
+  const mesh = new Mesh(buildGrid(deps.cells ?? TERRAIN_CELLS, cell, deps.hole ?? 0), material);
   mesh.frustumCulled = false;
   mesh.receiveShadow = true;
   return {

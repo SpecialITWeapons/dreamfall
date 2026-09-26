@@ -23,12 +23,9 @@ export const DESCENT = 20.8;
 /** Hard floor over ground and obstacles, m. */
 export const MIN_CLEARANCE = 25;
 /**
- * Ceiling, m above sea level. What bounds it is how far the world reaches: the
- * terrain window is 4.2 km to a side and the far fog has covered everything by
- * 4.1 km from the eye, so the higher the flight the smaller the disc of ground
- * it can see. At 2000 m that disc is still 3.6 km across and reads as land; at
- * 2600 a level look is fog and a look down a washed-out stain. It was 1400,
- * from fly-with-me, until the deck rose to 800 and left only 600 m over it.
+ * Ceiling, m above sea level. What bounded it was how far the world reached:
+ * the land ended 4.2 km from the eye until the far terrain (terrain/Lod.ts)
+ * took it to 8.2 km. It stays at 2000 until someone flies higher and looks.
  */
 export const MAX_ALTITUDE = 2000;
 /** Longest simulation step; a longer frame is clamped by the loop. */

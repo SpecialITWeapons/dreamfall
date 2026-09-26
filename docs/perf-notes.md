@@ -882,3 +882,111 @@ two seconds. Where it goes is the grid -- 584 000 samples of the body's box
 at 1.5 cm, each asking every chain in reach -- and the escape hatch, unbuilt,
 is a worker, as the galaxy has. The finer grid buys nothing a chase camera
 at three metres can see.
+
+## Far terrain
+
+What the second window (264 texels), the far grid to +-8.2 km, the wider
+water (256 x 64 m against 132 x 64 m) and the deeper cloud sea (200 steps to
+8.2 km against 160 to 4.5 km) cost, on this machine: `main` (merge-base
+`acf0191`) against `claude/dalszy-teren` (`ad82a56`), interleaved by branch
+rather than by round -- `npm run bench` was run whole on one checkout, then
+whole on the other, nothing else on the machine meanwhile, so read this as
+one comparison and not as two independent measurements.
+
+`npm run bench`, SwiftShader, WebGL2, seed 42, 2 rounds of 24 frames. `frame
+ms` is already the median of the window of frames _and_ the minimum across
+the two rounds (`tools/bench/README.md`); `best ms` is the fifth percentile,
+the fast end of the same window, kept beside it:
+
+| vantage | frame ms, before | frame ms, after | best ms, before | best ms, after | triangles, before | triangles, after | triangles, +% |
+| ------- | ---------------: | --------------: | --------------: | -------------: | ----------------: | ---------------: | ------------: |
+| dawn    |           1242.8 |          1440.9 |             5.4 |            6.5 |         1 161 467 |        1 353 915 |       +16.6 % |
+| noon    |           1231.5 |          1418.0 |          1161.1 |         1352.9 |         1 161 464 |        1 353 917 |       +16.6 % |
+| far     |            910.1 |          1239.5 |             5.1 |            4.1 |         1 145 063 |        1 395 111 |       +21.8 % |
+| deck    |            969.4 |          1286.9 |            19.9 |           18.8 |         1 146 168 |        1 396 221 |       +21.8 % |
+| night   |           1533.5 |          1718.8 |          1309.2 |          271.7 |         1 667 915 |        1 860 363 |       +11.5 % |
+
+`frame ms` (the median) is the file's own headline stat; `best ms` is the one
+the README already warns is artefact-prone on a rasteriser with no GPU (the
+bimodal-interval problem the M5 section names above) rather than a real
+number of anything -- at `night` it reads 1309.2 before and 271.7 after,
+which is that artefact, not the sky getting four times faster, so read the
+`frame ms` columns and treat `best ms` as a curiosity. draws moved by one to
+six a vantage (57->58 dawn, 50->56 deck) and trees, buildings and grass
+counts are identical before and after at every vantage -- this branch
+touches no scenery, so every triangle and every millisecond above is the
+ground, the water and the cloud sea alone.
+
+**far and deck's triangle increase is already the largest, and their
+frame-cost increase is larger still.** Their triangle count rose 21.8%, more
+than dawn and noon's 16.6% and night's 11.5%, both relatively and in
+absolute terms (about +250 000 against about +192 000 everywhere else). Their
+frame cost then rose further on top of that -- 36% and 33% against 15-16% at
+dawn and noon for a smaller triangle increase -- because they are the two
+vantages with no grass to begin with (0 tufts, against 19 563 at dawn and
+noon), so the far grid, the wider water and the deeper cloud sea are a larger
+share of everything drawn there, and altitude (`far` is at the ceiling,
+`deck` is over the cloud sea) puts more of the new reach inside the frustum
+at once. `night`, with the village's own extra trees and grass on top of a
+larger base to begin with, moved the least in relative terms in both
+figures.
+
+Start-up cost and the triangle count at the default start, read with a small
+Playwright script (`window.__world.timings` right after `ready` goes true --
+the veil lifting -- and `window.__world.memory()` once the site queue is
+empty and three more animation frames have drawn), against `npm run preview`
+at `http://localhost:4173/?seed=42&webgl=1`, Chromium with
+`--use-angle=d3d11 --enable-gpu --force_high_performance_gpu
+--ignore-gpu-blocklist` (this machine's discrete GPU, as in Task 1's
+`playwright.gpu.config.ts`, not SwiftShader):
+
+| step (ms from the module's first line) | before | after | delta |
+| -------------------------------------- | -----: | ----: | ----: |
+| `graphics`                             |  1 965 | 1 976 |   +11 |
+| `figure`                               |  2 372 | 2 380 |    +8 |
+| `ground`                               |  2 782 | 2 875 |   +93 |
+| `scenery`                              |  3 018 | 3 134 |  +116 |
+| `sky` (the veil lifts here)            |  7 870 | 8 224 |  +354 |
+
+| at the default start |        before |         after |
+| -------------------- | ------------: | ------------: |
+| geometries           |            52 |            53 |
+| textures             |            38 |            40 |
+| draws                |            47 |            48 |
+| triangles            |     1 043 530 |     1 236 454 |
+| graphics memory      | 120 343 904 B | 127 046 650 B |
+
+Triangles at the default start rose **18.5 %** (+192 924), one more geometry
+(the far grid's mesh) and two more textures, for **354 ms** more of the 8.2 s
+to the veil lifting -- under 5 % of the start. That table's milestones are
+cumulative from the module's first line, so a row's own delta is not a step's
+own share: it also carries forward whatever the steps before it already
+drifted by. Subtracting each step from the one before it (before and after,
+then the difference of those): `graphics` moves +11 ms and `figure` -3 ms,
+both inside single-run noise, as expected -- neither reads the terrain.
+`ground`'s own share grows by +85 ms (its raw +93 ms less `figure`'s +8 ms) --
+close to what filling the far window's 69,696 texels should cost, so this one
+is not noise, it is the fill. `scenery`'s own share grows by +23 ms. The rest,
++238 ms (`sky`'s raw +354 ms less `scenery`'s +116 ms), is `sky`'s own share:
+the shader compile and the first real render, now over one more geometry and
+the far grid's own material. This is one page load a build, not an averaged
+reading, so `ground`'s and `scenery`'s own shares are read as the right order
+of magnitude rather than as a precise cost; the triangle count and `sky`'s own
+share are the two numbers this run actually supports.
+
+`npm run check` passes clean on `claude/dalszy-teren` (typecheck, lint,
+format, 483 Vitest tests, build). `npm run test:e2e:gpu`: **43 passed, 1
+failed, 44 ran, 3.0 minutes** (against Task 1's baseline on `main` before any
+far-terrain work: 42 passed, 1 failed, 43 ran, 2.5 minutes -- one more test
+exists now, `smoke.spec.ts:682` "the land reaches past the near window",
+which is this branch's own). `smoke.spec.ts:1566` ("the town costs the frame
+it was measured to cost, and no more") passed this time, where it failed on
+`main` in Task 1 -- both are the same machine-dependent shape assertion
+Task 1 already described (the "exactly one slow frame" test reads differently
+frame to frame on hardware fast enough that 10 ms is a coin flip), not a
+change this branch made. `smoke.spec.ts:204` ("the Milky Way bakes off the
+main thread...") failed, reproducibly -- re-run alone twice, same assertion
+both times (`core` a hair under 1.4x `away`, off by about 4 %). This is the
+failure Task 3's notes already recorded on this GPU at the base commit, with
+the far land narrowing the margin further; nothing here was changed to fix
+or hide it.

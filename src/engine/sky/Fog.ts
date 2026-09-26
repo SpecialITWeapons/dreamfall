@@ -126,11 +126,11 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
     .mul(0.055)
     .mul(float(1).sub(smoothstep(200, 800, positionWorld.y)));
   // Gentle local air; only the far streamed edge needs complete cover. That
-  // edge is the terrain's own -- the window ends 4.2 km from the flyer, a square
-  // with the dome behind it -- and the cover hides it and nothing else. It began
-  // at 2600 m, the scenery ring's edge, which the trees fade at by themselves,
-  // and the owner read it as a wall of haze behind the land.
-  const farCover = smoothstep(3600, 4200, distance);
+  // edge is the far terrain's -- its grid ends 8.2 km from the flyer, a square
+  // with the dome behind it (terrain/Lod.ts) -- and the cover hides it and
+  // nothing else. It was the near window's 4.2 km until the far grid went on
+  // from there, and before that 2600 m, which the owner read as a wall of haze.
+  const farCover = smoothstep(7400, 8200, distance);
   const air = float(1).sub(float(1).sub(distF).mul(float(1).sub(lowAir)).mul(float(1).sub(farCover)));
   // The typings leave the height fog factor untyped; it is a float. It is the
   // cloud sea's own fog, so it lies only where the deck has cloud -- over a gap
