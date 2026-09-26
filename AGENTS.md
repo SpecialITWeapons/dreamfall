@@ -92,8 +92,9 @@ page works under a Pages subdirectory.
   near grid always ends on a far grid line. The near grid's last `MORPH` metres
   go over into the far surface. Nothing on the CPU reads the far window, and
   `heightAt` does not know about the bent rim: it begins 3.9 km out, past
-  everything that asks. The fog's far cover and the cloud sea end where the far
-  grid does, at 8.2 km.
+  everything that asks. The far cover in `Fog.ts` and the cloud sea hide the
+  far grid's own edge, at 8.2 km, and nothing else: started sooner, either is
+  a wall of haze in front of land that is still there.
 - The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, baseTemp)` from
   one sampling: heights interpolate across the triangle, weights belong to the
   cell, and the **fourth slot byte is the climate temperature the snow line is
@@ -330,9 +331,7 @@ page works under a Pages subdirectory.
   that and the sea's level a bank off to the side was a sheet of haze on the
   ground with no cloud over it. How opaque the sea
   is, how much of its fog there is and how thick the far air is are `SKY_LOOK`
-  (`sky/SkyUniforms.ts`), which `?dev=1` moves live. The far cover in `Fog.ts`
-  hides the **terrain's own edge**, 4.2 km out, and nothing else: started
-  sooner it is a wall of haze behind the land.
+  (`sky/SkyUniforms.ts`), which `?dev=1` moves live.
 - **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
   camera-facing quads standing from the base to the bank's top, a tower over a
   solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
