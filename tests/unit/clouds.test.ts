@@ -17,6 +17,12 @@ import { createSkyUniforms } from '../../src/engine/sky/SkyUniforms';
 import { createDayClock } from '../../src/engine/time/DayClock';
 
 const cover = createCloudCover(42);
+/**
+ * The form these mechanics were measured with, pinned: the starting form is the
+ * owner's to move on the panel, and a test of where a sprite goes when the camera
+ * climbs is not a test of how tall the owner likes a heap.
+ */
+const PINNED = { stretch: 3, height: 1, puff: 1.55, rag: 0.6, floor: 105, breath: 0.12, spread: 0.25 };
 const wind = { x: 11, z: -4 };
 const frame = (camera: { x: number; y: number; z: number }, t = 0) => ({
   bx: camera.x,
@@ -88,8 +94,8 @@ describe('layoutClusters', () => {
     const shapes = clusterShapes(42);
     const under = createClusterLayout(),
       over = createClusterLayout();
-    layoutClusters(shapes, cover, under, frame({ x: 0, y: 500, z: 0 }));
-    layoutClusters(shapes, cover, over, frame({ x: 0, y: 1900, z: 0 }));
+    layoutClusters(shapes, cover, under, frame({ x: 0, y: 500, z: 0 }), PINNED);
+    layoutClusters(shapes, cover, over, frame({ x: 0, y: 1900, z: 0 }), PINNED);
     expect(over.count).toBeLessThan(under.count / 2);
     for (let i = 0; i < under.count; i++) {
       const d = Math.hypot(under.sprite[i * 4]!, under.sprite[i * 4 + 1]! - 500, under.sprite[i * 4 + 2]!);
@@ -176,7 +182,13 @@ describe('the cloud form', () => {
     const solid = { ...cover, at: () => 1, baseAt: () => 800 };
     for (const one of clusterShapes(42).slice(0, 12)) {
       const out = createClusterLayout();
-      layoutClusters([one], solid, out, { ...frame({ x: one.x, y: 0, z: one.z }), wind: { x: 0, z: 12 } });
+      layoutClusters(
+        [one],
+        solid,
+        out,
+        { ...frame({ x: one.x, y: 0, z: one.z }), wind: { x: 0, z: 12 } },
+        { ...cloudForm(), height: 1 },
+      );
       let low = Infinity,
         high = -Infinity;
       for (let k = 0; k < out.count; k++) {
@@ -184,7 +196,8 @@ describe('the cloud form', () => {
         high = Math.max(high, out.sprite[k * 4 + 1]! - out.sprite[k * 4 + 3]! * 0.12);
       }
       // its own build and its swell may take it over the ceiling, never past the
-      // width of its footprint
+      // width of its footprint; the form's own height is the owner's, and scales
+      // all of it, so the rule is held at a height of one
       const form = cloudForm();
       expect(high - low).toBeLessThanOrEqual(
         one.radius * CLUSTER.tallest * (1 + form.spread) * (1 + form.breath) + 1e-6,
@@ -255,7 +268,7 @@ describe('the cloud form', () => {
         bz: one!.z,
         wind: { x: 0, z: 12 },
       };
-      return layoutClusters([one!], solid, out, f).inside;
+      return layoutClusters([one!], solid, out, f, PINNED).inside;
     };
     // its own base is the region's plus its lift
     const mid = 800 + one!.lift + 60;
@@ -294,7 +307,7 @@ describe('the cloud form', () => {
       sea = base + DECK.sea - CLOUD_SEA_DROP;
     const drawn = (y: number) => {
       const out = createClusterLayout();
-      return layoutClusters(shapes, cover, out, { ...frame({ x, y, z }), bx: x, bz: z }).count;
+      return layoutClusters(shapes, cover, out, { ...frame({ x, y, z }), bx: x, bz: z }, PINNED).count;
     };
     const under = drawn(base + 20);
     for (const y of [sea - 20, sea, sea + 20, sea + 50]) expect(drawn(y), `at sea ${y - sea}`).toBe(under);

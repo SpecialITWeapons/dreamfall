@@ -332,7 +332,14 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   section('deck & air');
   // The sea and its fog draw nothing with their switch off or from under the
   // sea's level, and a slider that moves nothing looks broken: it says which.
+  // The underside is painted only from under the deck's base, so over it its
+  // three sliders are as silent, and say so too.
   const silent = (key: keyof typeof looks): string | null => {
+    if (key === 'underside' || key === 'closed' || key === 'mottle') {
+      if (!world.layers.visible('underside')) return 'underside off';
+      if (world.state.y > world.deckAt(world.state.x, world.state.z).base) return 'over the deck here';
+      return null;
+    }
     const layer = key === 'sea' ? 'deck' : key === 'fog' ? 'deck fog' : null;
     if (layer === null) return null;
     if (!world.layers.visible(layer)) return `${layer} off`;
