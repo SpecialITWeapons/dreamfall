@@ -74,20 +74,34 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uFogDensity: uniform(look.fogDensity),
     /** 1 when the camera is above the cloud deck's top where it flies. */
     uAbove: uniform(0),
-    /** 1 while crossing the deck. */
+    /** 1 while crossing the deck: how white the camera's own air is, for what has no ray to ask (`whiteAlong`). */
     uWhiteout: uniform(0),
+    /**
+     * The two halves of the whiteout, for a ray to ask (`whiteAlong`): how far
+     * the camera is between the deck's base and its top, and how deep in a
+     * cluster it is, each 0..1; and the base and the top over the camera, m,
+     * which a ray leaves the bank by. How solid the bank is along the ray is
+     * the ray's to read off the field.
+     */
+    uBandWhite: uniform(0),
+    uClusterWhite: uniform(0),
+    uBandBase: uniform(0),
+    uBandTop: uniform(0),
     uCloudWhite: uniform(cloudWhite.clone()),
     uCloudBodies: uniform(0),
     /** How much of the high layer there is, 0..1 (sky/HighCloud.ts): weather, moved by the CPU. */
     uHighCover: uniform(0),
     /**
      * Layer switches over shader terms rather than objects, 1 on and 0 off: the
-     * high layer, the cloud sea's fog over the ground, and the deck's underside
-     * on the dome. Only the dev panel writes them (render/Layers.ts `uniformGate`).
+     * high layer, the cloud sea's fog over the ground, the deck's underside
+     * on the dome, and the white inside a bank and inside a cluster. Only the
+     * dev panel writes them (render/Layers.ts `uniformGate`).
      */
     uShowHigh: uniform(1),
     uShowSeaFog: uniform(1),
     uShowUnderside: uniform(1),
+    uShowBandWhite: uniform(1),
+    uShowClusterWhite: uniform(1),
     /** How opaque the cloud sea is at its most solid, how much of its fog there is, how thick the far air is (`SKY_LOOK`). */
     uSeaOpacity: uniform(SKY_LOOK.sea[2]),
     uSeaFog: uniform(SKY_LOOK.fog[2]),

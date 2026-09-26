@@ -281,8 +281,10 @@ export function createWorld(opts: WorldOptions): World {
     terrain: [terrain.mesh],
     water: [water.mesh],
     ...sceneryGroups,
-    clouds: [clouds.mesh],
-    deck: [cloudSea.mesh],
+    // A deck or a cloud switched off takes its white with it: the white was
+    // the one thing left on screen when both were off.
+    clouds: [clouds.mesh, uniformGate(uniforms.uShowClusterWhite)],
+    deck: [cloudSea.mesh, uniformGate(uniforms.uShowBandWhite)],
     'deck fog': [uniformGate(uniforms.uShowSeaFog)],
     underside: [uniformGate(uniforms.uShowUnderside)],
     high: [uniformGate(uniforms.uShowHigh)],
