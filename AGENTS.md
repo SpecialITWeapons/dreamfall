@@ -351,6 +351,15 @@ page works under a Pages subdirectory.
   The whiteout is a fog by distance (`WHITEOUT.visibility`, 50 m), not a
   flat cover, and the dome goes white with it: at a flat 0.996 the figure a
   few metres off was a white silhouette on the blue the dome still drew.
+  **A bank's white is asked per ray** (`whiteAlong`): the ray walks the bank
+  field (`cloudBankAt`, eight steps, denser near the eye) until it leaves the
+  bank by the deck's base or top over the camera, so from a bank's edge the
+  gap is clear and the bank a white wall, and from just over its base the
+  ground straight down shows. It was one number over the whole picture, and a
+  bank's rim or floor -- 40 m under the base included -- was a veil of milk
+  on the ground with no cloud drawn; the `deck` and `clouds` switches take
+  their white with them (`uShowBandWhite`, `uShowClusterWhite`). `uWhiteout`
+  stays the camera's own air, for what has no ray to ask.
   `tools/sky/look.mjs` photographs the sky at four heights against the deck.
 
 ## Scenery

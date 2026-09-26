@@ -5,6 +5,7 @@ import type { Scene } from 'three';
 import type { Node } from 'three/webgpu';
 import {
   Fn,
+  If,
   cameraPosition,
   densityFogFactor,
   dot,
@@ -14,6 +15,7 @@ import {
   fog,
   length,
   max,
+  min,
   mix,
   normalize,
   positionWorld,
@@ -30,11 +32,54 @@ import { seaSeenAt } from './CloudSea';
  * few metres from the eye went as white as the ground a kilometre down, and
  * turning the camera showed a white silhouette on a blue sky.
  */
-export const WHITEOUT = { visibility: 50 };
+export const WHITEOUT = {
+  visibility: 50,
+  /**
+   * How far a ray walks the bank field from the eye, m, and in how many steps:
+   * past a few hundred metres of solid bank nothing is left to see anyway.
+   */
+  reach: 1600,
+  steps: 8,
+};
 import { cloudBankAt, deckBaseAt } from './CloudShadow';
 import type { SkyUniforms } from './SkyUniforms';
 
 export function createHorizon(u: SkyUniforms) {
+  /**
+   * How white the cloud round the camera makes what lies `distance` along
+   * `dir`, 0..1. A cluster is white every way out of it. A bank is as white as
+   * the cloud the ray passes through before it leaves the bank: by the deck's
+   * base or its top over the camera, or out of its side into a gap, which is
+   * why the ray walks the bank field (`cloudBankAt`, the edge the sea is drawn
+   * to) rather than asking how solid the bank is where the camera hangs. From
+   * the edge of a bank the gap is clear and the bank is a white wall; from 30 m
+   * over its base the ground is seen through 30 m of cloud. It was one number
+   * for the whole picture, and at a bank's thin edge or its floor that was a
+   * veil of milk over the ground a kilometre down with no cloud drawn in it.
+   */
+  const whiteAlong = Fn(([dir, distance]: [Node<'vec3'>, Node<'float'>]) => {
+    const band = float(0).toVar();
+    const inBand = u.uBandWhite.mul(u.uShowBandWhite);
+    If(inBand.greaterThan(0.001), () => {
+      const down = cameraPosition.y.sub(u.uBandBase).max(0).div(dir.y.negate().max(0.0001));
+      const up = u.uBandTop.sub(cameraPosition.y).max(0).div(dir.y.max(0.0001));
+      const reach = min(min(distance, WHITEOUT.reach), min(down, up));
+      const from = cameraPosition.xz.add(u.uWorldOrigin);
+      // Denser near the eye, where the white is decided: step i covers
+      // (i/n)^2 to ((i+1)/n)^2 of the way and is read at its middle.
+      const n = WHITEOUT.steps;
+      const cloud = float(0).toVar();
+      for (let i = 0; i < n; i++) {
+        const at = (i * i + (i + 1) * (i + 1)) / (2 * n * n);
+        cloud.addAssign(cloudBankAt(u, from.add(dir.xz.mul(reach.mul(at)))).mul((2 * i + 1) / (n * n)));
+      }
+      band.assign(inBand.mul(float(1).sub(exp(cloud.mul(reach).div(WHITEOUT.visibility).negate()))));
+    });
+    const cluster = u.uClusterWhite
+      .mul(u.uShowClusterWhite)
+      .mul(float(1).sub(exp(distance.div(WHITEOUT.visibility).negate())));
+    return max(band, cluster);
+  });
   /** How well a direction's azimuth matches a reference's, 0..1. */
   const azimuthAlign = Fn(([dir, ref]: [Node<'vec3'>, Node<'vec3'>]) =>
     max(dot(dir.xz, ref.xz).div(max(length(dir.xz).mul(length(ref.xz)), 0.0001)), 0),
@@ -42,7 +87,7 @@ export function createHorizon(u: SkyUniforms) {
   // Above the deck the far cloud sea meets a bright haze rather than a flat
   // white: the horizon keeps the day's hue and its warmth toward the sun, so
   // the sun stands out against it and the sea's far edge still meets the sky.
-  const horizonTint = Fn(([dir]: [Node<'vec3'>]) => {
+  const airTint = Fn(([dir]: [Node<'vec3'>]) => {
     const align = pow(azimuthAlign(dir, u.uSunDir), 5);
     const base = mix(u.uHorizon, u.uHorizonWarm, align);
     const haze = mix(
@@ -59,9 +104,13 @@ export function createHorizon(u: SkyUniforms) {
       .add(pow(s, 28).mul(LOOK.daylight.scatter.tight))
       .mul(smoothstep(-0.02, 0.1, u.uSunDir.y));
     const sunCol = mix(u.uSunColor, u.uGlow, u.uLowSun.mul(0.6));
-    return mix(mix(base, haze, u.uAbove).add(sunCol.mul(scatter)), u.uCloudWhite, u.uWhiteout);
+    return mix(base, haze, u.uAbove).add(sunCol.mul(scatter));
   });
-  return { azimuthAlign, horizonTint };
+  /** The horizon a direction ends on: the air's, gone white as far as the cloud round the camera lies that way. */
+  const horizonTint = Fn(([dir]: [Node<'vec3'>]) =>
+    mix(airTint(dir), u.uCloudWhite, whiteAlong(dir, float(1e5))),
+  );
+  return { azimuthAlign, airTint, horizonTint, whiteAlong };
 }
 export type Horizon = ReturnType<typeof createHorizon>;
 
@@ -100,7 +149,10 @@ export function installFog(scene: Scene, u: SkyUniforms, horizon: Horizon): void
     .mul(cloudBankAt(u, worldXZ))
     .mul(u.uSeaFog)
     .mul(u.uShowSeaFog);
-  const inCloud = u.uWhiteout.mul(float(1).sub(exp(distance.div(WHITEOUT.visibility).negate())));
+  const view = normalize(positionWorld.sub(cameraPosition));
+  const inCloud = horizon.whiteAlong(view, distance);
   const factor = max(max(air, seaF), inCloud);
-  scene.fogNode = fog(horizon.horizonTint(normalize(positionWorld.sub(cameraPosition))), factor);
+  // The colour is the cloud's as much as the cloud is what fogs the point: the
+  // ray's walk is paid once a fragment, not again for the colour.
+  scene.fogNode = fog(mix(horizon.airTint(view), u.uCloudWhite, inCloud.div(max(factor, 0.0001))), factor);
 }

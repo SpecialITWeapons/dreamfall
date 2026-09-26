@@ -99,8 +99,15 @@ export function createAtmosphere(deps: { clock: DayClock; uniforms: SkyUniforms;
       const inside =
         sstep(deck.base - 40, deck.base + 30, cameraY) * (1 - sstep(deck.top - 70, deck.top, cameraY));
       // A cluster flown into is white too, wherever it stands: a tower over
-      // the bank, or a cloud met at its edge, is not in the band.
-      u.uWhiteout.value = Math.max(inside * deck.bank, cluster) * 0.996;
+      // the bank, or a cloud met at its edge, is not in the band. The two are
+      // handed over apart, with the bank's floor and ceiling, because a ray
+      // leaves a bank by them: the white of a bank is how much of it lies along
+      // the ray (`whiteAlong`), not one veil over everything the camera sees.
+      u.uBandWhite.value = inside * 0.996;
+      u.uClusterWhite.value = cluster * 0.996;
+      u.uBandBase.value = deck.base;
+      u.uBandTop.value = deck.top;
+      u.uWhiteout.value = Math.max(u.uBandWhite.value * deck.bank, u.uClusterWhite.value);
     },
   };
 }
