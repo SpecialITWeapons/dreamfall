@@ -20,6 +20,7 @@
     "parity": "vite build && playwright test --config tools/parity/parity.config.ts",
     "parity:write": "vite build && playwright test --config tools/parity/parity.config.ts --update-snapshots",
     "test:e2e": "vite build && playwright test",
+    "test:e2e:gpu": "vite build && playwright test --config playwright.gpu.config.ts",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
   },
   "dependencies": {

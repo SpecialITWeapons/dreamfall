@@ -21,13 +21,28 @@ import type { CloudCover } from './CloudCover';
  * much of the sea's fog over the ground under a bank there is, and `air` how
  * thick the far air is against the palette's own density. The sea was 0.94 and
  * its fog was all there was of it, and the owner read both as a lid.
+ *
+ * The deck's underside on the dome has three: `underside` is how opaque it is,
+ * `closed` how solid its banks become far off, where the gaps between them
+ * hide behind the banks in front, and `mottle` how much its bellies vary --
+ * lighter and darker, thinner and thicker -- in patches a few kilometres
+ * across. It closed to 0.9 everywhere past a few kilometres, one colour, and
+ * the owner read half the sky as a grey lid.
  */
-export const SKY_LOOK: { [K in 'sea' | 'fog' | 'air']: readonly [min: number, max: number, start: number] } =
-  {
-    sea: [0, 1, 0.45],
-    fog: [0, 1, 0.25],
-    air: [0, 2, 1],
-  };
+export const SKY_LOOK: {
+  [K in 'sea' | 'fog' | 'air' | 'underside' | 'closed' | 'mottle']: readonly [
+    min: number,
+    max: number,
+    start: number,
+  ];
+} = {
+  sea: [0, 1, 0.45],
+  fog: [0, 1, 0.25],
+  air: [0, 2, 1],
+  underside: [0, 1, 0.95],
+  closed: [0, 1, 0.9],
+  mottle: [0, 1, 0.5],
+};
 
 export function createSkyUniforms(look: Look, cover: CloudCover) {
   const cloudWhite = new Color(look.cloud.white);
@@ -106,6 +121,10 @@ export function createSkyUniforms(look: Look, cover: CloudCover) {
     uSeaOpacity: uniform(SKY_LOOK.sea[2]),
     uSeaFog: uniform(SKY_LOOK.fog[2]),
     uAir: uniform(SKY_LOOK.air[2]),
+    /** The deck's underside on the dome: how opaque, how solid far off, how mottled (`SKY_LOOK`). */
+    uUnderside: uniform(SKY_LOOK.underside[2]),
+    uUndersideClosed: uniform(SKY_LOOK.closed[2]),
+    uUndersideMottle: uniform(SKY_LOOK.mottle[2]),
     /** World position of the local frame's origin (the floating origin), for shaders that read the world. */
     uWorldOrigin: uniform(new Vector2(0, 0)),
     /** The world's wind, m/s; every cloud layer drifts with it. */

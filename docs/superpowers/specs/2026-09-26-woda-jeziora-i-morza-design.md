@@ -56,15 +56,18 @@ trzyma wzór próbek i wszystkie liczby wyglądu.
   w połowie morska.
 
 GPU liczy to samo **w vertex shaderze tafli** (wierzchołki co 64 m, pole
-o skali setek metrów, interpolacja wystarcza): 17 odczytów najbliższego
-teksela okna na wierzchołek, ok. 18 tys. wierzchołków. Stałe próbek pochodzą
-z `WaterLook.ts`, więc wzór jest jeden.
+o skali setek metrów, interpolacja wystarcza): 16 odczytów najbliższego
+teksela na wierzchołek. Stałe próbek pochodzą z `WaterLook.ts`, więc wzór
+jest jeden.
 
-Okno heightfieldu kończy się ok. 220 m za krawędzią tafli, a tekstura jest
-toroidalna: próbka spoza okna czytałaby drugi koniec świata. Próbki są
-przycinane do okna (`[cx - N/2, cx + N/2 - 1]`), środek okna trafia do
-shadera uniformem. Na krawędzi przycięte próbki czytają brzeg okna; od 3,6 km
-i tak zakrywa to mgła.
+Próbki czytają **dalekie okno** (`terrain/Lod.ts`, #45): 64 m na teksel,
+±8,4 km, tak daleko jak sięga woda. 64 m to dość dla pola o skali 400 m,
+a bliskie okno kończy się na 4,5 km, więc dalsza woda nie miałaby czego
+czytać. Tekstura jest toroidalna: próbka spoza okna czytałaby drugi koniec
+świata, więc próbki są przycinane do okna (`[cx - N/2, cx + N/2 - 1]`),
+a środek okna trafia do shadera uniformem. Na krawędzi przycięte próbki
+czytają brzeg okna, który i tak zakrywa daleka mgła. `openAt` na CPU czyta
+to samo okno przez jego `heightAt`.
 
 ## 5. Dwa wyglądy
 

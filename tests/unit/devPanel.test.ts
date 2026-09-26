@@ -14,6 +14,9 @@ const stub = () => {
     ['terrain', true],
     ['trees', true],
     ['figure', true],
+    ['deck', true],
+    ['deck fog', true],
+    ['underside', true],
   ]);
   const calls = {
     steps: 0,
@@ -72,12 +75,13 @@ const stub = () => {
       },
     },
     look: {
-      ranges: { sea: [0, 1, 0.6], air: [0, 2, 1] },
-      form: { sea: 0.6, air: 1 },
+      ranges: { sea: [0, 1, 0.6], fog: [0, 1, 0.25], air: [0, 2, 1], mottle: [0, 1, 0.5] },
+      form: { sea: 0.6, fog: 0.25, air: 1, mottle: 0.5 },
       set(change: Record<string, number>) {
         Object.assign(this.form, change);
         calls.look.push(change);
       },
+      seaSeen: 1,
     },
     water: {
       ranges: { seaDeepAt: [1, 40, 34], lakeSurf: [0, 1, 0.12] },
@@ -93,6 +97,7 @@ const stub = () => {
       },
       openAt: () => 0.37,
     },
+    deckAt: () => ({ base: 900 }),
     layers: {
       names: [...on.keys()],
       visible: (name: string) => on.get(name) ?? false,
@@ -195,7 +200,7 @@ describe('dev panel', () => {
     const { world, calls } = stub();
     panel = createDevPanel(document, world);
     const boxes = [...document.querySelectorAll<HTMLInputElement>('#dev label.layer input')];
-    expect(boxes).toHaveLength(3);
+    expect(boxes).toHaveLength(6);
     expect(document.querySelector('#dev label.layer')!.textContent).toContain('terrain');
     boxes[1]!.checked = false;
     boxes[1]!.dispatchEvent(new Event('change'));
@@ -266,7 +271,49 @@ describe('dev panel', () => {
     expect(raw.look.form.air).toBe(0.4);
     const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset look')!;
     (reset as HTMLButtonElement).click();
-    expect(calls.look.at(-1)).toEqual({ sea: 0.6, air: 1 });
+    expect(calls.look.at(-1)).toEqual({ sea: 0.6, fog: 0.25, air: 1, mottle: 0.5 });
+  });
+
+  it('says why the deck sliders are silent: a layer off, or the camera under the sea here', () => {
+    const { world, raw } = stub();
+    panel = createDevPanel(document, world);
+    const note = (key: string) =>
+      document.querySelector<HTMLElement>(`#dev [data-slider="${key}"] .why`)?.textContent ?? '';
+    expect(note('sea')).toBe('');
+    world.layers.set('deck', false);
+    panel.refresh();
+    expect(note('sea')).toBe('deck off');
+    expect(document.querySelector('#dev [data-slider="sea"]')!.classList.contains('muted')).toBe(true);
+    expect(note('fog')).toBe('');
+    world.layers.set('deck', true);
+    raw.look.seaSeen = 0;
+    panel.refresh();
+    expect(note('sea')).toBe('under the sea here');
+    expect(note('fog')).toBe('under the sea here');
+    world.layers.set('deck fog', false);
+    panel.refresh();
+    // a switch that is off is the first reason
+    expect(note('fog')).toBe('deck fog off');
+    // still movable: the value can be set before climbing
+    const slider = document.querySelector<HTMLInputElement>('#dev [data-slider="sea"] input')!;
+    expect(slider.disabled).toBe(false);
+  });
+
+  it('says why the underside sliders are silent: its switch off, or the flight over the deck', () => {
+    const { world, raw } = stub();
+    let base = 900;
+    (raw as unknown as { deckAt: () => { base: number } }).deckAt = () => ({ base });
+    panel = createDevPanel(document, world);
+    const note = () =>
+      document.querySelector<HTMLElement>('#dev [data-slider="mottle"] .why')?.textContent ?? '';
+    // the stub flies at 301.7 m, under a base at 900
+    expect(note()).toBe('');
+    base = 200;
+    panel.refresh();
+    expect(note()).toBe('over the deck here');
+    world.layers.set('underside', false);
+    panel.refresh();
+    expect(note()).toBe('underside off');
   });
 
   it('moves the water from a slider per number and a swatch per colour, and puts it back', () => {

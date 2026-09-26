@@ -13,7 +13,7 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
 interface, posture, the authored figure and its file, the outfit), `terrain/`
-(noise, base fields, heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
+(noise, base fields, heightfield window, far window, terrain mesh), `scenery/` (obstacle registry, streamed
 ring, claimed ground, settlement lattice, road network and routes, pools, tree
 kit, structure kit, road kit, painted textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
@@ -36,7 +36,7 @@ page works under a Pages subdirectory.
   pose math (not `applyCameraPose`, which writes an actual camera),
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
-  `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`,
+  `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
   `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
@@ -86,6 +86,16 @@ page works under a Pages subdirectory.
 
 - The CPU heightfield is the only terrain truth; `heightAt` interpolates the
   exact rendered triangle (same diagonal as `buildGrid`), never bilinearly.
+- **The far terrain is for looking at.** A second window, 64 m a cell and
+  264 texels (`terrain/Lod.ts`), is filled from the same sampler and draws a
+  grid to 8.2 km with a hole cut where the near grid lies; both grids and the
+  water stand on one anchor, a whole far cell, so the hole never moves and the
+  near grid always ends on a far grid line. The near grid's last `MORPH` metres
+  go over into the far surface. Nothing on the CPU reads the far window, and
+  `heightAt` does not know about the bent rim: it begins 3.9 km out, past
+  everything that asks. The far cover in `Fog.ts` and the cloud sea hide the
+  far grid's own edge, at 8.2 km, and nothing else: started sooner, either is
+  a wall of haze in front of land that is still there.
 - The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, baseTemp)` from
   one sampling: heights interpolate across the triangle, weights belong to the
   cell, and the **fourth slot byte is the climate temperature the snow line is
@@ -290,8 +300,8 @@ page works under a Pages subdirectory.
 - **The water tells a lake from the sea by looking round** (`water/WaterLook.ts`):
   it is one sheet at sea level and a lake is ground under it, so the depth
   under a fragment is the same at both shores. The vertex stage reads the
-  window at sixteen taps on rings of 250 and 500 m -- held inside the window,
-  which wraps -- and the mean depth is the openness that mixes a lake's look
+  far window at sixteen taps on rings of 250 and 500 m -- held inside it,
+  because it wraps -- and the mean depth is the openness that mixes a lake's look
   with the sea's; `openAt` is the same sum on the CPU. It is right at about
   five shores in six against a flood fill, whatever the rings or the statistic:
   the rest is the body's size, which only a map of bodies could know. Each
@@ -334,9 +344,7 @@ page works under a Pages subdirectory.
   that and the sea's level a bank off to the side was a sheet of haze on the
   ground with no cloud over it. How opaque the sea
   is, how much of its fog there is and how thick the far air is are `SKY_LOOK`
-  (`sky/SkyUniforms.ts`), which `?dev=1` moves live. The far cover in `Fog.ts`
-  hides the **terrain's own edge**, 4.2 km out, and nothing else: started
-  sooner it is a wall of haze behind the land.
+  (`sky/SkyUniforms.ts`), which `?dev=1` moves live.
 - **Near clouds are sprite clusters** (`sky/Clouds.ts`): 96 heaps of 16
   camera-facing quads standing from the base to the bank's top, a tower over a
   solid bank. The CPU lays them out (`layoutClusters`, tested in Node), sorts
@@ -564,6 +572,9 @@ page works under a Pages subdirectory.
 runs the first on every push and pull request; the browser tests run on CI only
 when started by hand (Actions, CI, Run workflow), so run them locally before a
 change that touches what the page draws.
+`npm run test:e2e:gpu` runs the same suite on this machine's GPU (ANGLE on
+D3D11, still `?webgl=1`); it is minutes rather than the rasteriser's twenty,
+and it is for a machine with a GPU only.
 Close any browser tab left open for testing when you're done.
 
 ## Maintaining this file

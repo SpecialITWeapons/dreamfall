@@ -27,7 +27,7 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
+import { DECK, createCloudCover, deckAt, seaSeenOver, type DeckAt } from './sky/CloudCover';
 import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
 import { CLOUD_SHADOW, createCloudShadow } from './sky/CloudShadow';
 import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
@@ -41,7 +41,8 @@ import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
 import { sstep } from './terrain/noise';
-import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
+import { FAR_CELL, FAR_CELLS, FAR_WINDOW, HOLE, anchorOf } from './terrain/Lod';
+import { createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
@@ -72,6 +73,13 @@ export interface SkyLookControl {
   readonly form: SkyLook;
   /** Changes what it names, each number clamped to its range. */
   set(change: Partial<SkyLook>): void;
+  /**
+   * How much of the cloud sea the camera sees, 0..1 (`seaSeenOver`): 0 under
+   * the sea's level over the camera's own region, here. The deck's base
+   * tilts region to region, so a lower region's sea further off may still
+   * draw even when this reads 0.
+   */
+  readonly seaSeen: number;
 }
 export type SkyLook = { [K in keyof typeof SKY_LOOK]: number };
 
@@ -206,6 +214,10 @@ export function createWorld(opts: WorldOptions): World {
   const resume = opts.resume ?? null;
   // The window fills around the start before the flight reads the ground (about 300 ms, behind the veil).
   heightfield.fillAll(Math.round((resume?.x ?? 0) / CELL), Math.round((resume?.z ?? 0) / CELL));
+  // The far window: the same sampler every fourth cell, for the grid that
+  // reaches past the near one. Nothing on the CPU reads it (terrain/Lod.ts).
+  const farField = createHeightfield(sampler, { cell: FAR_CELL, size: FAR_WINDOW });
+  farField.fillAll(Math.round((resume?.x ?? 0) / FAR_CELL), Math.round((resume?.z ?? 0) / FAR_CELL));
   // Before the simulation, because the flight asks for the core's bearing on its
   // first step. The dust and that bearing are 93 ms here; the light atlas is
   // forty times dearer and is baked off the main thread, so the start pays
@@ -260,6 +272,19 @@ export function createWorld(opts: WorldOptions): World {
   // The shade under the trees is built before the terrain, because the ground
   // material takes its node at composition and cannot be handed one later.
   const shade = createGroundShade();
+  // The far grid bakes its own `biomeParams` uniforms, separate from the near
+  // grid's: anything that ever writes `terrain.biomeParams` must write
+  // `farTerrain.biomeParams` too, or the colour opens a seam at 4.2 km.
+  const farTerrain = createTerrain({
+    heightfield: farField,
+    uniforms,
+    litMaterial,
+    palette,
+    biomes: library.biomes,
+    cell: FAR_CELL,
+    cells: FAR_CELLS,
+    hole: HOLE,
+  });
   const terrain = createTerrain({
     heightfield,
     uniforms,
@@ -267,15 +292,17 @@ export function createWorld(opts: WorldOptions): World {
     palette,
     biomes: library.biomes,
     shade,
+    coarse: farTerrain.loadCell,
   });
-  scene.add(terrain.mesh);
+  scene.add(terrain.mesh, farTerrain.mesh);
   const water = createWater({
     uniforms,
     horizon,
     litMaterial,
     palette,
     loadCell: terrain.loadCell,
-    heightfield,
+    farLoadCell: farTerrain.loadCell,
+    farField,
   });
   scene.add(water.mesh);
   const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
@@ -302,8 +329,19 @@ export function createWorld(opts: WorldOptions): World {
   };
   /** The dev panel's hold on the high layer's cover; `null` is the weather's. */
   let highPin: number | null = null;
+  /** Which uniform each of the deck's and the air's sliders moves (`SKY_LOOK`). */
+  const lookInto: { [K in keyof SkyLook]: { value: number } } = {
+    sea: uniforms.uSeaOpacity,
+    fog: uniforms.uSeaFog,
+    air: uniforms.uAir,
+    underside: uniforms.uUnderside,
+    closed: uniforms.uUndersideClosed,
+    mottle: uniforms.uUndersideMottle,
+  };
+  const lookKeys = Object.keys(SKY_LOOK) as Array<keyof SkyLook>;
   const layers = createLayers({
     terrain: [terrain.mesh],
+    far: [farTerrain.mesh],
     water: [water.mesh],
     ...sceneryGroups,
     // A deck or a cloud switched off takes its white with it: the white was
@@ -414,16 +452,16 @@ export function createWorld(opts: WorldOptions): World {
     // grass rebuild on it.
     const moved = origin.shiftFor(state.x, state.z);
     heightfield.update(state.x, state.z);
+    farField.update(state.x, state.z);
     terrain.upload();
-    const ax = Math.round(state.x / CELL) * CELL,
-      az = Math.round(state.z / CELL) * CELL;
+    farTerrain.upload();
+    // One anchor for both grids and the water, a whole far cell: the near grid
+    // ends on a far grid line and the far grid's hole stays where it was cut.
+    const ax = anchorOf(state.x),
+      az = anchorOf(state.z);
     terrain.update(ax, az, origin.x, origin.z);
-    water.update(
-      Math.round(state.x / WATER_CELL) * WATER_CELL,
-      Math.round(state.z / WATER_CELL) * WATER_CELL,
-      origin.x,
-      origin.z,
-    );
+    farTerrain.update(ax, az, origin.x, origin.z);
+    water.update(ax, az, origin.x, origin.z);
     // the figure, in the local frame
     pose.x = origin.localX(state.x);
     pose.y = state.y;
@@ -568,15 +606,24 @@ export function createWorld(opts: WorldOptions): World {
     look: {
       ranges: SKY_LOOK,
       get form() {
-        return { sea: uniforms.uSeaOpacity.value, fog: uniforms.uSeaFog.value, air: uniforms.uAir.value };
+        const form = {} as SkyLook;
+        for (const key of lookKeys) form[key] = lookInto[key].value;
+        return form;
       },
       set(change) {
-        const into = { sea: uniforms.uSeaOpacity, fog: uniforms.uSeaFog, air: uniforms.uAir };
-        for (const key of Object.keys(SKY_LOOK) as Array<keyof SkyLook>) {
+        for (const key of lookKeys) {
           const v = change[key];
           if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-          into[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
+          lookInto[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
         }
+      },
+      get seaSeen() {
+        return seaSeenOver(
+          cloudCover,
+          origin.worldX(camera.position.x),
+          origin.worldZ(camera.position.z),
+          camera.position.y,
+        );
       },
     },
     water: {
@@ -669,6 +716,7 @@ export function createWorld(opts: WorldOptions): World {
       scenery?.dispose();
       shade.dispose();
       terrain.dispose();
+      farTerrain.dispose();
       water.dispose();
       skyDome.dispose();
       galaxy.dispose();

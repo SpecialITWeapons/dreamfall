@@ -4,7 +4,7 @@
 // from fly-with-me's water.js; world-space patterns add the floating origin.
 //
 // The sheet wears two looks, a lake's and the sea's (`WaterLook.ts`), mixed by
-// how much deep water lies round each vertex: sixteen taps of the window in
+// how much deep water lies round each vertex: sixteen taps of the far window in
 // the vertex stage, because the grid is 64 m and the field it reads is
 // hundreds of metres wide, so a fragment would pay sixteen reads for nothing.
 import { Color, Mesh, Vector2 } from 'three';
@@ -15,7 +15,6 @@ import {
   clamp,
   dot,
   float,
-  fract,
   fwidth,
   length,
   max,
@@ -27,7 +26,6 @@ import {
   pow,
   sin,
   smoothstep,
-  step,
   transformNormalToView,
   uniform,
   varying,
@@ -41,10 +39,12 @@ import type { Horizon } from '../sky/Fog';
 import { CLOUD_DRIFT, HIGH_CLOUD_SKY, highCloudBand } from '../sky/SkyDome';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from '../terrain/Heightfield';
+import { FAR_CELL, MORPH, NEAR_REACH } from '../terrain/Lod';
 import {
   WATER_CELL,
   WATER_CELLS,
   buildGrid,
+  surfaceHeight,
   type LoadCell,
   type TerrainPalette,
 } from '../terrain/TerrainMesh';
@@ -74,10 +74,12 @@ export function createWater(deps: {
   litMaterial: LitMaterial;
   palette: TerrainPalette;
   loadCell: LoadCell;
-  /** The window the taps read: where it stands and how wide it is, so no tap reads round the torus. */
-  heightfield: Pick<Heightfield, 'center' | 'size' | 'heightAt'>;
+  /** The far window's loader: past the near window the shore is read off it, and the openness everywhere. */
+  farLoadCell: LoadCell;
+  /** The far window itself: where it stands and how wide it is, so no tap reads round the torus. */
+  farField: Pick<Heightfield, 'center' | 'size' | 'heightAt'>;
 }) {
-  const { uniforms: u, horizon, litMaterial, palette, loadCell, heightfield: hf } = deps;
+  const { uniforms: u, horizon, litMaterial, palette, loadCell, farField } = deps;
   const form = waterLookStart();
   const look = Object.fromEntries(
     (Object.keys(WATER_LOOK) as Array<keyof WaterLook>).map((key) => [key, floatUniform(form[key])]),
@@ -90,7 +92,7 @@ export function createWater(deps: {
     ]),
   ) as Record<keyof WaterColors, ColorUniform>;
   const uAnchor = uniform(new Vector2(0, 0));
-  /** The window's centre, in cells. */
+  /** The far window's centre, in its cells. */
   const uWindow = uniform(new Vector2(0, 0));
   const worldVertex = positionLocal.xz.add(uAnchor);
   const wave = sin(worldVertex.x.mul(0.021).add(u.time.mul(0.55)))
@@ -100,16 +102,18 @@ export function createWater(deps: {
   const view = normalize(cameraPosition.sub(positionWorld));
   const p = positionWorld.xz.add(u.uWorldOrigin);
 
-  // `reachAt` in nodes: the mean depth of the taps, each read from the nearest
-  // texel and held inside the window -- the texture wraps, and a tap past the
-  // edge would read the other side of it.
-  const half = hf.size / 2;
+  // `reachAt` in nodes: the mean depth of the taps. They read the far window,
+  // whose 64 m texels are fine enough for a field hundreds of metres wide and
+  // which reaches as far as the water does; each is the nearest texel, held
+  // inside the window -- the texture wraps, and a tap past the edge would read
+  // the other side of it.
+  const half = farField.size / 2;
   const lowCell = uWindow.sub(half),
     highCell = uWindow.add(half - 1);
   let depthSum: Node<'float'> = float(0);
   for (const [dx, dz] of OPENNESS_TAPS) {
-    const cell = clamp(worldVertex.add(vec2(dx, dz)).div(CELL).add(0.5).floor(), lowCell, highCell);
-    depthSum = depthSum.add(clamp(loadCell(cell.x, cell.y).x.negate(), 0, OPENNESS.full));
+    const cell = clamp(worldVertex.add(vec2(dx, dz)).div(FAR_CELL).add(0.5).floor(), lowCell, highCell);
+    depthSum = depthSum.add(clamp(deps.farLoadCell(cell.x, cell.y).x.negate(), 0, OPENNESS.full));
   }
   const reach = depthSum.div(OPENNESS.full * OPENNESS_TAPS.length);
   // Thresholds that meet would be a smoothstep of nothing; the panel can ask for that.
@@ -120,21 +124,14 @@ export function createWater(deps: {
   /** The lake's number where the water is a lake, the sea's where it is open. */
   const byOpen = (lake: Node<'float'>, sea: Node<'float'>) => mix(lake, sea, open);
 
-  // Barycentric height on the exact terrain triangle, also at negative world
-  // coordinates. Bilinear interpolation would draw a different shoreline.
-  const groundAt = Fn(([pt]: [Node<'vec2'>]) => {
-    const cell = pt.div(CELL),
-      base = cell.floor(),
-      f = fract(cell);
-    const upperTriangle = step(1, f.x.add(f.y));
-    const a = loadCell(base.x.add(upperTriangle), base.y.add(upperTriangle)).x;
-    const b = loadCell(base.x.add(1), base.y).x;
-    const c = loadCell(base.x, base.y.add(1)).x;
-    return a
-      .add(b.sub(a).mul(mix(f.x, float(1).sub(f.y), upperTriangle)))
-      .add(c.sub(a).mul(mix(f.y, float(1).sub(f.x), upperTriangle)));
-  });
-  const depth = max(float(SEA_LEVEL).sub(groundAt(p)), 0);
+  // The shore is read off the near window where the near grid is drawn, off
+  // the far one past it, and across the near grid's rim the two are mixed by
+  // the weight the rim bends with, so the water meets the ground it is drawn on.
+  const nearGround = surfaceHeight(loadCell, CELL);
+  const farGround = surfaceHeight(deps.farLoadCell, FAR_CELL);
+  const fromAnchor = p.sub(uAnchor).abs();
+  const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(fromAnchor.x, fromAnchor.y));
+  const depth = max(float(SEA_LEVEL).sub(mix(nearGround(p), farGround(p), rim)), 0);
 
   // Two scales of advected slopes, each filtered by its pixel footprint; a
   // lake's are gentler than the sea's.
@@ -246,7 +243,7 @@ export function createWater(deps: {
     mesh,
     update(anchorWorldX: number, anchorWorldZ: number, originX: number, originZ: number) {
       uAnchor.value.set(anchorWorldX, anchorWorldZ);
-      uWindow.value.set(hf.center.cx, hf.center.cz);
+      uWindow.value.set(farField.center.cx, farField.center.cz);
       mesh.position.set(anchorWorldX - originX, 0, anchorWorldZ - originZ);
     },
     /** A copy of the look now. */
@@ -274,7 +271,7 @@ export function createWater(deps: {
     /** How much of the sea's look the water wears at a world point, as the vertex stage reckons it. */
     openAt(x: number, z: number) {
       return opennessOf(
-        reachAt((tx, tz) => SEA_LEVEL - hf.heightAt(tx, tz), x, z),
+        reachAt((tx, tz) => SEA_LEVEL - farField.heightAt(tx, tz), x, z),
         form.openFrom,
         Math.max(form.openTo, form.openFrom + 0.001),
       );

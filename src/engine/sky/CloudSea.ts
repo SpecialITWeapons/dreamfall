@@ -43,20 +43,14 @@ import {
   vec3,
 } from 'three/tsl';
 import { LOOK } from '../render/ColorGrade';
-import { DECK } from './CloudCover';
+import { CLOUD_SEA_DROP, DECK, SEA_SEEN } from './CloudCover';
 import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
 
+export { CLOUD_SEA_DROP, SEA_SEEN };
+
 const VENUS = vec3(0.86, 0.46, 0.52);
-/** How far the top of the sea sits under the deck's top, m: the folds reach up into it. */
-export const CLOUD_SEA_DROP = 55;
-/**
- * How far over the sea's level the camera has to be to see the sea, m: from
- * none of it at `[0]` to all of it at `[1]`. Under it the sea is the dome's
- * and the clusters' to draw, and its fog on the ground is not drawn either.
- */
-export const SEA_SEEN = [-60, 10] as const;
 
 /**
  * How much the camera sees the sea over a world point from above, 0..1: the
@@ -73,7 +67,7 @@ export const seaSeenAt = (u: SkyUniforms, p: Node<'vec2'>) =>
  * The grid: `core` metres a step out to `coreReach` from the flyer, then steps
  * that open out evenly to `reach`, `steps` of them from one side to the other.
  */
-export const SEA_GRID = { core: 30, coreReach: 1200, reach: 4500, steps: 160 };
+export const SEA_GRID = { core: 30, coreReach: 1200, reach: 8200, steps: 200 };
 
 /**
  * The grid's lines along one axis, m from the flyer, symmetric about it: `core`
@@ -205,7 +199,7 @@ export function createCloudSea(u: SkyUniforms, horizon: Horizon) {
   // dissolves into the gap, and the far edge goes as the far fog has.
   material.opacityNode = smoothstep(SEA_SEEN[0], SEA_SEEN[1], cameraPosition.y.sub(positionWorld.y))
     .mul(smoothstep(0.1, 0.5, cover))
-    .mul(float(1).sub(smoothstep(3400, 4400, length(positionWorld.sub(cameraPosition)))))
+    .mul(float(1).sub(smoothstep(7400, 8200, length(positionWorld.sub(cameraPosition)))))
     .mul(u.uSeaOpacity);
   material.positionNode = vec3(positionLocal.x, surfaceAt(worldXZ), positionLocal.z);
   const geometry = seaGeometry();

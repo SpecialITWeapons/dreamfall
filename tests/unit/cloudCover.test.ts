@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { COVER, DECK, bankAt, createCloudCover, deckAt } from '../../src/engine/sky/CloudCover';
+import {
+  CLOUD_SEA_DROP,
+  COVER,
+  DECK,
+  SEA_SEEN,
+  bankAt,
+  createCloudCover,
+  deckAt,
+  seaSeenOver,
+} from '../../src/engine/sky/CloudCover';
 
 const share = (data: Uint8Array) => data.reduce((sum, b) => sum + (b >= 128 ? 1 : 0), 0) / data.length;
 
@@ -192,5 +201,17 @@ describe('the deck base', () => {
     }
     expect(clear).toBeGreaterThan(20);
     expect(solid).toBeGreaterThan(8);
+  });
+});
+
+describe('seaSeenOver', () => {
+  it("is the sea shader's own answer: nothing under its level, all of it just over", () => {
+    const cover = createCloudCover(42);
+    const level = cover.baseAt(100, -200) + DECK.sea - CLOUD_SEA_DROP;
+    expect(seaSeenOver(cover, 100, -200, level + SEA_SEEN[0] - 1)).toBe(0);
+    expect(seaSeenOver(cover, 100, -200, level + SEA_SEEN[1] + 1)).toBe(1);
+    const mid = seaSeenOver(cover, 100, -200, level + (SEA_SEEN[0] + SEA_SEEN[1]) / 2);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
   });
 });
