@@ -893,36 +893,43 @@ rather than by round -- `npm run bench` was run whole on one checkout, then
 whole on the other, nothing else on the machine meanwhile, so read this as
 one comparison and not as two independent measurements.
 
-`npm run bench`, SwiftShader, WebGL2, seed 42, 2 rounds of 24 frames, the
-fastest round of each:
+`npm run bench`, SwiftShader, WebGL2, seed 42, 2 rounds of 24 frames. `frame
+ms` is already the median of the window of frames _and_ the minimum across
+the two rounds (`tools/bench/README.md`); `best ms` is the fifth percentile,
+the fast end of the same window, kept beside it:
 
-| vantage | frame ms, before | frame ms, after | triangles, before | triangles, after | triangles, +% |
-| ------- | ---------------: | --------------: | ----------------: | ---------------: | ------------: |
-| dawn    |           1242.8 |          1440.9 |         1 161 467 |        1 353 915 |       +16.6 % |
-| noon    |           1231.5 |          1418.0 |         1 161 464 |        1 353 917 |       +16.6 % |
-| far     |            910.1 |          1239.5 |         1 145 063 |        1 395 111 |       +21.8 % |
-| deck    |            969.4 |          1286.9 |         1 146 168 |        1 396 221 |       +21.8 % |
-| night   |           1533.5 |          1718.8 |         1 667 915 |        1 860 363 |       +11.5 % |
+| vantage | frame ms, before | frame ms, after | best ms, before | best ms, after | triangles, before | triangles, after | triangles, +% |
+| ------- | ---------------: | --------------: | --------------: | -------------: | ----------------: | ---------------: | ------------: |
+| dawn    |           1242.8 |          1440.9 |             5.4 |            6.5 |         1 161 467 |        1 353 915 |       +16.6 % |
+| noon    |           1231.5 |          1418.0 |          1161.1 |         1352.9 |         1 161 464 |        1 353 917 |       +16.6 % |
+| far     |            910.1 |          1239.5 |             5.1 |            4.1 |         1 145 063 |        1 395 111 |       +21.8 % |
+| deck    |            969.4 |          1286.9 |            19.9 |           18.8 |         1 146 168 |        1 396 221 |       +21.8 % |
+| night   |           1533.5 |          1718.8 |          1309.2 |          271.7 |         1 667 915 |        1 860 363 |       +11.5 % |
 
-`frame ms` is the median, the file's own headline stat (see the M5 section
-above on why the fifth percentile lies on a rasteriser with no GPU); draws
-moved by one or two a vantage (47->48 dawn, 50->56 deck) and trees, buildings
-and grass counts are identical before and after at every vantage -- this
-branch touches no scenery, so every triangle and every millisecond above is
-the ground, the water and the cloud sea alone. `best ms` (the fifth
-percentile) was read too and is not printed here: at `night` it reads
-1309.2 before and 271.7 after, which is the bimodal artefact the M5 section
-already named, not the sky getting four times faster.
+`frame ms` (the median) is the file's own headline stat; `best ms` is the one
+the README already warns is artefact-prone on a rasteriser with no GPU (the
+bimodal-interval problem the M5 section names above) rather than a real
+number of anything -- at `night` it reads 1309.2 before and 271.7 after,
+which is that artefact, not the sky getting four times faster, so read the
+`frame ms` columns and treat `best ms` as a curiosity. draws moved by one to
+six a vantage (57->58 dawn, 50->56 deck) and trees, buildings and grass
+counts are identical before and after at every vantage -- this branch
+touches no scenery, so every triangle and every millisecond above is the
+ground, the water and the cloud sea alone.
 
-**far and deck cost the most, relatively, for the least new geometry.** Their
-triangle count rose by the same fifth as dawn and noon's did in absolute
-terms, but their frame cost rose a third rather than a sixth: they are the
-two vantages with no grass to begin with (0 tufts, against 19 563 at dawn and
+**far and deck's triangle increase is already the largest, and their
+frame-cost increase is larger still.** Their triangle count rose 21.8%, more
+than dawn and noon's 16.6% and night's 11.5%, both relatively and in
+absolute terms (about +250 000 against about +192 000 everywhere else). Their
+frame cost then rose further on top of that -- 36% and 33% against 15-16% at
+dawn and noon for a smaller triangle increase -- because they are the two
+vantages with no grass to begin with (0 tufts, against 19 563 at dawn and
 noon), so the far grid, the wider water and the deeper cloud sea are a larger
 share of everything drawn there, and altitude (`far` is at the ceiling,
 `deck` is over the cloud sea) puts more of the new reach inside the frustum
-at once. `night`, with the village's own extra trees and grass on top, moved
-the least in relative terms for the same reason in reverse.
+at once. `night`, with the village's own extra trees and grass on top of a
+larger base to begin with, moved the least in relative terms in both
+figures.
 
 Start-up cost and the triangle count at the default start, read with a small
 Playwright script (`window.__world.timings` right after `ready` goes true --
