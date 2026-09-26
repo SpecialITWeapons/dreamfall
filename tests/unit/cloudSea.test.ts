@@ -28,4 +28,10 @@ describe('seaAxis', () => {
       if (Math.abs(a) <= SEA_GRID.coreReach)
         expect(a / SEA_GRID.core).toBeCloseTo(Math.round(a / SEA_GRID.core), 4);
   });
+
+  it('reaches as far as the land, and no step of it is coarser than 200 m', () => {
+    const axis = seaAxis();
+    expect(SEA_GRID.reach).toBeGreaterThanOrEqual(8192);
+    for (let i = 1; i < axis.length; i++) expect(axis[i]! - axis[i - 1]!).toBeLessThanOrEqual(200.5);
+  });
 });
