@@ -43,20 +43,14 @@ import {
   vec3,
 } from 'three/tsl';
 import { LOOK } from '../render/ColorGrade';
-import { DECK } from './CloudCover';
+import { CLOUD_SEA_DROP, DECK, SEA_SEEN } from './CloudCover';
 import { cloudCoverAt, deckBaseAt } from './CloudShadow';
 import type { Horizon } from './Fog';
 import type { SkyUniforms } from './SkyUniforms';
 
+export { CLOUD_SEA_DROP, SEA_SEEN };
+
 const VENUS = vec3(0.86, 0.46, 0.52);
-/** How far the top of the sea sits under the deck's top, m: the folds reach up into it. */
-export const CLOUD_SEA_DROP = 55;
-/**
- * How far over the sea's level the camera has to be to see the sea, m: from
- * none of it at `[0]` to all of it at `[1]`. Under it the sea is the dome's
- * and the clusters' to draw, and its fog on the ground is not drawn either.
- */
-export const SEA_SEEN = [-60, 10] as const;
 
 /**
  * How much the camera sees the sea over a world point from above, 0..1: the

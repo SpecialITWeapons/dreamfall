@@ -30,7 +30,7 @@
 // the base plus `DECK.thin` at a thinning edge and `DECK.thick` in its middle.
 //
 // Pure CPU, no three: tested in Node, and the textures are `SkyUniforms`'.
-import { hash2 } from '../terrain/noise';
+import { hash2, sstep } from '../terrain/noise';
 
 export const COVER = {
   /** Texels a side of the baked square. */
@@ -52,6 +52,15 @@ export const COVER = {
    */
   bank: [0.15, 0.6] as const,
 };
+
+/** How far the top of the sea sits under the deck's top, m: the folds reach up into it. */
+export const CLOUD_SEA_DROP = 55;
+/**
+ * How far over the sea's level the camera has to be to see the sea, m: from
+ * none of it at `[0]` to all of it at `[1]`. Under it the sea is the dome's
+ * and the clusters' to draw, and its fog on the ground is not drawn either.
+ */
+export const SEA_SEEN = [-60, 10] as const;
 
 /** How high the deck stands: its base by region, and its depth by how solid it is. */
 export const DECK = {
@@ -226,4 +235,13 @@ export function createCloudCover(seed: number): CloudCover {
     base,
     baseAt: (x, z) => low0 + (high0 - low0) * bilinear(base, x, z),
   };
+}
+
+/**
+ * How much of the cloud sea is seen from a point, 0..1: `seaSeenAt` in
+ * sky/CloudSea.ts on the CPU, read at the camera. Under the sea's level it is
+ * 0, and there the sea, and the fog it lays on the ground, draw nothing at all.
+ */
+export function seaSeenOver(cover: CloudCover, x: number, z: number, y: number): number {
+  return sstep(SEA_SEEN[0], SEA_SEEN[1], y - (cover.baseAt(x, z) + DECK.sea - CLOUD_SEA_DROP));
 }

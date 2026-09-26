@@ -37,7 +37,7 @@ const STYLE = `
   text-transform: uppercase; color: #8fa3b8;
 }
 #dev .row { display: flex; justify-content: space-between; gap: 8px; }
-#dev .row span:last-child { color: #a9d2ff; text-align: right; white-space: pre; }
+#dev .row > span:last-child { color: #a9d2ff; text-align: right; white-space: pre; }
 #dev .wrap { color: #a9d2ff; overflow-wrap: anywhere; }
 #dev .bad { color: #ff9a8b; }
 #dev .controls { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
@@ -53,6 +53,8 @@ const STYLE = `
 #dev input[type='range'] { width: 100%; accent-color: #6fb0ff; }
 #dev label.layer { display: inline-flex; align-items: center; gap: 3px; width: 88px; cursor: pointer; }
 #dev .fields { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 5px; }
+#dev .muted { opacity: 0.45; }
+#dev .why { color: #f0c27a; margin-left: 6px; }
 `;
 
 const fixed = (v: number, digits = 0) => (Number.isFinite(v) ? v.toFixed(digits) : '--');
@@ -238,13 +240,20 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     ranges: { readonly [key in K]: readonly [number, number, number] },
     read: () => Readonly<Record<K, number>>,
     write: (change: Partial<Record<K, number>>) => void,
+    /** Why a slider changes nothing now, or null; it is dimmed and says so, and stays movable. */
+    why?: (key: K) => string | null,
   ) => {
     const shows: Array<() => void> = [];
     for (const key of Object.keys(ranges) as K[]) {
       const [min, max] = ranges[key];
+      const box = make('div');
+      box.dataset.slider = key;
       const row = make('div', 'row');
       const value = make('span');
-      row.append(make('span', '', key), value);
+      const label = make('span', '', key);
+      const note = make('span', 'why');
+      label.append(note);
+      row.append(label, value);
       const slider = make('input');
       slider.type = 'range';
       slider.min = String(min);
@@ -254,6 +263,9 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
         const now = read()[key];
         value.textContent = fixed(now, 2);
         if (doc.activeElement !== slider) slider.value = String(now);
+        const reason = why?.(key) ?? null;
+        if (note.textContent !== (reason ?? '')) note.textContent = reason ?? '';
+        box.classList.toggle('muted', reason !== null);
       };
       slider.addEventListener('input', () => {
         write({ [key]: Number(slider.value) } as Partial<Record<K, number>>);
@@ -262,7 +274,8 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
       });
       show();
       shows.push(show);
-      panel.append(row, slider);
+      box.append(row, slider);
+      panel.append(box);
     }
     return shows;
   };
@@ -317,12 +330,25 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   panel.append(highButtons);
 
   section('deck & air');
+  // The sea and its fog draw nothing with their switch off or from under the
+  // sea's level, and a slider that moves nothing looks broken: it says which.
+  const silent = (key: keyof typeof looks): string | null => {
+    const layer = key === 'sea' ? 'deck' : key === 'fog' ? 'deck fog' : null;
+    if (layer === null) return null;
+    if (!world.layers.visible(layer)) return `${layer} off`;
+    if (world.look.seaSeen < 0.01) return 'under the sea';
+    return null;
+  };
   const looks = world.look.ranges;
   const lookSliders = formSliders(
     looks,
     () => world.look.form,
     (change) => world.look.set(change),
+    silent,
   );
+  readings.push(() => {
+    for (const show of lookSliders) show();
+  });
   const lookButtons = make('div', 'wrap');
   button(
     'reset look',

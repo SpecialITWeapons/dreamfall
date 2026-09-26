@@ -27,7 +27,7 @@ import { createScenery, type Scenery } from './scenery/Scenery';
 import { createOrigin, type Origin } from './sim/Origin';
 import { createSimulation, type ResumeState, type Simulation } from './sim/Simulation';
 import { createAtmosphere, type Atmosphere } from './sky/Atmosphere';
-import { DECK, createCloudCover, deckAt, type DeckAt } from './sky/CloudCover';
+import { DECK, createCloudCover, deckAt, seaSeenOver, type DeckAt } from './sky/CloudCover';
 import { CLOUD_SEA_DROP, createCloudSea } from './sky/CloudSea';
 import { CLOUD_SHADOW, createCloudShadow } from './sky/CloudShadow';
 import { CLOUD_FORM, createClouds, type CloudForm } from './sky/Clouds';
@@ -72,6 +72,8 @@ export interface SkyLookControl {
   readonly form: SkyLook;
   /** Changes what it names, each number clamped to its range. */
   set(change: Partial<SkyLook>): void;
+  /** How much of the cloud sea the camera sees, 0..1 (`seaSeenOver`): 0 under its level, where `sea` and `fog` draw nothing. */
+  readonly seaSeen: number;
 }
 export type SkyLook = { [K in keyof typeof SKY_LOOK]: number };
 
@@ -576,6 +578,14 @@ export function createWorld(opts: WorldOptions): World {
           if (typeof v !== 'number' || !Number.isFinite(v)) continue;
           into[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
         }
+      },
+      get seaSeen() {
+        return seaSeenOver(
+          cloudCover,
+          camera.position.x + origin.x,
+          camera.position.z + origin.z,
+          camera.position.y,
+        );
       },
     },
     get galaxy() {
