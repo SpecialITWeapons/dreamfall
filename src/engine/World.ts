@@ -310,6 +310,16 @@ export function createWorld(opts: WorldOptions): World {
   };
   /** The dev panel's hold on the high layer's cover; `null` is the weather's. */
   let highPin: number | null = null;
+  /** Which uniform each of the deck's and the air's sliders moves (`SKY_LOOK`). */
+  const lookInto: { [K in keyof SkyLook]: { value: number } } = {
+    sea: uniforms.uSeaOpacity,
+    fog: uniforms.uSeaFog,
+    air: uniforms.uAir,
+    underside: uniforms.uUnderside,
+    closed: uniforms.uUndersideClosed,
+    mottle: uniforms.uUndersideMottle,
+  };
+  const lookKeys = Object.keys(SKY_LOOK) as Array<keyof SkyLook>;
   const layers = createLayers({
     terrain: [terrain.mesh],
     far: [farTerrain.mesh],
@@ -577,14 +587,15 @@ export function createWorld(opts: WorldOptions): World {
     look: {
       ranges: SKY_LOOK,
       get form() {
-        return { sea: uniforms.uSeaOpacity.value, fog: uniforms.uSeaFog.value, air: uniforms.uAir.value };
+        const form = {} as SkyLook;
+        for (const key of lookKeys) form[key] = lookInto[key].value;
+        return form;
       },
       set(change) {
-        const into = { sea: uniforms.uSeaOpacity, fog: uniforms.uSeaFog, air: uniforms.uAir };
-        for (const key of Object.keys(SKY_LOOK) as Array<keyof SkyLook>) {
+        for (const key of lookKeys) {
           const v = change[key];
           if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-          into[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
+          lookInto[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
         }
       },
       get seaSeen() {

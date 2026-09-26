@@ -18,6 +18,7 @@ import {
   exp,
   float,
   fract,
+  fwidth,
   hash,
   length,
   max,
@@ -50,15 +51,22 @@ export const CLOUD_DRIFT = 0.0012;
  * whole out to `near[0]` and close up by `near[1]` -- seen that flat, the gaps
  * between banks hide behind the banks in front of them, and a texel of the
  * field is smaller than a pixel and would only shimmer -- and the air takes
- * them into the horizon between `far[0]` and `far[1]`.
+ * them into the horizon between `far[0]` and `far[1]`. How solid they close,
+ * how opaque they are and how mottled are the dev panel's (`SKY_LOOK`).
+ *
+ * The mottle is two slow noises carried with the wind, `mottle` metres to a
+ * feature: a belly is lighter or darker by up to `shade` of itself, and where
+ * the noise is low the bank thins by up to `thin`, so far off, where the field
+ * has closed, the underside still has holes and weather in it.
  */
 export const DECK_UNDERSIDE = {
   near: [4000, 11000],
   far: [3000, 15000],
-  closed: 0.9,
-  opacity: 0.95,
   /** The height over the horizon, as the view's y, under which the deck thins away. */
   horizon: 0.26,
+  mottle: [900, 260] as const,
+  shade: 0.35,
+  thin: 1.6,
 } as const;
 
 /**
@@ -245,14 +253,24 @@ export function createSkyDome(
     // edges and breaks up their bellies, and a narrower edge than the sea's
     // makes them read as cloud rather than as haze.
     const closing = smoothstep(DECK_UNDERSIDE.near[0], DECK_UNDERSIDE.near[1], along);
-    const rag = mx_noise_float(hit.sub(u.uWind.mul(u.time)).mul(0.006))
+    const drift = hit.sub(u.uWind.mul(u.time));
+    const rag = mx_noise_float(drift.mul(0.006))
       .mul(0.35)
-      .add(mx_noise_float(hit.sub(u.uWind.mul(u.time)).mul(0.019)).mul(0.15));
+      .add(mx_noise_float(drift.mul(0.019)).mul(0.15));
+    // The mottle: kilometre patches and a finer grain in them, the grain let go
+    // once a pixel spans a good part of it, or the far lid shimmers.
+    const grain = drift.div(DECK_UNDERSIDE.mottle[1]);
+    const grainSeen = float(1).sub(smoothstep(0.35, 1.2, length(fwidth(grain))));
+    const blotch = mx_noise_float(drift.div(DECK_UNDERSIDE.mottle[0]))
+      .mul(0.65)
+      .add(mx_noise_float(grain).mul(0.35).mul(grainSeen))
+      .mul(u.uUndersideMottle);
     const bank = mix(
       smoothstep(0.3, 0.55, cloudCoverAt(u, hit).add(rag.mul(float(1).sub(closing)))),
-      float(DECK_UNDERSIDE.closed),
+      u.uUndersideClosed,
       closing,
     )
+      .mul(float(1).sub(max(blotch.negate(), 0).mul(DECK_UNDERSIDE.thin)).clamp(0, 1))
       .mul(step(0.0, rise))
       .mul(u.uShowUnderside)
       // Thinning into the air over the last few degrees above the horizon
@@ -262,12 +280,18 @@ export function createSkyDome(
     // Flat grey bellies, lighter where a bank thins to its edge, and the air in
     // front of them as they go further off. A belly is the cloud's own white in
     // its own shadow: the sky's blue in it read as haze rather than as cloud.
-    const belly = mix(light, mix(u.uCloudWhite.mul(0.74), horizonColor, 0.2), smoothstep(0.25, 0.9, bank));
+    // The mottle lightens and darkens it, so a closed deck far off is weather
+    // and not one grey.
+    const belly = mix(
+      light,
+      mix(u.uCloudWhite.mul(0.74), horizonColor, 0.2),
+      smoothstep(0.25, 0.9, bank),
+    ).mul(blotch.mul(DECK_UNDERSIDE.shade).add(1));
     col.assign(
       mix(
         col,
         mix(belly, horizonColor, smoothstep(DECK_UNDERSIDE.far[0], DECK_UNDERSIDE.far[1], along)),
-        bank.mul(DECK_UNDERSIDE.opacity),
+        bank.mul(u.uUnderside),
       ),
     );
     // The sun behind a bank still shows: a bright place in the cloud, strongest
@@ -276,7 +300,7 @@ export function createSkyDome(
       .mul(0.3)
       .add(pow(s, 90).mul(1.1))
       .mul(float(1).sub(smoothstep(0.5, 1, bank).mul(0.55)));
-    col.addAssign(sunCol.mul(behind).mul(bank).mul(DECK_UNDERSIDE.opacity).mul(float(1).sub(u.uWhiteout)));
+    col.addAssign(sunCol.mul(behind).mul(bank).mul(u.uUnderside).mul(float(1).sub(u.uWhiteout)));
     const edge = smoothstep(-0.04, 0.22, rel)
       .mul(float(1).sub(smoothstep(0.22, 0.38, rel)))
       .mul(high.present);
