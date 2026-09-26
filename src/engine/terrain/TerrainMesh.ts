@@ -47,10 +47,11 @@ import type { LitMaterial } from '../render/SoftLighting';
 import type { GroundShade } from '../scenery/GroundShade';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from './Heightfield';
+import { FAR_CELL, FAR_CELLS, NEAR_CELLS, gridIndices } from './Lod';
 import { BASE_TEMP_RANGE, CELL } from './WorldSampler';
 
-/** Rendered terrain, cells per side (±4.2 km). */
-export const TERRAIN_CELLS = 528;
+/** Rendered terrain, cells per side (±4.2 km); the far grid goes on from there (terrain/Lod.ts). */
+export const TERRAIN_CELLS = NEAR_CELLS;
 /** A biome under this share of a fragment does not run its hook at all (spec 6.3). */
 const BRANCH_FLOOR = 0.01;
 /**
@@ -64,29 +65,25 @@ const BRANCH_FLOOR = 0.01;
  * weights as 32-bit floats, which keep 1e-30 exactly.
  */
 const COUNTRY_FLOOR = 1e-30;
-export const WATER_CELLS = 132;
-export const WATER_CELL = CELL * 4;
+/** The water reaches as far as the far terrain, on the same anchor. */
+export const WATER_CELLS = FAR_CELLS;
+export const WATER_CELL = FAR_CELL;
 
-/** An indexed grid centered on the origin; the diagonal matches Heightfield.heightAt. */
-export function buildGrid(cells: number, cell: number): BufferGeometry {
+/** An indexed grid centered on the origin; the diagonal matches Heightfield.heightAt. `hole` as in `gridIndices`. */
+export function buildGrid(cells: number, cell: number, hole = 0): BufferGeometry {
   const side = cells + 1,
     count = side * side;
   const positions = new Float32Array(count * 3),
     normals = new Float32Array(count * 3);
-  const indices = count > 65535 ? new Uint32Array(cells * cells * 6) : new Uint16Array(cells * cells * 6);
-  let index = 0;
   for (let z = 0; z <= cells; z++)
     for (let x = 0; x <= cells; x++) {
       const vertex = z * side + x;
       positions[vertex * 3] = (x - cells / 2) * cell;
       positions[vertex * 3 + 2] = (z - cells / 2) * cell;
       normals[vertex * 3 + 1] = 1;
-      if (x < cells && z < cells) {
-        // Same diagonal as heightAt, including at negative world coordinates.
-        indices.set([vertex, vertex + side, vertex + 1, vertex + side + 1, vertex + 1, vertex + side], index);
-        index += 6;
-      }
     }
+  const all = gridIndices(cells, hole);
+  const indices = count > 65535 ? all : Uint16Array.from(all);
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(normals, 3));
