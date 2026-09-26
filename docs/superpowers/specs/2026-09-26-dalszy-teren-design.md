@@ -183,10 +183,17 @@ Pomiary: `npm run bench` przed i po, wyniki w `docs/perf-notes.md`.
   granice biomów i śnieg na grubej siatce widać jako kwadraty 64 m, najostrzej
   z 1800 m, słabiej z 300 m (skrócenie perspektywy). Nieusunięte w tej zmianie.
   Zapisana tam poprawka — interpolacja wag grubej siatki tam, gdzie narożniki
-  trójkąta mają te same trzy biomy — zostaje jako osobna, kolejna zmiana.
+  trójkąta mają te same trzy biomy — zostaje jako osobna, kolejna zmiana. Ten
+  sam rodzaj szwu czeka też na rąbku bliskiej siatki: pas `MORPH` miesza tam
+  wysokość i normalną z grubą siatką, ale nie kolor — wagi biomów w pasie
+  czyta się wciąż z komórek 16 m bliskiego okna, a za pasem z komórek 64 m
+  grubego, więc granica biomu przechodząca przez linię 4,2 km może zrobić
+  schodek w kolorze. Ta sama rodzina, ta sama kolejna zmiana.
 - **Koszt fragmentów.** Gruba siatka używa pełnego materiału gruntu, ale na
   ekranie zajmuje mały pas przy horyzoncie. Bench to rozstrzygnie.
-- **Start.** +~130 ms wypełnienia przed pierwszą klatką.
+- **Start.** Zmierzone (`docs/perf-notes.md`, "Far terrain"): +354 ms do
+  podniesienia zasłony, z czego wypełnienie grubego okna leży w kroku
+  `ground`.
 
 ## 7. Poza zakresem
 

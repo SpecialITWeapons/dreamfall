@@ -256,7 +256,7 @@ describe('dev panel', () => {
     expect(calls.look.at(-1)).toEqual({ sea: 0.6, fog: 0.25, air: 1 });
   });
 
-  it('says why the deck sliders are silent: a layer off, or the camera under the sea', () => {
+  it('says why the deck sliders are silent: a layer off, or the camera under the sea here', () => {
     const { world, raw } = stub();
     panel = createDevPanel(document, world);
     const note = (key: string) =>
@@ -270,8 +270,8 @@ describe('dev panel', () => {
     world.layers.set('deck', true);
     raw.look.seaSeen = 0;
     panel.refresh();
-    expect(note('sea')).toBe('under the sea');
-    expect(note('fog')).toBe('under the sea');
+    expect(note('sea')).toBe('under the sea here');
+    expect(note('fog')).toBe('under the sea here');
     world.layers.set('deck fog', false);
     panel.refresh();
     // a switch that is off is the first reason

@@ -239,8 +239,10 @@ export function createCloudCover(seed: number): CloudCover {
 
 /**
  * How much of the cloud sea is seen from a point, 0..1: `seaSeenAt` in
- * sky/CloudSea.ts on the CPU, read at the camera. Under the sea's level it is
- * 0, and there the sea, and the fog it lays on the ground, draw nothing at all.
+ * sky/CloudSea.ts on the CPU, read at the camera. Under the sea's level over
+ * the camera's own region, here, it is 0 and the sea, and the fog it lays on
+ * the ground, draw nothing here. The deck's base tilts region to region, so a
+ * lower region's sea further off may still draw even when this reads 0.
  */
 export function seaSeenOver(cover: CloudCover, x: number, z: number, y: number): number {
   return sstep(SEA_SEEN[0], SEA_SEEN[1], y - (cover.baseAt(x, z) + DECK.sea - CLOUD_SEA_DROP));

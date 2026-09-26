@@ -72,7 +72,12 @@ export interface SkyLookControl {
   readonly form: SkyLook;
   /** Changes what it names, each number clamped to its range. */
   set(change: Partial<SkyLook>): void;
-  /** How much of the cloud sea the camera sees, 0..1 (`seaSeenOver`): 0 under its level, where `sea` and `fog` draw nothing. */
+  /**
+   * How much of the cloud sea the camera sees, 0..1 (`seaSeenOver`): 0 under
+   * the sea's level over the camera's own region, here. The deck's base
+   * tilts region to region, so a lower region's sea further off may still
+   * draw even when this reads 0.
+   */
   readonly seaSeen: number;
 }
 export type SkyLook = { [K in keyof typeof SKY_LOOK]: number };
@@ -249,6 +254,9 @@ export function createWorld(opts: WorldOptions): World {
   // The shade under the trees is built before the terrain, because the ground
   // material takes its node at composition and cannot be handed one later.
   const shade = createGroundShade();
+  // The far grid bakes its own `biomeParams` uniforms, separate from the near
+  // grid's: anything that ever writes `terrain.biomeParams` must write
+  // `farTerrain.biomeParams` too, or the colour opens a seam at 4.2 km.
   const farTerrain = createTerrain({
     heightfield: farField,
     uniforms,
@@ -582,8 +590,8 @@ export function createWorld(opts: WorldOptions): World {
       get seaSeen() {
         return seaSeenOver(
           cloudCover,
-          camera.position.x + origin.x,
-          camera.position.z + origin.z,
+          origin.worldX(camera.position.x),
+          origin.worldZ(camera.position.z),
           camera.position.y,
         );
       },

@@ -958,16 +958,21 @@ at `http://localhost:4173/?seed=42&webgl=1`, Chromium with
 
 Triangles at the default start rose **18.5 %** (+192 924), one more geometry
 (the far grid's mesh) and two more textures, for **354 ms** more of the 8.2 s
-to the veil lifting -- under 5 % of the start, and it lands entirely in
-`sky`'s own share (shader compile and the first real render) rather than in
-`ground`'s fill: the far window's own cost is not marked separately and is
-lost inside a stage that already covers the near window, the materials and
-now the far grid together. `graphics` and `figure` did not move outside
-single-run noise, as expected -- neither reads the terrain. This is one page
-load a build, not an averaged reading, so the smaller deltas (`ground`,
-`scenery`) are read as roughly flat rather than as a precise cost; the
-triangle count and the `sky` total are the two numbers this run actually
-supports.
+to the veil lifting -- under 5 % of the start. That table's milestones are
+cumulative from the module's first line, so a row's own delta is not a step's
+own share: it also carries forward whatever the steps before it already
+drifted by. Subtracting each step from the one before it (before and after,
+then the difference of those): `graphics` moves +11 ms and `figure` -3 ms,
+both inside single-run noise, as expected -- neither reads the terrain.
+`ground`'s own share grows by +85 ms (its raw +93 ms less `figure`'s +8 ms) --
+close to what filling the far window's 69,696 texels should cost, so this one
+is not noise, it is the fill. `scenery`'s own share grows by +23 ms. The rest,
++238 ms (`sky`'s raw +354 ms less `scenery`'s +116 ms), is `sky`'s own share:
+the shader compile and the first real render, now over one more geometry and
+the far grid's own material. This is one page load a build, not an averaged
+reading, so `ground`'s and `scenery`'s own shares are read as the right order
+of magnitude rather than as a precise cost; the triangle count and `sky`'s own
+share are the two numbers this run actually supports.
 
 `npm run check` passes clean on `claude/dalszy-teren` (typecheck, lint,
 format, 483 Vitest tests, build). `npm run test:e2e:gpu`: **43 passed, 1

@@ -336,7 +336,7 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
     const layer = key === 'sea' ? 'deck' : key === 'fog' ? 'deck fog' : null;
     if (layer === null) return null;
     if (!world.layers.visible(layer)) return `${layer} off`;
-    if (world.look.seaSeen < 0.01) return 'under the sea';
+    if (world.look.seaSeen < 0.01) return 'under the sea here';
     return null;
   };
   const looks = world.look.ranges;
