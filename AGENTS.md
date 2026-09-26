@@ -13,7 +13,7 @@ TypeScript file, `contract.ts`, checked by `checkJs`. Nothing under
 test in Node. Under `src/engine/`: `sim/` (simulation aggregate, floating origin),
 `flight/` (controller, sky pulls, steering, camera), `avatar/` (character
 interface, posture, the authored figure and its file, the outfit), `terrain/`
-(noise, base fields, heightfield window, terrain mesh), `scenery/` (obstacle registry, streamed
+(noise, base fields, heightfield window, far window, terrain mesh), `scenery/` (obstacle registry, streamed
 ring, claimed ground, settlement lattice, road network and routes, pools, tree
 kit, structure kit, road kit, painted textures, ground shade, grass), `sky/`
 (uniforms, lights, atmosphere, fog, dome, clouds), `water/`, `audio/`
@@ -85,6 +85,15 @@ page works under a Pages subdirectory.
 
 - The CPU heightfield is the only terrain truth; `heightAt` interpolates the
   exact rendered triangle (same diagonal as `buildGrid`), never bilinearly.
+- **The far terrain is for looking at.** A second window, 64 m a cell and
+  264 texels (`terrain/Lod.ts`), is filled from the same sampler and draws a
+  grid to 8.2 km with a hole cut where the near grid lies; both grids and the
+  water stand on one anchor, a whole far cell, so the hole never moves and the
+  near grid always ends on a far grid line. The near grid's last `MORPH` metres
+  go over into the far surface. Nothing on the CPU reads the far window, and
+  `heightAt` does not know about the bent rim: it begins 3.9 km out, past
+  everything that asks. The fog's far cover and the cloud sea end where the far
+  grid does, at 8.2 km.
 - The window carries `(h, w0, w1, w2)` and `slots` `(i0, i1, i2, baseTemp)` from
   one sampling: heights interpolate across the triangle, weights belong to the
   cell, and the **fourth slot byte is the climate temperature the snow line is

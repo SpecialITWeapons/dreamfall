@@ -1,6 +1,6 @@
 # Dalszy teren: grube okno za 4,2 km i suwaki, które mówią, czemu milczą
 
-Data: 2026-09-26. Status: kierunek zatwierdzony w rozmowie, do przeglądu w pliku.
+Data: 2026-09-26. Status: zaimplementowane na branchu `claude/dalszy-teren`.
 Uzupełnia sekcję o terenie w `2026-09-14-dreamfall-design.md`; nie zmienia
 zasady, że wysokość z CPU jest jedyną prawdą o terenie.
 
@@ -83,7 +83,8 @@ wycięta raz, w buforze indeksów: bez `discard` i bez nakładki.
   pędzel) jest **składany z tej samej funkcji**, więc kolor po obu stronach
   szwu jest liczony tak samo. Grubej siatce brakuje tylko `GroundShade`.
 - `castShadow = false`; mapa cienia i tak obejmuje tylko okolicę lotnika.
-- Przełącznik warstwy `terrain` obejmuje obie siatki.
+- Warstwa `terrain` przełącza bliską siatkę, a nowa warstwa `far` grubą (test
+  w przeglądarce porównuje obraz z nią i bez niej).
 
 ### 4.4 Szew: przejście w pasie `MORPH`
 
@@ -100,6 +101,10 @@ Normalna miesza się tak samo.
 - Jeśli na zdjęciu widać jasne punkciki z tych zaokrągleń, gruba siatka
   dostaje fartuch: jeden pierścień komórek w dziurze, opuszczony o kilka
   metrów.
+- **Sprawdzone na GPU (Task 3, krok 6):** zdjęcia z 300 m i z 1800 m nad
+  punktem (5000, −3000), seed 42, oraz skan 100 widoków bez MSAA (5 miejsc ×
+  4 wysokości 150/300/800/1800 m × 5 kątów) — 0 pikseli tła wewnątrz lądu.
+  Fartuch nie był potrzebny.
 - `heightAt` na CPU **nie** zna przejścia. Pas zaczyna się 3,9 km od lotnika;
   sceneria kończy się na 2,6 km, a nic, co pyta o wysokość, nie sięga dalej.
   Ta rozbieżność jest świadoma i zapisana przy stałej.
@@ -113,7 +118,10 @@ Linia brzegu leży więc tam, gdzie rysuje ją teren.
 
 ### 4.6 Mgła i morze chmur
 
-- `farCover`: z 3600–4200 na **7400–8200 m**.
+- `farCover`: z 3600–4200 na **7400–8200 m**. Przesuwa się razem z grubą
+  siatką: została na 4200, gruba siatka byłaby zamglona dokładnie do koloru
+  kopuły od własnej krawędzi bliskiego okna, więc krawędź kurtyny musiała
+  pójść na krawędź grubej siatki.
 - Morze chmur ma sięgać tak daleko jak ląd, bo inaczej znad pokładu ląd za
   4,4 km byłby widoczny bez morza nad nim: `SEA_GRID.reach` do 8200 m (więcej
   kroków za `coreReach`, żeby pierścienie siatki nie zgrubiały), wygaszanie
@@ -130,8 +138,10 @@ Czysty moduł (bez `three/webgpu`, `three/tsl` i DOM; wpis w liście w
 - `anchorOf(x)`;
 - `morphWeight(dx, dz)`: waga przejścia dla punktu względem kotwicy;
 - `buildRingIndices(cells, hole)`: indeksy siatki z dziurą (geometrię składa
-  `TerrainMesh`);
-- `coarseHeightAt(hf, x, z)`: interpolacja grubej siatki na CPU, dla testów.
+  `TerrainMesh`).
+
+Nie ma osobnej funkcji `coarseHeightAt`: interpolacja grubej siatki na CPU to
+po prostu `heightAt` grubego okna.
 
 ### 4.8 Suwaki `sea` i `fog`
 
@@ -155,7 +165,7 @@ Jednostkowe (Vitest, Node):
 - `anchorOf` i przewijanie: bliska siatka z normalną nigdy nie wychodzi poza
   bliskie okno, gruba poza grube (seria przelotów w różnych kierunkach);
 - `morphWeight` jest 0 wewnątrz, 1 na krawędzi, a wysokość po przejściu na
-  krawędzi to `coarseHeightAt`;
+  krawędzi to `heightAt` grubego okna;
 - panel: dopiski i wyszarzenie dla wyłączonej warstwy i dla `seaSeen = 0`.
 
 W przeglądarce (Playwright):
@@ -169,10 +179,11 @@ Pomiary: `npm run bench` przed i po, wyniki w `docs/perf-notes.md`.
 
 ## 6. Ryzyka
 
-- **Schodki na granicach biomów.** Wagi w grubym oknie są na komórkę, co 64 m;
-  na 4–8 km to kilkanaście pikseli. Do sprawdzenia na zdjęciu. Jeśli widać
-  schodki, grunt grubej siatki interpoluje wagi tam, gdzie narożniki trójkąta
-  mają te same trzy biomy.
+- **Schodki na granicach biomów: potwierdzone.** Na zdjęciach z Task 3 (krok 6)
+  granice biomów i śnieg na grubej siatce widać jako kwadraty 64 m, najostrzej
+  z 1800 m, słabiej z 300 m (skrócenie perspektywy). Nieusunięte w tej zmianie.
+  Zapisana tam poprawka — interpolacja wag grubej siatki tam, gdzie narożniki
+  trójkąta mają te same trzy biomy — zostaje jako osobna, kolejna zmiana.
 - **Koszt fragmentów.** Gruba siatka używa pełnego materiału gruntu, ale na
   ekranie zajmuje mały pas przy horyzoncie. Bench to rozstrzygnie.
 - **Start.** +~130 ms wypełnienia przed pierwszą klatką.
