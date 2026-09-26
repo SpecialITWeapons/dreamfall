@@ -267,7 +267,14 @@ export function createWorld(opts: WorldOptions): World {
     coarse: farTerrain.loadCell,
   });
   scene.add(terrain.mesh, farTerrain.mesh);
-  const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
+  const water = createWater({
+    uniforms,
+    horizon,
+    litMaterial,
+    palette,
+    loadCell: terrain.loadCell,
+    farLoadCell: farTerrain.loadCell,
+  });
   scene.add(water.mesh);
   const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
   scene.add(skyDome.mesh);

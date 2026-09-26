@@ -9,7 +9,6 @@ import {
   cameraPosition,
   dot,
   float,
-  fract,
   fwidth,
   length,
   max,
@@ -21,7 +20,6 @@ import {
   pow,
   sin,
   smoothstep,
-  step,
   transformNormalToView,
   uniform,
   vec2,
@@ -32,10 +30,12 @@ import { CLOUD_SHADOW, createCloudShadow } from '../sky/CloudShadow';
 import type { Horizon } from '../sky/Fog';
 import { CLOUD_DRIFT, HIGH_CLOUD_SKY, highCloudBand } from '../sky/SkyDome';
 import type { SkyUniforms } from '../sky/SkyUniforms';
+import { FAR_CELL, MORPH, NEAR_REACH } from '../terrain/Lod';
 import {
   WATER_CELL,
   WATER_CELLS,
   buildGrid,
+  surfaceHeight,
   type LoadCell,
   type TerrainPalette,
 } from '../terrain/TerrainMesh';
@@ -47,6 +47,8 @@ export function createWater(deps: {
   litMaterial: LitMaterial;
   palette: TerrainPalette;
   loadCell: LoadCell;
+  /** The far window's loader: past the near window the shore is read off it. */
+  farLoadCell: LoadCell;
 }) {
   const { uniforms: u, horizon, litMaterial, palette, loadCell } = deps;
   const uAnchor = uniform(new Vector2(0, 0));
@@ -58,21 +60,14 @@ export function createWater(deps: {
   const view = normalize(cameraPosition.sub(positionWorld));
   const p = positionWorld.xz.add(u.uWorldOrigin);
 
-  // Barycentric height on the exact terrain triangle, also at negative world
-  // coordinates. Bilinear interpolation would draw a different shoreline.
-  const groundAt = Fn(([pt]: [Node<'vec2'>]) => {
-    const cell = pt.div(CELL),
-      base = cell.floor(),
-      f = fract(cell);
-    const upperTriangle = step(1, f.x.add(f.y));
-    const a = loadCell(base.x.add(upperTriangle), base.y.add(upperTriangle)).x;
-    const b = loadCell(base.x.add(1), base.y).x;
-    const c = loadCell(base.x, base.y.add(1)).x;
-    return a
-      .add(b.sub(a).mul(mix(f.x, float(1).sub(f.y), upperTriangle)))
-      .add(c.sub(a).mul(mix(f.y, float(1).sub(f.x), upperTriangle)));
-  });
-  const depth = max(float(SEA_LEVEL).sub(groundAt(p)), 0);
+  // The shore is read off the near window where the near grid is drawn, off
+  // the far one past it, and across the near grid's rim the two are mixed by
+  // the weight the rim bends with, so the water meets the ground it is drawn on.
+  const nearGround = surfaceHeight(loadCell, CELL);
+  const farGround = surfaceHeight(deps.farLoadCell, FAR_CELL);
+  const fromAnchor = p.sub(uAnchor).abs();
+  const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(fromAnchor.x, fromAnchor.y));
+  const depth = max(float(SEA_LEVEL).sub(mix(nearGround(p), farGround(p), rim)), 0);
 
   // Two scales of advected slopes, each filtered by its pixel footprint.
   const n = Fn(() => {
