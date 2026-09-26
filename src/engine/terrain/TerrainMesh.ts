@@ -94,15 +94,13 @@ export function buildGrid(cells: number, cell: number, hole = 0): BufferGeometry
   return geometry;
 }
 
-/** The graded terrain colors as uniforms shared by the ground and the water. */
+/** The graded terrain colors as uniforms shared by the ground and the water; the water's own are `WATER_COLORS`. */
 export function createTerrainPalette(look: Look) {
   const c = (key: string) => uniform(new Color(look.terrain[key]!));
   return {
     sand: c('sand'),
     snow: c('snow'),
     seaFloor: c('seaFloor'),
-    waterDeep: c('waterDeep'),
-    waterShallow: c('waterShallow'),
   };
 }
 export type TerrainPalette = ReturnType<typeof createTerrainPalette>;
