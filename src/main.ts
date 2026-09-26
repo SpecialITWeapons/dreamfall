@@ -478,6 +478,9 @@ const debug: WorldDebug = {
   get look() {
     return world.look;
   },
+  get water() {
+    return world.water;
+  },
   get clouds() {
     return world.clouds;
   },

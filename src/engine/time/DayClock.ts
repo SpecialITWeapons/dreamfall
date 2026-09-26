@@ -205,8 +205,6 @@ export function baseLook(): Look {
       sand: 0xc5bc85,
       snow: 0xe1e5d2,
       seaFloor: 0x6d9988,
-      waterDeep: 0x286e7b,
-      waterShallow: 0x74b9a9,
     },
     cloud: { white: 0xe1e4cb },
   };

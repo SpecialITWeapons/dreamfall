@@ -37,7 +37,8 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`,
-  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`) import neither
+  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
+  `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
   `MathUtils`). Everything that runs on the CPU has a Vitest test; the GPU is
@@ -286,6 +287,18 @@ page works under a Pages subdirectory.
   settlement -- says `inherit`: its slot's weight goes to the biomes
   beside it in both the haze and the sound, and what it names is added on top,
   so a village is not a hole in the jungle's air with a bell in it.
+- **The water tells a lake from the sea by looking round** (`water/WaterLook.ts`):
+  it is one sheet at sea level and a lake is ground under it, so the depth
+  under a fragment is the same at both shores. The vertex stage reads the
+  window at sixteen taps on rings of 250 and 500 m -- held inside the window,
+  which wraps -- and the mean depth is the openness that mixes a lake's look
+  with the sea's; `openAt` is the same sum on the CPU. It is right at about
+  five shores in six against a flood fill, whatever the rings or the statistic:
+  the rest is the body's size, which only a map of bodies could know. Each
+  look keeps its own surf pulse and the pulses are mixed, never the speeds, or
+  the flight's clock times a speed that changes across the water draws
+  stripes. `?dev=1` moves every number and colour; "print" gives the new
+  defaults.
 - One wind (`uWind`) drives the painted clouds, the puffs, the cloud sea, the
   cloud shadows, and the clouds reflected in the water; shader time is still
   simulation time, so pause freezes the wind too.

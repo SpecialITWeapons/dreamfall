@@ -40,14 +40,20 @@ jest ta sama w jeziorze i w morzu, więc do rozróżnienia trzeba się rozejrze�
 Czysty moduł CPU `src/engine/water/WaterLook.ts` (bez `three`, test w Node)
 trzyma wzór próbek i wszystkie liczby wyglądu.
 
-- **Zasięg** (`reach`, 0..1): największa głębokość spośród punktu i 16 próbek
-  na dwóch okręgach (8 na 250 m i 8 na 500 m), przycięta do 40 m i podzielona
-  przez 40. Głębokość to `max(0, -h)`.
+- **Zasięg** (`reach`, 0..1): **średnia** głębokość 16 próbek na dwóch
+  okręgach (8 na 250 m i 8 na 500 m, zewnętrzny obrócony o pół kroku), każda
+  przycięta do 40 m i podzielona przez 40. Głębokość to `max(0, -h)`.
 - **Otwartość** (`open`, 0..1): `smoothstep(openFrom, openTo, reach)`, progi
-  są suwakami.
-- Sonda na 400 m: brzeg jeziora mediana 0,41, brzeg morza mediana 0,95
-  (10. percentyl 0,53). Laguna tuż przy morzu wyjdzie w połowie morska i tak
-  ma być.
+  są suwakami, start 0,08 i 0,24.
+- Pierwotnie miało być maksimum głębokości. Pomiar na brzegach seedów 42 i 7
+  (flood fill jako prawda) dał dla maksimum, średniej, 2.–4. największej
+  próbki i promieni 200–600 m tę samą trafność, ok. 5 na 6. To jest sufit
+  tego, co widać wokół punktu; reszta to wielkość zbiornika, której próbki nie
+  znają. Średnia wygrała, bo daje gładkie pole: przy maksimum jedna próbka
+  przechodząca przez mierzeję rysowałaby szew na wodzie.
+- Wynik z wartościami startowymi: 79% i 87% brzegów jezior ma otwartość
+  poniżej 0,5, 84% brzegów morza powyżej. Laguna tuż przy morzu wyjdzie
+  w połowie morska.
 
 GPU liczy to samo **w vertex shaderze tafli** (wierzchołki co 64 m, pole
 o skali setek metrów, interpolacja wystarcza): 17 odczytów najbliższego
@@ -99,12 +105,13 @@ woda per biom (B), podpięcie dryfu zmarszczek pod `uWind`.
 
 ## 8. Testy
 
-- Vitest `waterLook.test.ts`: na seedach 42 i 7 brzegi jezior (< 1 km²,
-  flood fill na siatce) mają przeważnie niską otwartość, brzegi mórz
-  przeważnie wysoką; wartości startowe mieszczą się w zakresach; próbki
+- Vitest `waterLook.test.ts`: na seedach 42 i 7 ponad 72% brzegów jezior
+  (< 1 km², flood fill na siatce 64 m) ma otwartość poniżej 0,5, a ponad 78%
+  brzegów morza powyżej; wartości startowe mieszczą się w zakresach; próbki
   leżą na dwóch okręgach.
 - `devPanel.test.ts`: suwak wody pisze w `water.set`, pole koloru
   w `water.setColor`, „reset water” wraca do startu.
-- Liczba buforów wierzchołków tafli się nie zmienia (nowe dane to uniformy).
+- Liczba buforów wierzchołków tafli się nie zmienia z konstrukcji: nowe dane
+  to uniformy i jeden varying, żadnego atrybutu.
 - Przeglądarka: jezioro i brzeg morza na zrzutach, WebGL2 i WebGPU, bez
   błędów konsoli; `npm run check`.

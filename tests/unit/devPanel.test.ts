@@ -22,6 +22,8 @@ const stub = () => {
     measured: 0,
     clouds: [] as Array<Record<string, number>>,
     look: [] as Array<Record<string, number>>,
+    water: [] as Array<Record<string, number>>,
+    colors: [] as Array<[string, number]>,
   };
   const world = {
     seed: 42,
@@ -76,6 +78,20 @@ const stub = () => {
         Object.assign(this.form, change);
         calls.look.push(change);
       },
+    },
+    water: {
+      ranges: { seaDeepAt: [1, 40, 34], lakeSurf: [0, 1, 0.12] },
+      form: { seaDeepAt: 34, lakeSurf: 0.12 },
+      colors: { lakeDeep: 0x33503a, seaDeep: 0x2c7f8e },
+      set(change: Record<string, number>) {
+        Object.assign(this.form, change);
+        calls.water.push(change);
+      },
+      setColor(key: string, hex: number) {
+        (this.colors as Record<string, number>)[key] = hex;
+        calls.colors.push([key, hex]);
+      },
+      openAt: () => 0.37,
     },
     layers: {
       names: [...on.keys()],
@@ -251,6 +267,29 @@ describe('dev panel', () => {
     const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset look')!;
     (reset as HTMLButtonElement).click();
     expect(calls.look.at(-1)).toEqual({ sea: 0.6, air: 1 });
+  });
+
+  it('moves the water from a slider per number and a swatch per colour, and puts it back', () => {
+    const { world, calls, raw } = stub();
+    panel = createDevPanel(document, world);
+    expect(text()).toContain('open under the flight');
+    expect(text()).toContain('0.37');
+    const deepAt = [...document.querySelectorAll<HTMLInputElement>('#dev input[type=range]')].filter(
+      (input) => input.max === '40',
+    );
+    expect(deepAt).toHaveLength(1);
+    deepAt[0]!.value = '20';
+    deepAt[0]!.dispatchEvent(new Event('input'));
+    expect(calls.water.at(-1)).toEqual({ seaDeepAt: 20 });
+    expect(raw.water.form.seaDeepAt).toBe(20);
+    const swatches = [...document.querySelectorAll<HTMLInputElement>('#dev input[type=color]')];
+    expect(swatches.map((s) => s.value)).toEqual(['#33503a', '#2c7f8e']);
+    swatches[1]!.value = '#80cbb8';
+    swatches[1]!.dispatchEvent(new Event('input'));
+    expect(calls.colors.at(-1)).toEqual(['seaDeep', 0x80cbb8]);
+    const reset = [...document.querySelectorAll('#dev button')].find((b) => b.textContent === 'reset water')!;
+    (reset as HTMLButtonElement).click();
+    expect(calls.water.at(-1)).toEqual({ seaDeepAt: 34, lakeSurf: 0.12 });
   });
 
   it('takes itself and its styles away on dispose', () => {

@@ -338,6 +338,59 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
   button('print', () => console.log('sky look', JSON.stringify(world.look.form)), lookButtons);
   panel.append(lookButtons);
 
+  // A lake's look and the sea's, mixed by how open the water is; the reading
+  // says which of the two the water under the flight is wearing.
+  section('water');
+  reading('open under the flight', () => fixed(world.water.openAt(world.state.x, world.state.z), 2));
+  const waters = world.water.ranges;
+  const waterSliders = formSliders(
+    waters,
+    () => world.water.form,
+    (change) => world.water.set(change),
+  );
+  const hex = (value: number) => `#${value.toString(16).padStart(6, '0')}`;
+  const swatches: Array<() => void> = [];
+  for (const key of Object.keys(world.water.colors) as Array<keyof WorldDebug['water']['colors']>) {
+    const row = make('div', 'row');
+    const swatch = make('input');
+    swatch.type = 'color';
+    swatch.addEventListener('input', () => {
+      world.water.setColor(key, parseInt(swatch.value.slice(1), 16));
+      draw();
+    });
+    const show = () => {
+      swatch.value = hex(world.water.colors[key]);
+    };
+    show();
+    swatches.push(show);
+    row.append(make('span', '', key), swatch);
+    panel.append(row);
+  }
+  const waterButtons = make('div', 'wrap');
+  button(
+    'reset water',
+    () => {
+      const start: Record<string, number> = {};
+      for (const key of Object.keys(waters) as Array<keyof typeof waters>) start[key] = waters[key][2];
+      world.water.set(start);
+      for (const show of waterSliders) show();
+      draw();
+    },
+    waterButtons,
+  );
+  // The colours print as hex literals, the way `WATER_COLORS` spells them.
+  button(
+    'print',
+    () => {
+      const colors = Object.entries(world.water.colors).map(
+        ([key, value]) => `${key}: 0x${hex(value).slice(1)}`,
+      );
+      console.log('water look', JSON.stringify(world.water.form), `{ ${colors.join(', ')} }`);
+    },
+    waterButtons,
+  );
+  panel.append(waterButtons);
+
   section('scenery');
   reading('trees · props', () => `${scenery?.trees ?? 0} · ${scenery?.props ?? 0}`);
   reading('buildings', () => {

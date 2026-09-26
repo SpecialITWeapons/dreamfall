@@ -45,6 +45,7 @@ import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/Terra
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
+import { WATER_LOOK, type WaterColors, type WaterLook } from './water/WaterLook';
 
 /** The near clouds' form, as the dev panel and the browser tests reach it. */
 export interface CloudFormControl {
@@ -73,6 +74,21 @@ export interface SkyLookControl {
   set(change: Partial<SkyLook>): void;
 }
 export type SkyLook = { [K in keyof typeof SKY_LOOK]: number };
+
+/** The water's two looks, a lake's and the sea's (`WATER_LOOK`, `WATER_COLORS`): the dev panel's sliders. */
+export interface WaterLookControl {
+  readonly ranges: { readonly [K in keyof WaterLook]: readonly [number, number, number] };
+  /** A copy of the look now. */
+  readonly form: WaterLook;
+  /** Changes what it names, each number clamped to its range. */
+  set(change: Partial<WaterLook>): void;
+  /** The colours before the grade, as 0xrrggbb. */
+  readonly colors: WaterColors;
+  /** Sets one colour before the grade; the world grades it as it grades the ground. */
+  setColor(key: keyof WaterColors, hex: number): void;
+  /** How much of the sea's look the water wears at a world point, 0 a lake and 1 the sea. */
+  openAt(x: number, z: number): number;
+}
 
 export interface WorldOptions {
   seed: number;
@@ -136,6 +152,8 @@ export interface World {
   readonly clouds: CloudFormControl;
   /** The deck's and the air's look: the dev panel's sliders. */
   readonly look: SkyLookControl;
+  /** The water's two looks, a lake's and the sea's: the dev panel's sliders. */
+  readonly water: WaterLookControl;
   /** Whether the Milky Way's atlas has arrived off the worker, and what it cost. */
   readonly galaxy: { baked: boolean; bakeMs: number };
   /** Head bob and the like stay off while the viewer prefers reduced motion. */
@@ -251,7 +269,14 @@ export function createWorld(opts: WorldOptions): World {
     shade,
   });
   scene.add(terrain.mesh);
-  const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
+  const water = createWater({
+    uniforms,
+    horizon,
+    litMaterial,
+    palette,
+    loadCell: terrain.loadCell,
+    heightfield,
+  });
   scene.add(water.mesh);
   const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
   scene.add(skyDome.mesh);
@@ -553,6 +578,22 @@ export function createWorld(opts: WorldOptions): World {
           into[key].value = Math.min(SKY_LOOK[key][1], Math.max(SKY_LOOK[key][0], v));
         }
       },
+    },
+    water: {
+      ranges: WATER_LOOK,
+      get form() {
+        return water.form;
+      },
+      set(change) {
+        water.setForm(change);
+      },
+      get colors() {
+        return water.colors;
+      },
+      setColor(key, hex) {
+        water.setColor(key, hex);
+      },
+      openAt: (x, z) => water.openAt(x, z),
     },
     get galaxy() {
       return { baked: galaxy.baked, bakeMs: galaxy.bakeMs };
