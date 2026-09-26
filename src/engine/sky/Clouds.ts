@@ -119,15 +119,16 @@ export interface CloudForm {
 /** Each number's range and where it starts: the panel's sliders, and the clamp on `set`. */
 // The owner's ranges: under half a rag the edge is a clean disc and reads as
 // nothing, and the stretch, the height, the puff and the soft base were worth
-// taking further than the first sliders let them.
+// taking further than the first sliders let them. The starting values are the
+// ones the owner set on the panel: longer, taller, raggeder heaps.
 export const CLOUD_FORM: { [K in keyof CloudForm]: readonly [min: number, max: number, start: number] } = {
-  stretch: [2, 6, 3],
-  height: [0.5, 2.2, 1],
-  puff: [1.3, 2, 1.55],
-  rag: [0.5, 1, 0.6],
-  floor: [90, 200, 105],
-  breath: [0, 0.3, 0.12],
-  spread: [0, 0.5, 0.25],
+  stretch: [2, 6, 4],
+  height: [0.5, 2.2, 1.6],
+  puff: [1.3, 2, 1.6],
+  rag: [0.5, 1, 0.8],
+  floor: [90, 200, 110],
+  breath: [0, 0.3, 0.1],
+  spread: [0, 0.5, 0.3],
 };
 
 /** A form at its starting values. */
