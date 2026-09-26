@@ -41,7 +41,8 @@ import { windFromSeed, type Wind } from './sky/Wind';
 import { createHeightfield, type Heightfield } from './terrain/Heightfield';
 import { measureHeightHooks, type HookCosts } from './terrain/HookCost';
 import { sstep } from './terrain/noise';
-import { WATER_CELL, createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
+import { FAR_CELL, FAR_CELLS, FAR_WINDOW, HOLE, anchorOf } from './terrain/Lod';
+import { createTerrain, createTerrainPalette } from './terrain/TerrainMesh';
 import { CELL, createWorldSampler } from './terrain/WorldSampler';
 import { solar, type DayClock } from './time/DayClock';
 import { createWater } from './water/Water';
@@ -188,6 +189,10 @@ export function createWorld(opts: WorldOptions): World {
   const resume = opts.resume ?? null;
   // The window fills around the start before the flight reads the ground (about 300 ms, behind the veil).
   heightfield.fillAll(Math.round((resume?.x ?? 0) / CELL), Math.round((resume?.z ?? 0) / CELL));
+  // The far window: the same sampler every fourth cell, for the grid that
+  // reaches past the near one. Nothing on the CPU reads it (terrain/Lod.ts).
+  const farField = createHeightfield(sampler, { cell: FAR_CELL, size: FAR_WINDOW });
+  farField.fillAll(Math.round((resume?.x ?? 0) / FAR_CELL), Math.round((resume?.z ?? 0) / FAR_CELL));
   // Before the simulation, because the flight asks for the core's bearing on its
   // first step. The dust and that bearing are 93 ms here; the light atlas is
   // forty times dearer and is baked off the main thread, so the start pays
@@ -242,6 +247,16 @@ export function createWorld(opts: WorldOptions): World {
   // The shade under the trees is built before the terrain, because the ground
   // material takes its node at composition and cannot be handed one later.
   const shade = createGroundShade();
+  const farTerrain = createTerrain({
+    heightfield: farField,
+    uniforms,
+    litMaterial,
+    palette,
+    biomes: library.biomes,
+    cell: FAR_CELL,
+    cells: FAR_CELLS,
+    hole: HOLE,
+  });
   const terrain = createTerrain({
     heightfield,
     uniforms,
@@ -249,8 +264,9 @@ export function createWorld(opts: WorldOptions): World {
     palette,
     biomes: library.biomes,
     shade,
+    coarse: farTerrain.loadCell,
   });
-  scene.add(terrain.mesh);
+  scene.add(terrain.mesh, farTerrain.mesh);
   const water = createWater({ uniforms, horizon, litMaterial, palette, loadCell: terrain.loadCell });
   scene.add(water.mesh);
   const skyDome = createSkyDome(uniforms, horizon, { galaxy: (dir) => galaxy.radiance(dir) });
@@ -279,6 +295,7 @@ export function createWorld(opts: WorldOptions): World {
   let highPin: number | null = null;
   const layers = createLayers({
     terrain: [terrain.mesh],
+    far: [farTerrain.mesh],
     water: [water.mesh],
     ...sceneryGroups,
     // A deck or a cloud switched off takes its white with it: the white was
@@ -389,16 +406,16 @@ export function createWorld(opts: WorldOptions): World {
     // grass rebuild on it.
     const moved = origin.shiftFor(state.x, state.z);
     heightfield.update(state.x, state.z);
+    farField.update(state.x, state.z);
     terrain.upload();
-    const ax = Math.round(state.x / CELL) * CELL,
-      az = Math.round(state.z / CELL) * CELL;
+    farTerrain.upload();
+    // One anchor for both grids and the water, a whole far cell: the near grid
+    // ends on a far grid line and the far grid's hole stays where it was cut.
+    const ax = anchorOf(state.x),
+      az = anchorOf(state.z);
     terrain.update(ax, az, origin.x, origin.z);
-    water.update(
-      Math.round(state.x / WATER_CELL) * WATER_CELL,
-      Math.round(state.z / WATER_CELL) * WATER_CELL,
-      origin.x,
-      origin.z,
-    );
+    farTerrain.update(ax, az, origin.x, origin.z);
+    water.update(ax, az, origin.x, origin.z);
     // the figure, in the local frame
     pose.x = origin.localX(state.x);
     pose.y = state.y;
@@ -628,6 +645,7 @@ export function createWorld(opts: WorldOptions): World {
       scenery?.dispose();
       shade.dispose();
       terrain.dispose();
+      farTerrain.dispose();
       water.dispose();
       skyDome.dispose();
       galaxy.dispose();

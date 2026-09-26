@@ -679,6 +679,37 @@ test('the deck lays its fog on the ground only where its sea is seen over it', a
   expect(errors).toEqual([]);
 });
 
+test('the land reaches past the near window: the far terrain draws what it cannot', async ({ page }) => {
+  // The near window ends 4.2 km from the flyer. From high up, looking level,
+  // with the air and every cloud term off, what the far grid draws is land
+  // where there used to be only the horizon's colour.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const cost = await page.evaluate(async () => {
+    const w = window.__world!;
+    w.jump(0, 0, 1500);
+    w.dayPhase = 0.3;
+    w.look.set({ air: 0 });
+    for (const name of ['clouds', 'deck', 'deck fog', 'underside', 'high']) w.layers.set(name, false);
+    for (let i = 0; i < 120; i++) w.step(0);
+    const shot = async () => {
+      w.frame(0);
+      const c = await w.capture(160, 90);
+      return c ? Array.from(c.data) : [];
+    };
+    const diff = (a: number[], b: number[]) => a.reduce((s, v, i) => s + Math.abs(v - b[i]!), 0) / a.length;
+    await shot();
+    const on = await shot();
+    w.layers.set('far', false);
+    const off = await shot();
+    w.layers.set('far', true);
+    return diff(on, off);
+  });
+  expect(cost).toBeGreaterThan(0.005);
+  expect(errors).toEqual([]);
+});
+
 test('the registry reaches the page and two climates paint different ground', async ({ page }) => {
   // Five window refills and three renders, on a software rasteriser, and every
   // refill now runs twelve presence hooks over 313 600 texels: this one is slow
