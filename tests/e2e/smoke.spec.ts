@@ -694,7 +694,9 @@ test('the deck lays its fog on the ground only where its sea is seen over it', a
 test('the land reaches past the near window: the far terrain draws what it cannot', async ({ page }) => {
   // The near window ends 4.2 km from the flyer. From high up, looking level,
   // with the air and every cloud term off, what the far grid draws is land
-  // where there used to be only the horizon's colour.
+  // where there used to be only the horizon's colour. The cards stand on that
+  // land in both pictures and would hide part of what is measured, so they go
+  // with the clouds: this is the far grid's own share.
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
@@ -703,7 +705,8 @@ test('the land reaches past the near window: the far terrain draws what it canno
     w.jump(0, 0, 1500);
     w.dayPhase = 0.3;
     w.look.set({ air: 0 });
-    for (const name of ['clouds', 'deck', 'deck fog', 'underside', 'high']) w.layers.set(name, false);
+    for (const name of ['clouds', 'deck', 'deck fog', 'underside', 'high', 'far trees'])
+      w.layers.set(name, false);
     for (let i = 0; i < 120; i++) w.step(0);
     const shot = async () => {
       w.frame(0);
@@ -903,6 +906,38 @@ test('the forest stands where the climate wants it, and the flight is told about
   expect(dunes.id).toBe('dunes');
   expect(dunes.scenery.trees).toBeLessThan(woods.scenery.trees / 5);
   expect(dunes.scenery.rebuilds).toBeGreaterThan(woods.scenery.rebuilds);
+  expect(errors).toEqual([]);
+});
+
+test('the woods go on past the ring as cards, out to the far terrain', async ({ page }) => {
+  // One jump and one settle: a window refill, a ring rebuild and every far
+  // cell to 8.2 km, on a software rasteriser.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const look = (x: number, z: number) =>
+    page.evaluate(
+      ({ x, z }) => {
+        const w = window.__world!;
+        w.jump(x, z, 400);
+        w.jump(x, z, 400); // the first jump reads the ground from the window it leaves
+        w.settleScenery();
+        return w.scenery!;
+      },
+      { x, z },
+    );
+  const woods = await look(-48_000, -42_000);
+  // the far land holds several times the ring's trees, and all of them are sown
+  expect(woods.farTrees).toBeGreaterThan(3 * woods.trees);
+  expect(woods.farQueued).toBe(0);
+  // every tree has its card, the ring's among them, and the pool had room for all
+  expect(woods.cards).toBe(woods.trees + woods.farTrees);
+  expect(woods.cardsRefused).toBe(0);
+  // Three kilometres on the origin has moved under the scene: the cards are
+  // written again in the new frame, not lost with the old one.
+  const on = await look(-45_000, -42_000);
+  expect(on.cards).toBe(on.trees + on.farTrees);
+  expect(on.farTrees).toBeGreaterThan(3 * on.trees);
   expect(errors).toEqual([]);
 });
 

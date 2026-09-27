@@ -90,7 +90,7 @@ export interface Scenery {
    * and the cards. The first fill is paid here, behind the veil; a test that
    * jumps the flight calls it to see the far land without flying frames.
    */
-  settle(x: number, z: number, cameraY: number): void;
+  settle(x: number, z: number): void;
   readonly stats: SceneryStats;
   /** What the layer switches hold, by switch name: the pools by their own, the ribbons and the grass whole. */
   readonly groups: Record<string, Hideable[]>;
@@ -247,32 +247,17 @@ export function createScenery(deps: {
     seenRoutes = 0;
   let sitesMs = 0;
   const nearby: Site[] = [];
-  const step = (x: number, z: number, cameraY: number, moved: boolean, farBudget: number) => {
-    // The queue runs before the ring so a plan finished in this frame is
-    // standing in this frame's rebuild. A plan that was only just finished
-    // also forces one: the ring finds its sites while rebuilding, so without
-    // this a village discovered over a standing flight would wait for the
-    // next cell crossing, and a village discovered at the last crossing would
-    // arrive a whole cell late.
-    const planned = sites.built;
-    const started = performance.now();
-    sites.work(SITE_BUDGET_MS);
-    sitesMs = performance.now() - started;
-    // The network is looked at every kilometre and its routes arrive from the
-    // worker; one arriving is a rebuild, as a plan arriving is.
-    roads.update(x, z);
-    const routed = roads.version !== seenRoutes;
-    seenRoutes = roads.version;
-    if (ring.update(x, z, moved || sites.built > planned || routed)) {
-      rebuilds++;
-      shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
-      // The far cells are the ones past the ring's reach from where the ring
-      // itself stood, so the two together hold every cell once.
-      farTrees.update(x, z);
-      cardsDirty = true;
-    }
-    grass.update(x, z, cameraY, origin, moved);
-    farTrees.work(farBudget);
+  /** The ring rebuilt at (x, z): the far cells are the ones past its reach from where it stood. */
+  const rebuilt = (x: number, z: number) => {
+    rebuilds++;
+    shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
+    // Together the two hold every cell once.
+    farTrees.update(x, z);
+    cardsDirty = true;
+  };
+  /** The far sowing's share of a frame, and the cards written when they have fallen behind it. */
+  const sowFar = (budget: number) => {
+    farTrees.work(budget);
     const now = performance.now();
     if (farTrees.version !== cardsVersion && (farTrees.queued === 0 || now - cardsWritten >= CARD_LAG))
       cardsDirty = true;
@@ -285,10 +270,30 @@ export function createScenery(deps: {
   };
   return {
     update(x, z, cameraY, moved) {
-      step(x, z, cameraY, moved, FAR_TREES_BUDGET_MS);
+      // The queue runs before the ring so a plan finished in this frame is
+      // standing in this frame's rebuild. A plan that was only just finished
+      // also forces one: the ring finds its sites while rebuilding, so without
+      // this a village discovered over a standing flight would wait for the
+      // next cell crossing, and a village discovered at the last crossing would
+      // arrive a whole cell late.
+      const planned = sites.built;
+      const started = performance.now();
+      sites.work(SITE_BUDGET_MS);
+      sitesMs = performance.now() - started;
+      // The network is looked at every kilometre and its routes arrive from the
+      // worker; one arriving is a rebuild, as a plan arriving is.
+      roads.update(x, z);
+      const routed = roads.version !== seenRoutes;
+      seenRoutes = roads.version;
+      if (ring.update(x, z, moved || sites.built > planned || routed)) rebuilt(x, z);
+      grass.update(x, z, cameraY, origin, moved);
+      sowFar(FAR_TREES_BUDGET_MS);
     },
-    settle(x, z, cameraY) {
-      step(x, z, cameraY, true, Infinity);
+    settle(x, z) {
+      // The ring where it would be anyway -- built now if it never was -- and
+      // then every far cell at once. The plans and the grass are the frame's.
+      if (ring.update(x, z, false)) rebuilt(x, z);
+      sowFar(Infinity);
     },
     siteNear(x, z) {
       const site = sites.near(x, z, SITE_REACH, nearby)[0];

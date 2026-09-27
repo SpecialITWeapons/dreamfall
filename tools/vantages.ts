@@ -86,6 +86,10 @@ export const settle = async (page: Page, vantage: Vantage) => {
       { timeout: 120_000 },
     )
     .toBe(0);
+  // The far land is sown from a queue at 2 ms a frame, and every few hundred
+  // milliseconds of it rewrites the cards: sown here at once, or the frames
+  // below measure the queue. A build from before the far trees has no such thing.
+  await page.evaluate(() => window.__world!.settleScenery?.());
   // Four, not twenty. Each of these is a real frame -- a separate task, so the
   // node graph's frame id has moved and the scene is drawn again -- and a real
   // frame on a software rasteriser is the better part of a second. The queue

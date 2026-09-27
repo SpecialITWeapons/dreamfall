@@ -38,6 +38,7 @@ page works under a Pages subdirectory.
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
   `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
+  `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
   `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
@@ -400,6 +401,19 @@ page works under a Pages subdirectory.
   window would have filled and so answers to the bit what the window would --
   and never reads the far window. `ringGolden.test.ts` holds what the ring
   sows over the real library; a change that moves it is a change to the world.
+- **Every tree is also a card, out to the far terrain's 8.2 km.** Past the
+  ring, `FarTrees` sows the cells from the ring's reach to `FAR_TREE_RADIUS`
+  through the same `Sowing`, over `SampledGround`, from a queue at 2 ms a
+  frame -- the two sets are split at the ring's own rebuild position, so every
+  cell is in exactly one -- and keeps off the ground the ring's plans claim.
+  The cards are one instanced mesh (`Cards.ts`) drawn from photographs the CPU
+  takes of each species from the side and from above (`ImpostorBake.ts`: no
+  render target, no readback, no second compile), holding the ring's trees too.
+  A full tree and its card trade places over one band read from one uniform,
+  `treeLimit` in the pools, which only the trees read: props and buildings keep
+  the constant `RING_FADE`. A card past the near grid stands on the far surface,
+  read in its shader, because nothing on the CPU reads the far window.
+  `scenery.settle` sows everything at once; the world pays that behind the veil.
 - `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
   own top and radius -- never the entry's data, so a generator cannot understate
   how much sky it takes; a building is measured the same way, and its entry's own

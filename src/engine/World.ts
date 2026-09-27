@@ -403,7 +403,7 @@ export function createWorld(opts: WorldOptions): World {
     for (const [name, objects] of Object.entries(scenery.groups)) sceneryGroups[name]?.push(...objects);
     // The ring, every far cell and the cards, from where the flight starts:
     // the first fill of the far land is paid here, behind the veil.
-    scenery.settle(state.x, state.z, state.y);
+    scenery.settle(state.x, state.z);
   };
 
   const follow = new Vector3();

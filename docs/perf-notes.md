@@ -990,3 +990,54 @@ both times (`core` a hair under 1.4x `away`, off by about 4 %). This is the
 failure Task 3's notes already recorded on this GPU at the base commit, with
 the far land narrowing the margin further; nothing here was changed to fix
 or hide it.
+
+## Trees past the ring: cards out to 8.2 km
+
+What the far trees cost -- every tree from the ring's edge to the far
+terrain's, drawn as a card from the species' photographs -- on this machine's
+GPU (ANGLE on D3D11, WebGL2; headless Chromium would not give WebGPU, so there
+is no `gpu ms`), with vsync and the frame-rate limit off so a frame is its own
+length. Before is `f9db295`, the step that only moved the sowing, which draws
+exactly what `main` draws; after is the cards. `npm run bench`'s spec with a
+GPU launch config, 3 rounds of 120 frames, run whole on one build and then
+whole on the other:
+
+| vantage | frame ms, before | frame ms, after | triangles, before | triangles, after |     +% |
+| ------- | ---------------: | --------------: | ----------------: | ---------------: | -----: |
+| dawn    |              5.4 |             5.1 |         1 353 066 |        1 389 844 | +2.7 % |
+| noon    |              5.5 |             5.4 |         1 353 068 |        1 391 440 | +2.8 % |
+| far     |              5.2 |             5.2 |         1 395 394 |        1 431 630 | +2.6 % |
+| deck    |              5.8 |             5.6 |         1 396 502 |        1 432 208 | +2.6 % |
+| night   |              6.1 |             5.9 |         1 860 336 |        1 895 764 | +1.9 % |
+
+The frame did not move: every difference is under a third of a millisecond
+and they go both ways. The triangles are two a card -- 16 500 far trees and the
+ring's 2 500 over again, around 36 000 -- and the draws one or two more (the
+cards, and the depth pass that takes them). What the spec budgeted was +5 %.
+
+Start, `window.__world.timings` (ms from the module's first line, three loads
+each) and the renderer at the default start once the plan queue is empty:
+
+|                             | before      | after       |
+| --------------------------- | ----------- | ----------- |
+| `scenery` (own share)       | ~240        | ~790        |
+| `bakeMs`                    | --          | ~450        |
+| `sky` (the veil lifts here) | 7 085-7 563 | 7 415-8 029 |
+| triangles                   | 1 235 968   | 1 268 418   |
+| draws                       | 48          | 49          |
+| geometries / textures       | 53 / 40     | 54 / 42     |
+| graphics memory             | 127.1 MB    | 138.3 MB    |
+
+The scenery stage's own share grew by about 550 ms, behind the veil: about
+250 of it is photographing nine species on the CPU (`ImpostorBake.ts`, two
+views of 256 texels a side, averaged down to 128) and about 340 the first fill
+of every far cell -- some 20 000 of them, each sown over `SampledGround`,
+which samples the terrain where the near window does not reach. The veil lifts
+at the same time give or take the noise of three loads; the sky's compile is
+still five sixths of the start. The eleven megabytes are the atlas (two
+pictures of 2048 x 256 with every mip level) and the pool's 32 000 instances.
+
+In flight the far sowing runs from a queue at 2 ms a frame, checked before a
+cell; crossing a ring cell hands it the 150 or so cells that came into reach,
+and the cards are rewritten whole (19 000 instances, 1.4 MB) when the queue
+empties or every 250 ms while it runs.
