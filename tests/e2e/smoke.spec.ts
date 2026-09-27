@@ -219,16 +219,26 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   /**
    * Mean luminance of the sky above the horizon, at midnight, on a heading.
    *
+   * Everything but the dome is switched off, because what stands in the top
+   * third of the frame is the start's business and not the galaxy's, and it
+   * moved under this test. Seed 42 starts under a solid bank, and the deck's
+   * underside painted on the dome greyed the core and lit the cross bearing:
+   * 0.034, 0.028 and 0.025, core over far side 1.2 where it had been 1.47.
+   * With the hill and the trees in front of the core and the land and sea
+   * under the far side it read 0.039, 0.030 and 0.024, 1.33, on a GPU and on
+   * the software rasteriser alike. The rasteriser still passed, only because
+   * its first capture of a lit scene reads brighter (0.056 for the core, 0.040
+   * for the same scene captured again) and the core was captured first. The
+   * dome alone reads the same on the first capture as on every other.
+   *
    * The altitude is set and not inherited, because the flight's own is not the
-   * test's business and one value of it is a trap: the cloud deck is at 520 m,
-   * and from just under it the top third of the frame is deck rather than sky.
-   * Measured at 450 m the core, the far side and the cross bearing all read
-   * 0.039 -- the same number three times, because what was being photographed
-   * was a ceiling. At 120 m they are 0.041, 0.028 and 0.022.
+   * test's business, and inside the deck the view is white: 120 m over the
+   * ground is well under the base of the bank over the start (712 m).
    */
   const sky = (heading: number) =>
     page.evaluate(async (h) => {
       const w = window.__world!;
+      for (const name of w.layers.names) w.layers.set(name, name === 'sky');
       w.setAutopilot(false);
       w.state.heading = h;
       w.state.y = Math.max(0, w.heightAt(w.state.x, w.state.z)) + 120;
@@ -248,8 +258,9 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
 
   // The core is the brightest thing in a moonless sky, the far side of the
   // galaxy is a fainter band, and square to both there is only the disc's glow.
-  // Measured at 0.041, 0.028 and 0.022; the margins are wide because this is a
-  // software rasteriser and a tone curve, not a photometer.
+  // Measured at 0.044, 0.027 and 0.022 on a GPU (ANGLE on D3D11) and on
+  // SwiftShader both, core over far side 1.61 and far side over cross 1.22;
+  // the margins are wide because this is a tone curve, not a photometer.
   const core = await sky(GALAXY_HEADING);
   const away = await sky(GALAXY_HEADING + Math.PI);
   const across = await sky(GALAXY_HEADING + Math.PI / 2);
