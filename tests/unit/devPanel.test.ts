@@ -76,7 +76,7 @@ const stub = () => {
       { id: 'pine', weight: 0.38 },
       { id: 'frost', weight: 0 },
     ],
-    siteNear: () => ({ id: 'village:0,0', x: 1500, z: 1600, radius: 180, lots: 24 }),
+    siteNear: () => ({ id: 'village:0,0', x: 1500, z: 1600, radius: 180, lots: 24, landmark: null }),
     clouds: {
       ranges: { stretch: [1, 3, 1.8], rag: [0, 0.8, 0.4] },
       form: { stretch: 1.8, rag: 0.4 },

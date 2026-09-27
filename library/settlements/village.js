@@ -70,11 +70,21 @@ export const VILLAGE = {
   /**
    * The share of the country's trees and props that stands on a village's
    * ground: a clearing. It used to sow its own oaks and blossoms at 0.3, and
-   * measured that was 0.5 trees a hectare inside against 1.4 outside; the
-   * country's own density times 0.4 keeps about the same ratio in a wood, and
-   * a steppe village has its handful of acacias rather than somebody's orchard.
+   * measured that was 0.5 trees a hectare inside against 1.4 outside. At 0.4
+   * of the country's own the houses' claims left seed 42's villages between
+   * none and a third of their country; at 0.5, with the trees the plan stands
+   * below, they come to 0.6 to 0.7 of it (`settlementTrees.test.ts`).
    */
-  clearing: 0.4,
+  clearing: 0.5,
+  /**
+   * The trees the village stands itself, of its country's species: in the
+   * garden behind a share of its houses, `back` metres behind the house's
+   * middle, and on a share of the lots it left empty. With the clearing above
+   * it comes to about half the country's density -- sparser than the country
+   * around it, and never nothing, because a steppe village still has its
+   * handful of acacias where people planted them.
+   */
+  trees: { garden: 0.15, lot: 0.25, back: 14 },
   /**
    * What a house is tinted with. A tint multiplies the colours its recipe
    * painted, so these are pale and warm on purpose: a village of three recipes

@@ -10,12 +10,21 @@
  * same village comes out different, which is a thing a player can notice.
  */
 
-import { toPolyline } from './geometry.js';
+import { rollAt, toPolyline } from './geometry.js';
 
 /** Steps of this length walk the contour; shorter reads as a polygon, longer cuts the corner. */
 const STEP = 25;
 /** How far to reach when measuring which way the ground falls. */
 const PROBE = 40;
+/**
+ * What a tree the plan stands keeps clear of, m: a house's centre by more than
+ * the widest house's half-diagonal (a barn's, 12 m) and a metre; a lane's edge
+ * by a crown's overhang; another planted tree by a crown.
+ */
+const TREE_CLEAR = { house: 13.5, road: 3, tree: 6 };
+/** The salts of a village's two kinds of tree, so a garden and an empty lot decide apart. */
+const GARDEN_SALT = 0x6a2d,
+  LOT_SALT = 0x6a3f;
 
 /**
  * Which way the ground runs level here: the perpendicular of its fall. On flat
@@ -103,8 +112,8 @@ function sidePath(kit, site, from, along, sign, params) {
 export function planVillage(site, params, kit) {
   const street = mainStreet(kit, site);
   kit.road(street, params.roads.width);
-  /** @type {Array<{ points: Array<[number, number]> }>} */
-  const streets = [{ points: street }];
+  /** @type {Array<{ points: Array<[number, number]>, width: number }>} */
+  const streets = [{ points: street, width: params.roads.width }];
 
   // Side paths every `spacing` along the street, alternating sides so a village
   // does not grow entirely off one shoulder.
@@ -124,7 +133,7 @@ export function planVillage(site, params, kit) {
     side = -side;
     if (!path) continue;
     kit.road(path, params.roads.width * 0.6);
-    streets.push({ points: path });
+    streets.push({ points: path, width: params.roads.width * 0.6 });
   }
 
   // Lots along every street, both shoulders, thinning toward the edge of the
@@ -133,6 +142,12 @@ export function planVillage(site, params, kit) {
   const total = kinds.reduce((sum, [, weight]) => sum + weight, 0);
   /** @type {Array<{ x: number, z: number }>} */
   const taken = [];
+  /** Houses as they stand, and the way their gardens lie: away from the lane. */
+  /** @type {Array<{ x: number, z: number, ox: number, oz: number, ux: number, uz: number }>} */
+  const houses = [];
+  /** Lots the village left empty: a tree may take one. */
+  /** @type {Array<{ x: number, z: number }>} */
+  const empty = [];
   for (const road of streets)
     for (let i = 1; i < road.points.length; i++) {
       const a = road.points[i - 1],
@@ -151,7 +166,10 @@ export function planVillage(site, params, kit) {
             z = cz + ux * shoulder * params.lots.setback;
           const out = Math.hypot(x - site.x, z - site.z) / site.radius;
           if (out > 1) continue;
-          if (site.random() > params.lots.density * (1 - out * out)) continue;
+          if (site.random() > params.lots.density * (1 - out * out)) {
+            empty.push({ x, z });
+            continue;
+          }
           // Never two houses in one place: a street and its path cross, and a
           // crossing would otherwise get a house from each of them.
           if (taken.some((t) => Math.hypot(t.x - x, t.z - z) < params.lots.depth * 0.9)) continue;
@@ -176,9 +194,34 @@ export function planVillage(site, params, kit) {
           // No reservation: the ring claims a house's ground by its baked
           // shape (scenery/Claims.ts), so a tree may stand in its garden.
           kit.structure(structure, x, z, { yaw, floors, tint });
+          houses.push({ x, z, ox: -uz * shoulder, oz: ux * shoulder, ux, uz });
         }
       }
     }
+
+  // Trees: one in a garden behind some of the houses, one on some of the lots
+  // the village left empty. Placed after every house, so none can land where a
+  // later house was going to stand, and decided by the place alone (`rollAt`),
+  // so not one house above moved for them. The species is the country's: the
+  // plan names none.
+  const trees = params.trees;
+  /** @type {Array<[number, number]>} */
+  const planted = [];
+  /** @param {number} x @param {number} z */
+  const plant = (x, z) => {
+    if (Math.hypot(x - site.x, z - site.z) > site.radius) return;
+    if (houses.some((h) => Math.hypot(h.x - x, h.z - z) < TREE_CLEAR.house)) return;
+    if (streets.some((road) => toPolyline(road.points, x, z) < road.width / 2 + TREE_CLEAR.road)) return;
+    if (planted.some(([px, pz]) => Math.hypot(px - x, pz - z) < TREE_CLEAR.tree)) return;
+    planted.push([x, z]);
+    kit.tree(null, x, z);
+  };
+  for (const h of houses)
+    if (rollAt(h.x, h.z, GARDEN_SALT) < trees.garden) {
+      const aside = (rollAt(h.x, h.z, GARDEN_SALT + 1) - 0.5) * params.lots.depth * 0.4;
+      plant(h.x + h.ox * trees.back + h.ux * aside, h.z + h.oz * trees.back + h.uz * aside);
+    }
+  for (const lot of empty) if (rollAt(lot.x, lot.z, LOT_SALT) < trees.lot) plant(lot.x, lot.z);
 
   // Hedgerows, last of everything and therefore free: nothing below draws a
   // number, so a village that grew hedges kept every house exactly where it

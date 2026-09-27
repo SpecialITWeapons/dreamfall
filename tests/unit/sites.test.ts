@@ -312,7 +312,9 @@ describe('createSites', () => {
       params: {},
       presence: () => 1,
       ground,
-      populate: { type: 'scatter', species: { oak: 1, pine: 1 }, density: 1 },
+      // thicker than any real country, so every tree the plan asks for comes up
+      // whatever share of the slots this test's village keeps for itself
+      populate: { type: 'scatter', species: { oak: 1, pine: 1 }, density: 5 },
     });
     const planted = village({
       build: (site, kit: SiteKit) => {
@@ -337,6 +339,19 @@ describe('createSites', () => {
     expect(trees[12]).toMatchObject({ species: 'oak', yaw: 1.25 });
     // a pure function of the site: the same trees, species and all, planned again
     expect(plant()).toEqual(trees);
+
+    // A thin country keeps fewer of them, and never none.
+    const heath = defineBiome({
+      ...meadow,
+      id: 'heath',
+      populate: { type: 'scatter', species: { pine: 1 }, density: 0.05 },
+    });
+    const thin = sites({ biomes: [heath, planted], structures: [cottage], species: createLibrary().species });
+    const there = thin.near(0, 0, 3000, [])[0]!;
+    thin.work(100);
+    const few = thin.planFor(there)!.trees!.filter((t) => t.species === 'pine').length;
+    expect(few).toBeGreaterThan(0);
+    expect(few).toBeLessThan(12);
 
     // and a species nobody baked is said here, in the queue
     const wrong = village({ build: (site, kit: SiteKit) => kit.tree('baobab', site.x, site.z) });

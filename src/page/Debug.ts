@@ -124,7 +124,17 @@ export interface WorldDebug {
   /** How high over the land the trees become cards; null until the scenery is planted. */
   readonly treeLimit: TreeLimitControl | null;
   /** The settlement nearest a world point, with its plan's size, or null. */
-  siteNear(x: number, z: number): { id: string; x: number; z: number; radius: number; lots: number } | null;
+  siteNear(
+    x: number,
+    z: number,
+  ): {
+    id: string;
+    x: number;
+    z: number;
+    radius: number;
+    lots: number;
+    landmark: { x: number; z: number } | null;
+  } | null;
   /** How many things the flight has to fly around. */
   readonly obstacles: number;
   /** The ground or the top of whatever stands on it, m: what the flight keeps its clearance over. */

@@ -472,19 +472,28 @@ page works under a Pages subdirectory.
   `settlements/settlement.js`, makes the village and the town alike, and the
   parameters carry the id, the name and the landmark, because a factory that
   knew the word "village" could only ever make one.
-- A plan may not plant and a scatter may not build: `kit.tree` inside a plan and
-  `kit.structure` inside a `populate` both throw. What a plan can lay is a
-  `kit.line` -- a fence, a wall, a hedge -- and it claims no ground, so it says
-  where people drew a boundary and nothing about what grows inside it. It does
-  not stand in for planting: a hedge squared off around a plot, on the argument
-  that the scatter would fill it, came out an empty green frame lying on bare
-  clay. A hedgerow beside a lane needs nothing inside it to read.
+- A plan may not sow and a scatter may not build: `kit.structure` inside a
+  `populate` throws. A plan **stands single trees** (`kit.tree`, into
+  `plan.trees`) -- a garden behind a house, an empty lot, the edge of a square
+  -- and never a density: `null` asks for a tree of the country around the
+  settlement, and how many of them come up follows how thickly that country
+  grows (`PLAN_TREES` in `Sites.ts`, never under 0.4), so a place is sparser
+  than its country and a village in the dunes still has its palms. Where a plan
+  stands a tree is decided by the place (`rollAt`), never by the site's stream,
+  so trees never move a house; the ring stands them with the houses, the
+  scatter keeps 4 m off them (`PLAN_TREE_CLAIM`), and a refused one is counted
+  (`treesRefused`). The far cards know no plans: a settlement past the ring
+  shows its country's trees until its plan is built. What a plan lays in a line
+  -- a fence, a wall, a hedge -- claims no ground and does not stand in for
+  planting: a hedge squared off around a plot came out an empty green frame
+  lying on bare clay. A hedgerow beside a lane needs nothing inside it to read.
 - A settlement **stands in its country** (`inherit: { trees }`): its weight
   is its presence and its plateau, and the ground, the snow, the grass, the
   trees and the props, the sound and the air under it are the country's
   beside it (`terrain/Country.ts`, and the same sums in nodes in
   `TerrainMesh`). Its trees and props are the country's thinned to `trees`
-  (0.4, a clearing). It used to paint its own disc and sow its own species,
+  (0.5, a clearing), with the plan's own trees on top; `settlementTrees.test.ts`
+  holds seed 42's places between 0.3 and 1 of their country's density. It used to paint its own disc and sow its own species,
   and the owner read that as a patch cut out of the country. The first biome
   of the registry may not inherit: it takes the ground no presence claims,
   which is also where a texel with no country in its slots goes.

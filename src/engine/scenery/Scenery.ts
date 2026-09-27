@@ -109,7 +109,18 @@ export interface Scenery {
   /** What the layer switches hold, by switch name: the pools by their own, the ribbons and the grass whole. */
   readonly groups: Record<string, Hideable[]>;
   /** The nearest settlement to a world point, or null; the browser test finds a village through this. */
-  siteNear(x: number, z: number): { id: string; x: number; z: number; radius: number; lots: number } | null;
+  /** The nearest settlement to a world point, and where its landmark stands, or null; the browser tests find a place through this. */
+  siteNear(
+    x: number,
+    z: number,
+  ): {
+    id: string;
+    x: number;
+    z: number;
+    radius: number;
+    lots: number;
+    landmark: { x: number; z: number } | null;
+  } | null;
   /** The i-th tree of the last rebuild in both frames; the browser test checks the conversion. */
   sample(i: number): { world: [number, number]; local: [number, number] } | null;
   dispose(): void;
@@ -326,12 +337,20 @@ export function createScenery(deps: {
     siteNear(x, z) {
       const site = sites.near(x, z, SITE_REACH, nearby)[0];
       if (!site) return null;
+      const plan = sites.planFor(site);
+      // The landmark is the one structure a settlement names with a weight of
+      // zero: placed by name, never drawn (library/settlements/settlement.js).
+      const named = Object.entries(
+        library.biomes.find((b) => b.id === site.biome)?.sites?.structures ?? {},
+      ).find(([, weight]) => weight === 0)?.[0];
+      const landmark = named ? plan?.lots.find((lot) => lot.structure === named) : undefined;
       return {
         id: site.id,
         x: site.x,
         z: site.z,
         radius: site.radius,
-        lots: sites.planFor(site)?.lots.length ?? 0,
+        lots: plan?.lots.length ?? 0,
+        landmark: landmark ? { x: landmark.x, z: landmark.z } : null,
       };
     },
     get stats(): SceneryStats {

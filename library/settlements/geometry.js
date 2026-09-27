@@ -8,6 +8,22 @@
  */
 
 /**
+ * A number in 0..1 fixed by a place and a salt. What a plan decides with this
+ * it decides without drawing from the site's stream, so a plan that learns to
+ * stand trees keeps every house it laid before where it was.
+ *
+ * @param {number} x @param {number} z @param {number} salt
+ */
+export function rollAt(x, z, salt) {
+  let h =
+    (Math.imul(Math.round(x * 8) | 0, 0x27d4eb2d) ^ Math.imul(Math.round(z * 8) | 0, 0x165667b1) ^ salt) >>>
+    0;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+
+/**
  * The distance from a point to a segment, m.
  *
  * @param {number} ax @param {number} az @param {number} bx @param {number} bz

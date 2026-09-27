@@ -163,9 +163,18 @@ export const TOWN = {
   /**
    * The country's trees between the buildings and along the streets, at a
    * clearing's share: a town is not a wood, and it is not the pale disc it was
-   * when it painted a kilometre of its own ground.
+   * when it painted a kilometre of its own ground. With the trees the plan
+   * stands below, seed 42's towns come to 0.55 to 0.85 of their country.
    */
-  clearing: 0.4,
+  clearing: 0.5,
+  /**
+   * The trees the town stands itself, of its country's species: on a share of
+   * the lots it left empty, and `plaza` of them round the edge of its square.
+   * With the clearing above, sparser than the country and never nothing.
+   *
+   * @type {{ lot: number, plaza: [number, number] }}
+   */
+  trees: { lot: 0.12, plaza: [2, 4] },
   /**
    * A town's whitewash. Paler and more uniform than the village's on purpose:
    * the village is a handful of farms that painted themselves, the town is a

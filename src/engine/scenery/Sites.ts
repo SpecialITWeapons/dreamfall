@@ -39,6 +39,13 @@ export { siteKey } from './Overrides';
  */
 const LATTICE_SALT = 0x5117;
 /**
+ * How many of the trees a plan asks for of its country come up: all of them
+ * where the country grows as thickly as `full` (the jungle's `density`), in
+ * proportion under it, and never fewer than `floor` -- a village in the dunes
+ * still has the palms somebody planted.
+ */
+const PLAN_TREES = { full: 1.2, floor: 0.4 };
+/**
  * The streams of a site's own cell, taken from the library rather than written
  * again here. The presence hook draws the width of a settlement out of
  * `SITE_STREAM.radius` and the seat below draws it out of the same one, which
@@ -118,11 +125,12 @@ export function createSites(deps: {
   );
   const standing = standingOf(library.biomes);
   /**
-   * The country's trees around a site, as species and weights: the three slots
-   * at the site's centre, a settlement's own share given to the biomes beside
-   * it (terrain/Country.ts), each biome's scatter weights times its share.
+   * The country's trees around a site: its species and their weights -- the
+   * three slots at the site's centre, a settlement's own share given to the
+   * biomes beside it (terrain/Country.ts), each biome's scatter weights times
+   * its share -- and how thickly it grows them, the same sum over `density`.
    */
-  const countryTrees = (site: Site): Array<[string, number]> => {
+  const countryTrees = (site: Site): { species: Array<[string, number]>; density: number } => {
     const out = new Float64Array(4),
       slots = new Uint8Array(4);
     sampler.sampleWindow(site.x, site.z, out, slots);
@@ -130,16 +138,18 @@ export function createSites(deps: {
       weights = new Float32Array(4);
     countryOf(slots, [out[1]!, out[2]!, out[3]!], standing, ids, weights);
     const sum = new Map<string, number>();
+    let density = 0;
     for (let s = 0; s < 3; s++) {
       const spec = sown[ids[s]!],
         weight = weights[s]!;
       if (!spec || weight <= 0) continue;
+      density += weight * spec.density;
       const total = Object.values(spec.species).reduce((a, w) => a + Math.max(0, w), 0);
       if (total <= 0) continue;
       for (const [id, w] of Object.entries(spec.species))
         if (w > 0) sum.set(id, (sum.get(id) ?? 0) + (weight * w) / total);
     }
-    return [...sum.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    return { species: [...sum.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), density };
   };
   // What the lattice carries, by cell: a site, or nothing. Nothing is worth
   // remembering too -- it is the answer to the same question.
@@ -211,7 +221,7 @@ export function createSites(deps: {
       reservations,
       trees,
     };
-    let country: Array<[string, number]> | null = null;
+    let country: { species: Array<[string, number]>; density: number } | null = null;
     const kit: SiteKit = {
       height: (x, z) => heightfield.heightAt(x, z),
       slope: (x, z) => heightfield.slopeAt(x, z),
@@ -260,10 +270,14 @@ export function createSites(deps: {
         let id = speciesId;
         if (id === null) {
           country ??= countryTrees(site);
-          const total = country.reduce((a, [, w]) => a + w, 0);
+          const total = country.species.reduce((a, [, w]) => a + w, 0);
           if (total <= 0) return;
+          // A settlement is sparser than its country: in a thin one, fewer of
+          // the trees the plan asks for come up, and in a bare one still a few.
+          const keep = Math.max(PLAN_TREES.floor, Math.min(1, country.density / PLAN_TREES.full));
+          if (roll(0x7a13) >= keep) return;
           let pick = roll(0x7a11) * total;
-          for (const [candidate, weight] of country) {
+          for (const [candidate, weight] of country.species) {
             id = candidate;
             pick -= weight;
             if (pick <= 0) break;

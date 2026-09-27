@@ -1572,16 +1572,19 @@ test('the flight does not fly through the town, landmark included', async ({ pag
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const { site } = await overTown(page);
+  expect(site.landmark).not.toBeNull();
   const flown = await page.evaluate((s) => {
     const w = window.__world!;
-    // The tallest thing standing in the town, found the way the forest is
-    // counted: by asking what stands over the ground. The landmark is three or
-    // four stages of 10.8 m on a plinth, so it is half again the tallest roof
-    // and taller than anything the flight has had to climb over before.
-    let tallest = { x: s.x, z: s.z, top: 0 };
-    for (let x = s.x - s.radius; x <= s.x + s.radius; x += 4)
-      for (let z = s.z - s.radius; z <= s.z + s.radius; z += 4) {
-        if (Math.hypot(x - s.x, z - s.z) > s.radius) continue;
+    // The landmark, found where the plan stood it and measured the way the
+    // forest is counted: by asking what stands over the ground, on its own
+    // footprint. It is three or four stages of 10.8 m on a plinth, half again
+    // the tallest roof. It is asked for by name because it is no longer the
+    // tallest thing in every town: a town stands trees now, and an elder in
+    // one can top it.
+    const at = s.landmark!;
+    let tallest = { x: at.x, z: at.z, top: 0 };
+    for (let x = at.x - 4; x <= at.x + 4; x += 1)
+      for (let z = at.z - 4; z <= at.z + 4; z += 1) {
         const top = w.floorAt(x, z) - w.heightAt(x, z);
         if (top > tallest.top) tallest = { x, z, top };
       }
@@ -1620,8 +1623,8 @@ test('the flight does not fly through the town, landmark included', async ({ pag
     };
     return { tallest, worst, closest, lifted, buildings: w.scenery!.buildings };
   }, site);
-  // It really is a landmark and not a roof: the tallest thing a town has after
-  // it is a four-storey mill at about sixteen metres, and this is over thirty.
+  // It really is a landmark and not a roof: the tallest building a town has
+  // after it is a four-storey mill at about sixteen metres, and this is over thirty.
   expect(flown.tallest.top).toBeGreaterThan(30);
   expect(flown.buildings).toBeGreaterThan(500);
   // The same envelope that holds over the canopy and over the village's roofs,

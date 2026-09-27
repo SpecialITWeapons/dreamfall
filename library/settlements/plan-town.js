@@ -22,7 +22,7 @@
  * village of a hundred and fifty can afford and a town cannot.
  */
 
-import { toSegment } from './geometry.js';
+import { rollAt, toSegment } from './geometry.js';
 
 /**
  * Metres of street per radian of the wander: a street's slow curve runs through
@@ -34,6 +34,15 @@ const WANDER = 90;
 
 /** How far a building keeps off the edge of a ribbon, m: a house is not in the gutter. */
 const CLEARANCE = 0.5;
+/**
+ * What a tree the town stands keeps clear of, m: a building's centre by more
+ * than the widest building's half-diagonal and a metre, a street's edge by a
+ * crown's overhang, the landmark by its own width.
+ */
+const TREE_CLEAR = { building: 13.5, street: 3, landmark: 14 };
+/** The salts of a town's two kinds of tree. */
+const LOT_SALT = 0x7b1d,
+  PLAZA_SALT = 0x7b2f;
 
 /**
  * Two cell indices as one number, for a hash grid's key. A string key would
@@ -157,14 +166,20 @@ function ribbonGrid(cell) {
     },
     /** @param {number} x @param {number} z @returns {boolean} true when the point is on a ribbon */
     on(x, z) {
+      return this.within(x, z, CLEARANCE);
+    },
+    /**
+     * @param {number} x @param {number} z @param {number} extra
+     * @returns {boolean} true when the point is within `extra` of a ribbon's edge
+     */
+    within(x, z, extra) {
       const cx = Math.floor(x / cell),
         cz = Math.floor(z / cell);
       for (let i = -1; i <= 1; i++)
         for (let j = -1; j <= 1; j++) {
           const bucket = cells.get(keyOf(cx + i, cz + j));
           if (!bucket) continue;
-          for (const s of bucket)
-            if (toSegment(s[0], s[1], s[2], s[3], x, z) <= s[4] + CLEARANCE) return true;
+          for (const s of bucket) if (toSegment(s[0], s[1], s[2], s[3], x, z) <= s[4] + extra) return true;
         }
       return false;
     },
@@ -384,8 +399,16 @@ export function planTown(site, params, kit) {
   /** @type {[number, number]} */
   const townFloors = [params.floors.min, params.floors.max];
 
+  /** Where the town built, and the lots it left empty: a tree may take one of those. */
+  const built = pointGrid(depth);
+  /** @type {Array<{ x: number, z: number }>} */
+  const empty = [];
   for (const lot of candidates) {
-    if (site.random() >= Math.min(1, k * (1 - lot.out * lot.out))) continue;
+    if (site.random() >= Math.min(1, k * (1 - lot.out * lot.out))) {
+      empty.push(lot);
+      continue;
+    }
+    built.add(lot.x, lot.z);
     let pick = site.random() * total,
       structure = kinds[0]?.[0] ?? 'cottage';
     for (const [id, weight] of kinds) {
@@ -414,5 +437,37 @@ export function planTown(site, params, kit) {
     // No reservation: the ring claims a building's ground by its baked shape
     // (scenery/Claims.ts), so the country's trees stand between the houses.
     kit.structure(structure, lot.x, lot.z, { yaw: facing(lot.ux, lot.uz, lot.shoulder), floors, tint });
+  }
+
+  // 5. Trees, of the country's species: on a share of the lots the town left
+  //    empty, and a few round the edge of the square. After every building,
+  //    and decided by the place alone (`rollAt`), so no building above moved.
+  //    Not in the gardens behind the houses, as a village has them: in a grid
+  //    the back of one lot is the back of another street's.
+  const trees = params.trees;
+  /** @type {Array<[number, number]>} */
+  const planted = [];
+  /** @param {number} x @param {number} z */
+  const plant = (x, z) => {
+    if (Math.hypot(x - site.x, z - site.z) > site.radius) return;
+    if (built.near(x, z, TREE_CLEAR.building)) return;
+    if (Math.hypot(x - landmarkX, z - landmarkZ) < TREE_CLEAR.landmark) return;
+    if (ribbons.within(x, z, TREE_CLEAR.street)) return;
+    if (planted.some(([px, pz]) => Math.hypot(px - x, pz - z) < TREE_CLEAR.street * 2)) return;
+    planted.push([x, z]);
+    kit.tree(null, x, z);
+  };
+  for (const lot of empty) if (rollAt(lot.x, lot.z, LOT_SALT) < trees.lot) plant(lot.x, lot.z);
+  const round =
+    trees.plaza[0] + Math.floor(rollAt(site.x, site.z, PLAZA_SALT) * (trees.plaza[1] - trees.plaza[0] + 1));
+  const turn = rollAt(site.x, site.z, PLAZA_SALT + 1) * Math.PI * 2;
+  // Tried at twice as many bearings as wanted, in order, until enough stand:
+  // the streets meet in the square, and a bearing down one of them is skipped.
+  let square = 0;
+  for (let i = 0; i < round * 2 && square < round; i++) {
+    const a = turn + (i / (round * 2)) * Math.PI * 2;
+    const before = planted.length;
+    plant(site.x + Math.cos(a) * params.plaza.radius * 0.8, site.z + Math.sin(a) * params.plaza.radius * 0.8);
+    if (planted.length > before) square++;
   }
 }
