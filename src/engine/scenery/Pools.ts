@@ -71,6 +71,7 @@ import {
   type TreeInstance,
 } from './Ring';
 import { bakeStructure, createStructureKit } from './StructureKit';
+import { RING_FADE } from './TreeLimit';
 import {
   bakeSpecies,
   crownThinning,
@@ -81,15 +82,9 @@ import {
 
 /** Where the full crown gives way to the thinned one, m. */
 const CROWN_FADE = [540, 680] as const;
-/**
- * Where a thing standing on the ground fades out, m. It ends just inside
- * TREE_RADIUS: past that the ring has nothing to show anyway. The original
- * folded a tree into its own base across this band, which is cheap and reads
- * as a tree sprouting out of the ground in front of the flight -- two and a
- * half to four seconds of it, at the speeds this world flies. A tree stands at
- * its own height here and dissolves instead.
- */
-export const RING_FADE = [2300, 2560] as const;
+// Where a thing standing on the ground fades out: TreeLimit.ts, beside the band
+// a tree hands over to its card in, which starts from it.
+export { RING_FADE } from './TreeLimit';
 /**
  * Which crown a tree is given at a rebuild. The margins are the original's,
  * and they are generous on purpose: a rebuild happens at most one cell after
