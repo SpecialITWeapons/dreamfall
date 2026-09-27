@@ -55,6 +55,20 @@ const stub = () => {
       sitesMs: 0.04,
       rebuilds: 9,
       bakeMs: 620,
+      farTrees: 16000,
+      farCells: 20000,
+      farQueued: 0,
+      cards: 18400,
+      cardsRefused: 0,
+      treeBand: [2300, 2560],
+      fullTrees: true,
+    },
+    treeLimit: {
+      ranges: { from: [0, 2000, 700], to: [0, 2000, 1100] },
+      form: { from: 700, to: 1100 },
+      set(change: Record<string, number>) {
+        Object.assign(this.form, change);
+      },
     },
     weightsAt: () => [
       { id: 'meadow', weight: 0.62 },
@@ -237,6 +251,17 @@ describe('dev panel', () => {
     // the dearest biomes first, because that is the question being asked
     expect(text()).toContain('alpine 0.90 · meadow 0.40');
     expect(document.querySelector('#dev .bad')).not.toBeNull();
+  });
+
+  it('moves where the trees become cards, and says where that is', () => {
+    const { world } = stub();
+    panel = createDevPanel(document, world);
+    expect(text()).toContain('16000 · 20000 · 0');
+    expect(text()).toContain('2300–2560 m');
+    const from = document.querySelector<HTMLInputElement>('#dev [data-slider=from] input[type=range]')!;
+    from.value = '500';
+    from.dispatchEvent(new Event('input'));
+    expect(world.treeLimit!.form.from).toBe(500);
   });
 
   it('moves the clouds from a slider per number of their form, and puts them back', () => {

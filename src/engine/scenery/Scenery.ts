@@ -23,6 +23,7 @@ import { createClaims } from './Claims';
 import { FAR_TREES_BUDGET_MS, createFarTrees } from './FarTrees';
 import { createGrass } from './Grass';
 import { photograph } from './Impostors';
+import { TREE_LIMIT, treeBandAt, type TreeLimitForm } from './TreeLimit';
 import type { GroundShade } from './GroundShade';
 import type { Obstacles } from './Obstacles';
 import { createOverrides } from './Overrides';
@@ -81,6 +82,16 @@ export interface SceneryStats {
   /** Trees standing as cards, the ring's and the far ones; and those the pool had no room for. */
   cards: number;
   cardsRefused: number;
+  /** The band a full tree hands over to its card in this frame, m, and whether the full trees are drawn at all. */
+  treeBand: [number, number];
+  fullTrees: boolean;
+}
+
+/** How high over the land the trees become cards: the dev panel's sliders, as ranges and defaults. */
+export interface TreeLimitControl {
+  readonly ranges: { readonly [K in keyof TreeLimitForm]: readonly [number, number, number] };
+  readonly form: Readonly<TreeLimitForm>;
+  set(change: Partial<TreeLimitForm>): void;
 }
 
 export interface Scenery {
@@ -92,6 +103,7 @@ export interface Scenery {
    */
   settle(x: number, z: number): void;
   readonly stats: SceneryStats;
+  readonly treeLimit: TreeLimitControl;
   /** What the layer switches hold, by switch name: the pools by their own, the ribbons and the grass whole. */
   readonly groups: Record<string, Hideable[]>;
   /** The nearest settlement to a world point, or null; the browser test finds a village through this. */
@@ -243,6 +255,19 @@ export function createScenery(deps: {
     cardsVersion = -1,
     cardsWritten = -Infinity;
 
+  // How high over the land the trees become cards, and what that makes of the band now.
+  const limitForm: TreeLimitForm = { ...TREE_LIMIT };
+  let band = treeBandAt(0, limitForm);
+  const treeMeshes = pools.meshes.filter((mesh) => mesh.name === 'trees');
+  /** The band from the eye's height over the land; the full trees go altogether when it is gone. */
+  const hand = (x: number, z: number, cameraY: number) => {
+    band = treeBandAt(cameraY - heightfield.heightAt(x, z), limitForm);
+    pools.treeLimit.value.set(band[0], band[1]);
+    // The engine's own reason; a layer switched off is hidden again after this (layers.apply).
+    const full = band[1] > 1;
+    for (const mesh of treeMeshes) mesh.visible = full;
+  };
+
   let rebuilds = 0,
     seenRoutes = 0;
   let sitesMs = 0;
@@ -288,6 +313,7 @@ export function createScenery(deps: {
       if (ring.update(x, z, moved || sites.built > planned || routed)) rebuilt(x, z);
       grass.update(x, z, cameraY, origin, moved);
       sowFar(FAR_TREES_BUDGET_MS);
+      hand(x, z, cameraY);
     },
     settle(x, z) {
       // The ring where it would be anyway -- built now if it never was -- and
@@ -306,7 +332,7 @@ export function createScenery(deps: {
         lots: sites.planFor(site)?.lots.length ?? 0,
       };
     },
-    get stats() {
+    get stats(): SceneryStats {
       return {
         trees: ring.trees,
         props: ring.props,
@@ -333,6 +359,8 @@ export function createScenery(deps: {
         farMs: Math.round(farTrees.ms * 10) / 10,
         cards: cards.count,
         cardsRefused: cards.refused,
+        treeBand: [band[0], band[1]],
+        fullTrees: band[1] > 1,
       };
     },
     groups: {
@@ -342,6 +370,18 @@ export function createScenery(deps: {
       buildings: pools.meshes.filter((mesh) => mesh.name === 'buildings'),
       roads: [pools.roads],
       grass: [grass.mesh],
+    },
+    treeLimit: {
+      ranges: { from: [0, 2000, TREE_LIMIT.from], to: [0, 2000, TREE_LIMIT.to] },
+      get form() {
+        return { ...limitForm };
+      },
+      set(change) {
+        for (const key of ['from', 'to'] as const) {
+          const v = change[key];
+          if (typeof v === 'number' && Number.isFinite(v)) limitForm[key] = Math.max(0, Math.min(2000, v));
+        }
+      },
     },
     sample: (i) => samples[i] ?? null,
     dispose() {

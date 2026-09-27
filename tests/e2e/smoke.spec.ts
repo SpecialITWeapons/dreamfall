@@ -941,6 +941,33 @@ test('the woods go on past the ring as cards, out to the far terrain', async ({ 
   expect(errors).toEqual([]);
 });
 
+test('high over the land every tree is a card, and low over it nothing changed', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const at = (above: number) =>
+    page.evaluate((above) => {
+      const w = window.__world!;
+      w.jump(-48_000, -42_000, above);
+      w.jump(-48_000, -42_000, above); // the first jump reads the ground from the window it leaves
+      w.step(1 / 60);
+      const s = w.scenery!;
+      return { band: s.treeBand, full: s.fullTrees, trees: s.trees, cards: s.cards };
+    }, above);
+  const low = await at(150);
+  expect(low.band).toEqual([2300, 2560]);
+  expect(low.full).toBe(true);
+  const high = await at(1300);
+  expect(high.band[0]).toBe(0);
+  expect(high.full).toBe(false);
+  // the ring still stands its trees up there -- the flight needs them -- and they are cards
+  expect(high.trees).toBeGreaterThan(0);
+  expect(high.cards).toBeGreaterThanOrEqual(high.trees);
+  // and coming down gives the full trees back
+  expect((await at(150)).full).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('the flight keeps its clearance over the trees, not only over the ground', async ({ page }) => {
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');

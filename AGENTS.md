@@ -39,6 +39,7 @@ page works under a Pages subdirectory.
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
   `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
   `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
+  `scenery/TreeLimit.ts`,
   `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
@@ -414,6 +415,12 @@ page works under a Pages subdirectory.
   the constant `RING_FADE`. A card past the near grid stands on the far surface,
   read in its shader, because nothing on the CPU reads the far window.
   `scenery.settle` sows everything at once; the world pays that behind the veil.
+- **High over the land every tree is a card.** The band (`treeLimit`) is
+  `RING_FADE` near the ground and draws in as the eye rises over the land under
+  it (`scenery/TreeLimit.ts`, `TREE_LIMIT` 700..1100 m, moved live in `?dev=1`);
+  when it is gone the tree pools are hidden -- the engine's own reason, so a
+  `trees` switch still hides them after it. The ring keeps planting: the flight
+  needs the obstacles. Never a band of no width: a smoothstep over one is NaN.
 - `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
   own top and radius -- never the entry's data, so a generator cannot understate
   how much sky it takes; a building is measured the same way, and its entry's own

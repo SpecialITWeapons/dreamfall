@@ -1041,3 +1041,24 @@ In flight the far sowing runs from a queue at 2 ms a frame, checked before a
 cell; crossing a ring cell hands it the 150 or so cells that came into reach,
 and the cards are rewritten whole (19 000 instances, 1.4 MB) when the queue
 empties or every 250 ms while it runs.
+
+## High over the land, every tree is a card
+
+The band a full tree hands over to its card in draws in as the eye rises over
+the land under it (`TreeLimit.ts`: from 700 m, gone by 1100 m), and when it is
+gone the full trees' pools are not drawn at all. Same bench, same machine, same
+settings as the section above, after against the cards alone:
+
+| vantage | frame ms, cards | frame ms, + altitude | triangles, cards | triangles, + altitude |
+| ------- | --------------: | -------------------: | ---------------: | --------------------: |
+| dawn    |             5.1 |                  5.1 |        1 389 844 |             1 389 300 |
+| noon    |             5.4 |                  5.2 |        1 391 440 |             1 389 844 |
+| far     |             5.2 |              **3.7** |        1 431 630 |         **1 135 254** |
+| deck    |             5.6 |              **4.2** |        1 432 208 |         **1 135 836** |
+| night   |             5.9 |                  5.9 |        1 895 764 |             1 895 764 |
+
+The two vantages high over the land -- the ceiling and over the deck -- lose
+about 296 000 triangles (-21 %), eight to nine draws (the tree pools and their
+shadow casting) and 1.4 to 1.5 ms of a frame; the three low ones are what they
+were. The ring still plants its trees up there, because the flight needs their
+obstacles; only their drawing stops.
