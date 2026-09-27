@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { MIN_CLEARANCE } from '../../src/engine/flight/FlightController';
 import { GALAXY_HEADING } from '../../src/engine/flight/SkyPulls';
 import { ORBIT } from '../../src/engine/flight/Steering';
+import { SITE_BUDGET_MS } from '../../src/engine/scenery/Sites';
 import { OPENING, openingStart } from '../../src/engine/sim/Opening';
 import { createCloudCover, deckAt } from '../../src/engine/sky/CloudCover';
 import { windFromSeed } from '../../src/engine/sky/Wind';
@@ -1587,11 +1588,33 @@ test('the town costs the frame it was measured to cost, and no more', async ({ p
   expect(queue.buildings).toBeGreaterThan(500);
   // What M4b decided, and the thing worth defending, is the **shape**: a town is
   // built whole in one frame, and nothing else in the rebuild costs a frame at
-  // all. That is machine-independent. Ten milliseconds is far over the queue's
-  // own 4 ms budget and far under what a town costs anywhere, so exactly one
-  // long frame in sixteen is the town and no second one is a plan that started
-  // being built in pieces.
-  expect(queue.ms.filter((v) => v > 10)).toHaveLength(1);
+  // all. That is machine-independent, so it is asked of the frames against each
+  // other and against the queue's own budget, never against a number of
+  // milliseconds. It was asked once as "exactly one frame over 10 ms", which was
+  // far over the budget and far under what a town cost anywhere it had been
+  // measured -- until a fast GPU machine built the town in under 10 and the test
+  // found no town at all, twice in nine runs, with every other frame at zero. A floor
+  // in milliseconds is a guess about the machine, and a faster one slips under
+  // it without the engine having changed.
+  //
+  // So three things, each true of the design on any machine. The dearest frame
+  // carries the bulk of what the queue spent over the whole sixteen: a plan
+  // built in pieces spreads over several frames and no one of them does. Every
+  // other frame stays inside the budget: a second long frame is a plan that
+  // started being built in pieces, or a second one built whole where only the
+  // town was asked for. And the dearest frame is well over the budget: the
+  // budget is checked before a plan and never during one, so only a plan built
+  // whole can run past it, and the town, which costs several budgets, runs past
+  // it by far. Half a budget over leaves room for a slice's own overshoot, were
+  // it ever sliced, and still for a machine twice as fast as the quickest this
+  // was seen on (11.7 ms for the town on a desktop GPU, 41 on the CI runner).
+  const longest = Math.max(...queue.ms);
+  const at = queue.ms.indexOf(longest);
+  const total = queue.ms.reduce((sum, v) => sum + v, 0);
+  const rest = queue.ms.filter((_, i) => i !== at);
+  expect(longest).toBeGreaterThanOrEqual(0.75 * total);
+  expect(Math.max(...rest)).toBeLessThanOrEqual(SITE_BUDGET_MS);
+  expect(longest).toBeGreaterThan(1.5 * SITE_BUDGET_MS);
   // And a ceiling, which is not machine-independent and cannot be. Measured in
   // Node over this ground: 18.8 ms at the widest radius, 18.9 for this town
   // through the queue; on a two-core CI runner under a software rasteriser the

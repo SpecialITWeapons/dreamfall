@@ -46,6 +46,12 @@ const LATTICE_SALT = 0x5117;
 const { radius: RADIUS_STREAM, yaw: YAW_STREAM, plan: PLAN_STREAM } = SITE_STREAM;
 /** Plans further than this beyond the asking reach are forgotten, m. */
 const KEEP_PAD = 4000;
+/**
+ * What a frame gives the plan queue, ms. A village costs about one of these; a
+ * town costs several and is built whole anyway, because the budget is checked
+ * before a plan and never during one.
+ */
+export const SITE_BUDGET_MS = 4;
 
 export interface Site {
   /** Stable across sessions: the biome and the lattice cell, which is what it is. */
