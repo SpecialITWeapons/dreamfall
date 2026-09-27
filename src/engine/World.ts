@@ -323,6 +323,7 @@ export function createWorld(opts: WorldOptions): World {
   const sceneryGroups: Record<string, Hideable[]> = {
     grass: [],
     trees: [],
+    'far trees': [],
     props: [],
     buildings: [],
     roads: [],
@@ -396,8 +397,13 @@ export function createWorld(opts: WorldOptions): World {
       shade,
       litMaterial,
       uniforms,
+      farLoad: farTerrain.loadCell,
+      anchor: terrain.uAnchor,
     });
     for (const [name, objects] of Object.entries(scenery.groups)) sceneryGroups[name]?.push(...objects);
+    // The ring, every far cell and the cards, from where the flight starts:
+    // the first fill of the far land is paid here, behind the veil.
+    scenery.settle(state.x, state.z, state.y);
   };
 
   const follow = new Vector3();

@@ -6,16 +6,23 @@
 //
 // Baking happens in the constructor and costs the better part of a second, so
 // the world can defer it and give it its own stage of the veil.
-import type { Scene } from 'three';
+import type { Scene, Vector2 } from 'three';
+import type { UniformNode } from 'three/webgpu';
 import type { Library } from '../../../library/contract';
 import type { Hideable } from '../render/Layers';
 import type { LitMaterial } from '../render/SoftLighting';
 import type { Origin } from '../sim/Origin';
 import type { SkyUniforms } from '../sky/SkyUniforms';
 import type { Heightfield } from '../terrain/Heightfield';
+import { createSampledGround } from '../terrain/SampledGround';
+import type { LoadCell } from '../terrain/TerrainMesh';
 import type { WorldSampler } from '../terrain/WorldSampler';
+import type { CardTree } from './cardPack';
+import { createCards } from './Cards';
 import { createClaims } from './Claims';
+import { FAR_TREES_BUDGET_MS, createFarTrees } from './FarTrees';
 import { createGrass } from './Grass';
+import { photograph } from './Impostors';
 import type { GroundShade } from './GroundShade';
 import type { Obstacles } from './Obstacles';
 import { createOverrides } from './Overrides';
@@ -65,10 +72,25 @@ export interface SceneryStats {
   routesRefused: number;
   /** Kilometre pieces of those roads standing in the ring. */
   routeChunks: number;
+  /** Trees past the ring, sown and held; the cells they stand in, and the cells still to sow. */
+  farTrees: number;
+  farCells: number;
+  farQueued: number;
+  /** Milliseconds the far sowing took this frame. */
+  farMs: number;
+  /** Trees standing as cards, the ring's and the far ones; and those the pool had no room for. */
+  cards: number;
+  cardsRefused: number;
 }
 
 export interface Scenery {
   update(x: number, z: number, cameraY: number, moved: boolean): void;
+  /**
+   * Everything at once from where the flight stands: the ring, every far cell
+   * and the cards. The first fill is paid here, behind the veil; a test that
+   * jumps the flight calls it to see the far land without flying frames.
+   */
+  settle(x: number, z: number, cameraY: number): void;
   readonly stats: SceneryStats;
   /** What the layer switches hold, by switch name: the pools by their own, the ribbons and the grass whole. */
   readonly groups: Record<string, Hideable[]>;
@@ -90,6 +112,9 @@ export function createScenery(deps: {
   shade: GroundShade;
   litMaterial: LitMaterial;
   uniforms: SkyUniforms;
+  /** The far window's loader and the anchor the grids stand on: a card past the near grid stands on the far surface. */
+  farLoad: LoadCell;
+  anchor: UniformNode<'vec2', Vector2>;
 }): Scenery {
   const { seed, library, sampler, heightfield, obstacles, origin, scene, shade } = deps;
   const bakeStarted = performance.now();
@@ -112,8 +137,20 @@ export function createScenery(deps: {
     uniforms: deps.uniforms,
     claims,
   });
+  // Every species photographed for its card, and the one mesh the cards are.
+  const impostors = photograph(pools.species, textures.bark);
+  const cards = createCards({
+    atlas: impostors.atlas,
+    species: impostors.species,
+    litMaterial: deps.litMaterial,
+    uniforms: deps.uniforms,
+    farLoad: deps.farLoad,
+    anchor: deps.anchor,
+    treeLimit: pools.treeLimit,
+  });
   const bakeMs = Math.round(performance.now() - bakeStarted);
   for (const mesh of pools.meshes) scene.add(mesh);
+  scene.add(cards.mesh);
   scene.add(pools.roads);
   scene.add(grass.mesh);
 
@@ -124,11 +161,16 @@ export function createScenery(deps: {
   let shadeCount = 0;
   const samples: Array<{ world: [number, number]; local: [number, number] }> = [];
   const SAMPLES = 4;
+  // The ring's trees, kept for the cards: every tree has its card, so the full
+  // tree and its card can trade places in one band, and high up, where every
+  // tree is a card, the ring's are among them.
+  const mirror: Array<CardTree & { species: string }> = [];
 
   const sink: ScenerySink = {
     begin(x, z) {
       shadeCount = 0;
       samples.length = 0;
+      mirror.length = 0;
       pools.sink.begin(x, z);
     },
     tree(tree: TreeInstance) {
@@ -138,6 +180,16 @@ export function createScenery(deps: {
       record.z = tree.z;
       record.radius = (pools.metrics.species(tree.species)?.radius ?? 0) * tree.scale;
       shadeCount++;
+      mirror.push({
+        species: tree.species,
+        x: tree.x,
+        y: tree.y,
+        z: tree.z,
+        scale: tree.scale,
+        tall: tree.tall,
+        yaw: tree.yaw,
+        tint: [tree.tint.r, tree.tint.g, tree.tint.b],
+      });
       if (samples.length < SAMPLES)
         samples.push({
           world: [tree.x, tree.z],
@@ -175,32 +227,68 @@ export function createScenery(deps: {
     sink,
   });
 
+  // The land past the ring, sown over the ground the near window would have
+  // answered with, and kept off the ground the ring's plans speak for.
+  const farTrees = createFarTrees({
+    seed,
+    library,
+    sampler,
+    ground: createSampledGround(sampler, heightfield),
+    claims,
+    baked: (id) => pools.metrics.species(id) !== null,
+  });
+  /** How long the cards may lag the far sowing while its queue runs, ms: a rewrite is the whole pool. */
+  const CARD_LAG = 250;
+  let cardsDirty = true,
+    cardsVersion = -1,
+    cardsWritten = -Infinity;
+
   let rebuilds = 0,
     seenRoutes = 0;
   let sitesMs = 0;
   const nearby: Site[] = [];
+  const step = (x: number, z: number, cameraY: number, moved: boolean, farBudget: number) => {
+    // The queue runs before the ring so a plan finished in this frame is
+    // standing in this frame's rebuild. A plan that was only just finished
+    // also forces one: the ring finds its sites while rebuilding, so without
+    // this a village discovered over a standing flight would wait for the
+    // next cell crossing, and a village discovered at the last crossing would
+    // arrive a whole cell late.
+    const planned = sites.built;
+    const started = performance.now();
+    sites.work(SITE_BUDGET_MS);
+    sitesMs = performance.now() - started;
+    // The network is looked at every kilometre and its routes arrive from the
+    // worker; one arriving is a rebuild, as a plan arriving is.
+    roads.update(x, z);
+    const routed = roads.version !== seenRoutes;
+    seenRoutes = roads.version;
+    if (ring.update(x, z, moved || sites.built > planned || routed)) {
+      rebuilds++;
+      shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
+      // The far cells are the ones past the ring's reach from where the ring
+      // itself stood, so the two together hold every cell once.
+      farTrees.update(x, z);
+      cardsDirty = true;
+    }
+    grass.update(x, z, cameraY, origin, moved);
+    farTrees.work(farBudget);
+    const now = performance.now();
+    if (farTrees.version !== cardsVersion && (farTrees.queued === 0 || now - cardsWritten >= CARD_LAG))
+      cardsDirty = true;
+    if (cardsDirty) {
+      cards.write(mirror, farTrees, origin);
+      cardsDirty = false;
+      cardsVersion = farTrees.version;
+      cardsWritten = now;
+    }
+  };
   return {
     update(x, z, cameraY, moved) {
-      // The queue runs before the ring so a plan finished in this frame is
-      // standing in this frame's rebuild. A plan that was only just finished
-      // also forces one: the ring finds its sites while rebuilding, so without
-      // this a village discovered over a standing flight would wait for the
-      // next cell crossing, and a village discovered at the last crossing would
-      // arrive a whole cell late.
-      const planned = sites.built;
-      const started = performance.now();
-      sites.work(SITE_BUDGET_MS);
-      sitesMs = performance.now() - started;
-      // The network is looked at every kilometre and its routes arrive from the
-      // worker; one arriving is a rebuild, as a plan arriving is.
-      roads.update(x, z);
-      const routed = roads.version !== seenRoutes;
-      seenRoutes = roads.version;
-      if (ring.update(x, z, moved || sites.built > planned || routed)) {
-        rebuilds++;
-        shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
-      }
-      grass.update(x, z, cameraY, origin, moved);
+      step(x, z, cameraY, moved, FAR_TREES_BUDGET_MS);
+    },
+    settle(x, z, cameraY) {
+      step(x, z, cameraY, true, Infinity);
     },
     siteNear(x, z) {
       const site = sites.near(x, z, SITE_REACH, nearby)[0];
@@ -234,10 +322,17 @@ export function createScenery(deps: {
         routesQueued: roads.queued,
         routesRefused: roads.refused,
         routeChunks: pools.routePieces,
+        farTrees: farTrees.trees,
+        farCells: farTrees.cells,
+        farQueued: farTrees.queued,
+        farMs: Math.round(farTrees.ms * 10) / 10,
+        cards: cards.count,
+        cardsRefused: cards.refused,
       };
     },
     groups: {
       trees: pools.meshes.filter((mesh) => mesh.name === 'trees'),
+      'far trees': [cards.mesh],
       props: pools.meshes.filter((mesh) => mesh.name === 'props'),
       buildings: pools.meshes.filter((mesh) => mesh.name === 'buildings'),
       roads: [pools.roads],
@@ -248,6 +343,8 @@ export function createScenery(deps: {
       roads.dispose();
       for (const mesh of pools.meshes) scene.remove(mesh);
       scene.remove(pools.roads);
+      scene.remove(cards.mesh);
+      cards.dispose();
       scene.remove(grass.mesh);
       pools.dispose();
       grass.dispose();
