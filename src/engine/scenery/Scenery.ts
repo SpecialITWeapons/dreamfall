@@ -23,10 +23,8 @@ import { createPaintedTextures, createSceneryMaterials } from './Painted';
 import { createPools } from './Pools';
 import { createRing, type ScenerySink, type TreeInstance } from './Ring';
 import { createRoads } from './Roads';
-import { createSites, type Site } from './Sites';
+import { SITE_BUDGET_MS, createSites, type Site } from './Sites';
 
-/** What a frame gives the plan queue, ms. A village costs about one of these. */
-const SITE_BUDGET_MS = 4;
 /**
  * How far siteNear looks for a settlement, m. It asks the same question the
  * ring asks, so it seats cells and may drop a plan the flight has left behind;
