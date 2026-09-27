@@ -54,6 +54,8 @@ export interface SceneryStats {
    * which is the only way a raised ceiling stays raised.
    */
   buildingsRefused: number;
+  /** Trees the plans stood that did not stand: counted, as a house is, because a `continue` is silent. */
+  treesRefused: number;
   grass: number;
   /** Sites whose plan is built and cached. */
   sites: number;
@@ -338,6 +340,7 @@ export function createScenery(deps: {
         props: ring.props,
         buildings: ring.buildings,
         buildingsRefused: ring.buildingsRefused,
+        treesRefused: ring.treesRefused,
         sites: sites.built,
         sitesQueued: sites.queued,
         // what is drawn, not what is buffered: above the window's ceiling it is

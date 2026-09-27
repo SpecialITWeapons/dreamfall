@@ -14,6 +14,7 @@ import {
   type Reservation,
   type RoadSpec,
   type SitePlan,
+  type TreeSpec,
 } from '../../library/contract';
 import { createHeightfield } from '../../src/engine/terrain/Heightfield';
 import { createWorldSampler } from '../../src/engine/terrain/WorldSampler';
@@ -176,6 +177,7 @@ const planOf = (parts: {
   lines?: LineSpec[];
   reservations?: Reservation[];
   lots?: LotSpec[];
+  trees?: TreeSpec[];
 }): SitePlan => ({
   id: 'village:0,0',
   x: parts.x,
@@ -185,6 +187,7 @@ const planOf = (parts: {
   lines: parts.lines ?? [],
   lots: parts.lots ?? [],
   reservations: parts.reservations ?? [],
+  ...(parts.trees ? { trees: parts.trees } : {}),
 });
 
 /** A house on the plan, at the spot and with the storeys the test cares about. */
@@ -584,6 +587,40 @@ describe('the streamed ring', () => {
     // the flight is told about a house the way it is told about a tree: by its top
     const shape = metrics.structure('cottage', here.floors)!;
     expect(r.obstacles.floorAt(here.x, here.z, 0)).toBeCloseTo(raised.y + shape.top, 6);
+  });
+  it("stands the plan's trees with its houses: whole trees of the plan's own size, the same every rebuild", () => {
+    const r = ring(library([everywhere('woods', 0)]), {
+      sites: oneSite(
+        planOf({
+          x: 0,
+          z: 0,
+          lots: [lotAt(40, -20)],
+          trees: [
+            { x: 60, z: 10, species: 'oak', yaw: 0.5 },
+            { x: -25, z: 70, species: 'pine', yaw: 2 },
+            { x: 5, z: 5, species: 'nobody', yaw: 0 },
+          ],
+        }),
+      ),
+      radius: 300,
+    });
+    r.ring.update(0, 0, false);
+    // no country trees at a density of nothing, so these two are the plan's
+    const stood = r.trees.map((t) => ({ ...t, tint: t.tint.getHexString() }));
+    expect(stood.map((t) => t.species).sort()).toEqual(['oak', 'pine']);
+    const oak = stood.find((t) => t.species === 'oak')!;
+    expect(oak.yaw).toBe(0.5);
+    expect(oak.y).toBe(r.heightfield.heightAt(60, 10));
+    // the size is drawn from the species' own range, not stood at one
+    expect(oak.scale).toBeGreaterThanOrEqual(1);
+    expect(oak.scale).toBeLessThanOrEqual(2);
+    expect(oak.tall).toBeGreaterThan(0);
+    // the one nobody baked is counted, not stood
+    expect(r.ring.treesRefused).toBe(1);
+    // and the flight is told about them as about any tree
+    expect(r.obstacles.floorAt(60, 10, 0)).toBeGreaterThan(oak.y);
+    r.ring.update(1, 0, true);
+    expect(r.trees.map((t) => ({ ...t, tint: t.tint.getHexString() }))).toEqual(stood);
   });
   it('raises nothing at all for a site the ring has left behind', () => {
     const plan = planOf({ x: 0, z: 0, lots: [lotAt(40, -20), lotAt(-30, 50)] });

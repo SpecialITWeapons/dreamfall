@@ -117,6 +117,43 @@ describe('Sowing', () => {
     expect(fullAfterRefusal).toBeGreaterThan(0);
   });
 
+  it('stands a lone tree of its own size and climate, and leaves the next cell as it was', () => {
+    const hf = createHeightfield(sampler, { size: 128 });
+    hf.fillAll(0, 0);
+    const plain = sowRow(hf, 0, -8, 16);
+    // the same row, with a tree stood alone between every two cells
+    const out: string[] = [];
+    let stood: TreeInstance | null = null;
+    const sowing = createSowing({
+      seed: 42,
+      library: lib,
+      sampler,
+      ground: hf,
+      size: SIZE,
+      occupied: () => false,
+      admit: () => true,
+      baked: () => true,
+      emit: (tree) => {
+        out.push(`${tree.species} ${tree.x} ${tree.z} ${tree.tint.getHexString()}`);
+        return true;
+      },
+    });
+    for (let ix = -8; ix < 8; ix++) {
+      if (sowing.enter(ix, 0)) sowing.sowTrees();
+      let n = 0;
+      stood = sowing.stand('oak', 30 + ix, 40, 1.5, () => (n++ % 2 ? 0.25 : 0.75));
+    }
+    const expected = plain
+      .flatMap((c) => ('trees' in c ? c.trees : []))
+      .map((t) => `${t.species} ${t.x} ${t.z} ${t.tint.getHexString()}`);
+    expect(out).toEqual(expected);
+    const oak = lib.species!.find((s) => s.id === 'oak')!;
+    expect(stood!.yaw).toBe(1.5);
+    expect(stood!.scale).toBeCloseTo(oak.scale[0] + 0.75 * (oak.scale[1] - oak.scale[0]), 9);
+    expect(stood!.y).toBe(hf.heightAt(37, 40));
+    expect(sowing.stand('baobab', 0, 0, 0, () => 0.5)).toBeNull();
+  });
+
   it('says a cell over the sea is not sown', () => {
     const ground = createSampledGround(sampler);
     // Walk out along a row until the centre of a cell is under LAND; seed 42 has sea within 40 km of the origin.

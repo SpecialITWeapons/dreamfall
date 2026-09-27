@@ -18,14 +18,16 @@ import type {
   SiteKit,
   SitePlan,
   SitesSpec,
+  TreeSpec,
 } from '../../../library/contract';
 import { swatchColor } from '../../../library/contract';
-import { SITE_STREAM, resolvePresence } from '../../../library/standard/index.js';
+import { SITE_STREAM, resolvePopulate, resolvePresence } from '../../../library/standard/index.js';
 import { Color } from 'three';
+import { countryOf, standingOf } from '../terrain/Country';
 import { createFields } from '../terrain/Fields';
 import { LINE_KINDS } from './LineKit';
 import type { Heightfield } from '../terrain/Heightfield';
-import { mulberry32 } from '../terrain/noise';
+import { hash2, mulberry32 } from '../terrain/noise';
 import type { WorldSampler } from '../terrain/WorldSampler';
 import { siteKey as keyOf, type Overrides } from './Overrides';
 
@@ -109,6 +111,36 @@ export function createSites(deps: {
   const fields = createFields(sampler);
   // What was actually baked, so a plan naming something else is told at once.
   const structures = new Map((library.structures ?? []).map((entry) => [entry.id, entry]));
+  const species = new Set((library.species ?? []).map((entry) => entry.id));
+  // What each biome sows, for a plan that asks for a tree of the country.
+  const sown = library.biomes.map((biome) =>
+    biome.populate ? resolvePopulate(biome.populate).scatter : null,
+  );
+  const standing = standingOf(library.biomes);
+  /**
+   * The country's trees around a site, as species and weights: the three slots
+   * at the site's centre, a settlement's own share given to the biomes beside
+   * it (terrain/Country.ts), each biome's scatter weights times its share.
+   */
+  const countryTrees = (site: Site): Array<[string, number]> => {
+    const out = new Float64Array(4),
+      slots = new Uint8Array(4);
+    sampler.sampleWindow(site.x, site.z, out, slots);
+    const ids = new Uint8Array(4),
+      weights = new Float32Array(4);
+    countryOf(slots, [out[1]!, out[2]!, out[3]!], standing, ids, weights);
+    const sum = new Map<string, number>();
+    for (let s = 0; s < 3; s++) {
+      const spec = sown[ids[s]!],
+        weight = weights[s]!;
+      if (!spec || weight <= 0) continue;
+      const total = Object.values(spec.species).reduce((a, w) => a + Math.max(0, w), 0);
+      if (total <= 0) continue;
+      for (const [id, w] of Object.entries(spec.species))
+        if (w > 0) sum.set(id, (sum.get(id) ?? 0) + (weight * w) / total);
+    }
+    return [...sum.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  };
   // What the lattice carries, by cell: a site, or nothing. Nothing is worth
   // remembering too -- it is the answer to the same question.
   const found = new Map<string, Site | null>();
@@ -166,7 +198,8 @@ export function createSites(deps: {
     const roads: RoadSpec[] = [],
       lines: LineSpec[] = [],
       lots: LotSpec[] = [],
-      reservations: Reservation[] = [];
+      reservations: Reservation[] = [],
+      trees: TreeSpec[] = [];
     const plan: SitePlan = {
       id: site.id,
       x: site.x,
@@ -176,7 +209,9 @@ export function createSites(deps: {
       lines,
       lots,
       reservations,
+      trees,
     };
+    let country: Array<[string, number]> | null = null;
     const kit: SiteKit = {
       height: (x, z) => heightfield.heightAt(x, z),
       slope: (x, z) => heightfield.slopeAt(x, z),
@@ -218,8 +253,25 @@ export function createSites(deps: {
           tint: opts?.tint,
         });
       },
-      tree: () => {
-        throw new Error('scenery library: a site plants through its cells, not through its plan');
+      tree: (speciesId, x, z, opts) => {
+        // Chosen from where the tree stands and nothing else, never from the
+        // site's stream: a plan that stands trees keeps every house where it was.
+        const roll = (salt: number) => hash2(Math.round(x * 8), Math.round(z * 8), salt) / 4294967296;
+        let id = speciesId;
+        if (id === null) {
+          country ??= countryTrees(site);
+          const total = country.reduce((a, [, w]) => a + w, 0);
+          if (total <= 0) return;
+          let pick = roll(0x7a11) * total;
+          for (const [candidate, weight] of country) {
+            id = candidate;
+            pick -= weight;
+            if (pick <= 0) break;
+          }
+        } else if (!species.has(id))
+          throw new Error(`scenery library: site ${site.id}: unknown species "${id}"`);
+        if (id === null) return;
+        trees.push({ x, z, species: id, yaw: opts?.yaw ?? roll(0x7a12) * Math.PI * 2 });
       },
       prop: (propId, x, z, opts) => {
         // A prop on a plan is a lot with no building: the ring places it.

@@ -18,7 +18,7 @@ import {
   type SitePlan,
 } from '../../../library/contract';
 import type { Heightfield } from '../terrain/Heightfield';
-import { hash2 } from '../terrain/noise';
+import { hash2, mulberry32 } from '../terrain/noise';
 import type { WorldSampler } from '../terrain/WorldSampler';
 import { createClaims, type ClaimShapes, type Claims } from './Claims';
 import type { Obstacles } from './Obstacles';
@@ -131,6 +131,8 @@ export interface Ring {
    * a zero rather than trust one.
    */
   readonly buildingsRefused: number;
+  /** Trees a plan stood that did not stand: a species nobody baked, a pool full, the ring's ceiling. */
+  readonly treesRefused: number;
   /** Milliseconds the last rebuild took. */
   readonly ms: number;
   /** Where the ring is centred, m in the world: the shade sheet is anchored here. */
@@ -216,6 +218,7 @@ export function createRing(deps: RingDeps): Ring {
     props = 0,
     buildings = 0,
     buildingsRefused = 0,
+    treesRefused = 0,
     cells = 0,
     ms = 0;
   const full = new Set<string>();
@@ -226,6 +229,27 @@ export function createRing(deps: RingDeps): Ring {
   // reshuffle the trees, and adding a biome must not reshuffle the props.
   const propSalt = propEntries.map((entry) => saltOf(seed, `prop:${entry.id}`));
   const overrideSalt = saltOf(seed, 'override');
+
+  /** A tree into the pools and the obstacles; false when its pool is full, which closes the species. */
+  const standTree = (tree: TreeInstance) => {
+    if (!sink.tree(tree)) {
+      full.add(tree.species);
+      return false;
+    }
+    // Clearance comes from the baked shape, so no generator can understate itself.
+    const shape = metrics.species(tree.species)!;
+    obstacles.add({
+      x: tree.x,
+      z: tree.z,
+      ground: tree.y,
+      top: tree.y + shape.top * tree.tall,
+      radius: tree.scale * shape.radius,
+    });
+    trees++;
+    return true;
+  };
+  /** Where a plan's tree draws its size from: its own place, so it is the same tree every rebuild. */
+  const planTreeSalt = saltOf(seed, 'plan-tree');
 
   // A cell's trees are sown where the far trees sow theirs (Sowing.ts): what
   // the ring adds is its ceilings, the pools and the obstacles.
@@ -238,23 +262,7 @@ export function createRing(deps: RingDeps): Ring {
     occupied,
     admit: (speciesId) => trees < maxTrees && !full.has(speciesId),
     baked: (speciesId) => metrics.species(speciesId) !== null,
-    emit: (tree) => {
-      if (!sink.tree(tree)) {
-        full.add(tree.species);
-        return false;
-      }
-      // Clearance comes from the baked shape, so no generator can understate itself.
-      const shape = metrics.species(tree.species)!;
-      obstacles.add({
-        x: tree.x,
-        z: tree.z,
-        ground: tree.y,
-        top: tree.y + shape.top * tree.tall,
-        radius: tree.scale * shape.radius,
-      });
-      trees++;
-      return true;
-    },
+    emit: standTree,
     prop: (propId, x, z, opts) => {
       standProp(propId, { x, z, ...opts });
     },
@@ -361,6 +369,17 @@ export function createRing(deps: RingDeps): Ring {
         });
         buildings++;
       }
+      // The trees the plan stood, with its houses and on the same terms: whole
+      // or not at all, and counted when refused rather than dropped.
+      for (const spec of plan.trees ?? []) {
+        if (trees >= maxTrees || full.has(spec.species)) {
+          treesRefused++;
+          continue;
+        }
+        const draw = mulberry32(hash2(Math.round(spec.x * 8), Math.round(spec.z * 8), planTreeSalt));
+        const tree = sowing.stand(spec.species, spec.x, spec.z, spec.yaw, draw);
+        if (!tree || !standTree(tree)) treesRefused++;
+      }
     }
   };
 
@@ -369,7 +388,7 @@ export function createRing(deps: RingDeps): Ring {
     sink.begin(x, z);
     obstacles.clear();
     indexPlans(x, z);
-    trees = props = buildings = buildingsRefused = cells = 0;
+    trees = props = buildings = buildingsRefused = treesRefused = cells = 0;
     full.clear();
     const span = Math.ceil(radius / size);
     for (let iz = cz - span; iz <= cz + span && trees < maxTrees; iz++)
@@ -438,6 +457,9 @@ export function createRing(deps: RingDeps): Ring {
     },
     get buildingsRefused() {
       return buildingsRefused;
+    },
+    get treesRefused() {
+      return treesRefused;
     },
     get ms() {
       return ms;

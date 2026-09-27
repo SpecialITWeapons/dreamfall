@@ -55,6 +55,7 @@ const stub = () => {
       sitesMs: 0.04,
       rebuilds: 9,
       bakeMs: 620,
+      treesRefused: 0,
       farTrees: 16000,
       farCells: 20000,
       farQueued: 0,

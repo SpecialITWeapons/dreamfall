@@ -87,6 +87,12 @@ export interface Sowing {
   plant(speciesId: string, x: number, z: number, opts?: PlantOpts): void;
   /** Every biome of the country with a share worth a visit, each on its own stream. */
   sowTrees(): void;
+  /**
+   * One tree on its own, outside any cell: a tree a settlement's plan stood.
+   * Its size is drawn from `roll`, its tint from the climate where it stands;
+   * the cell being sown is left as it was. Null for a species nobody baked.
+   */
+  stand(speciesId: string, x: number, z: number, yaw: number, roll: () => number): TreeInstance | null;
 }
 
 export function createSowing(deps: SowingDeps): Sowing {
@@ -191,9 +197,8 @@ export function createSowing(deps: SowingDeps): Sowing {
   };
 
   /** The climate tint of one tree, in the scratch colour the caller copies. */
-  const climateTint = (species: Species) => {
+  const climateTint = (species: Species, climate = cell.fields) => {
     const tint = tints.get(species.id)!;
-    const climate = cell.fields;
     return scratch
       .copy(tint.cold)
       .lerp(tint.warm, sstep(0.3, 0.7, climate.temp))
@@ -253,6 +258,17 @@ export function createSowing(deps: SowingDeps): Sowing {
       roll = mulberry32(hash2(gx, gz, salt));
     },
     plant,
+    stand(speciesId, x, z, yaw, draw) {
+      const species = speciesById.get(speciesId);
+      if (!species || !deps.baked(speciesId)) return null;
+      const [min, max] = species.scale;
+      const scale = min + draw() * (max - min);
+      const tall = scale * (0.9 + draw() * 0.4);
+      // The fields are one shared sample: the cell reads its own again next time.
+      const tint = climateTint(species, fields.at(x, z));
+      read = false;
+      return { species: speciesId, x, y: ground.heightAt(x, z), z, scale, tall, yaw, tint };
+    },
     sowTrees() {
       for (let s = 0; s < SLOTS; s++) {
         // The floor is the country's own share: which biomes get a say in a

@@ -3,6 +3,7 @@ import type { LotSpec, SitePlan } from '../../library/contract';
 import {
   GRASS_ROAD_MARGIN,
   GRASS_WALL_MARGIN,
+  PLAN_TREE_CLAIM,
   PROP_CLAIM,
   ROUTE_CLEARING,
   TREE_MARGIN,
@@ -47,6 +48,18 @@ describe('createClaims', () => {
     const edge = 9 + TREE_MARGIN;
     expect(claims.trees(100 + edge - 0.1, 50)).toBe(true);
     expect(claims.trees(100 + edge + 0.1, 50)).toBe(false);
+  });
+
+  it("keeps the country's trees off a tree the plan stood, and leaves the grass under it", () => {
+    const claims = createClaims();
+    claims.add(plan({ trees: [{ x: 30, z: -20, species: 'oak', yaw: 0 }] }), shapes);
+    expect(claims.trees(30 + PLAN_TREE_CLAIM - 0.1, -20)).toBe(true);
+    expect(claims.trees(30 + PLAN_TREE_CLAIM + 0.1, -20)).toBe(false);
+    expect(claims.grass(30, -20)).toBe(false);
+    // and the plan's box takes it in, so the grass and the far trees see the plan arrive over it
+    const box = claims.plans[0]!;
+    expect(box.x0).toBeLessThanOrEqual(30 - PLAN_TREE_CLAIM);
+    expect(box.z0).toBeLessThanOrEqual(-20 - PLAN_TREE_CLAIM);
   });
 
   it('keeps grass off the walls and eaves only, turned with the house', () => {

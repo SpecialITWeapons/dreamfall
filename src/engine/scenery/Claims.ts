@@ -22,6 +22,12 @@ export const TREE_MARGIN = 3;
 export const GRASS_ROAD_MARGIN = 0.5;
 /** Metres a tuft keeps from a wall: the eaves overhang it. */
 export const GRASS_WALL_MARGIN = 1;
+/**
+ * What a tree the plan stood keeps clear of the country's own, m: a trunk's
+ * width and a little, so the scatter does not stand a second tree in the same
+ * garden. It claims no grass: grass grows under a tree.
+ */
+export const PLAN_TREE_CLAIM = 4;
 /** What a prop a plan asked for -- a well, a trough -- keeps clear, m. */
 export const PROP_CLAIM = 2;
 /**
@@ -175,6 +181,10 @@ export function createClaims(): Claims {
           reach(a[0], a[1], half + GRASS_ROAD_MARGIN);
           reach(b[0], b[1], half + GRASS_ROAD_MARGIN);
         }
+      }
+      for (const tree of plan.trees ?? []) {
+        trees.capsule(tree.x, tree.z, tree.x, tree.z, PLAN_TREE_CLAIM);
+        reach(tree.x, tree.z, PLAN_TREE_CLAIM);
       }
       for (const lot of plan.lots) {
         // A lot with no floors is a prop the plan asked for: a well, a trough.
