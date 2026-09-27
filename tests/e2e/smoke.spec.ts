@@ -227,10 +227,11 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
    * 0.034, 0.028 and 0.025, core over far side 1.2 where it had been 1.47.
    * With the hill and the trees in front of the core and the land and sea
    * under the far side it read 0.039, 0.030 and 0.024, 1.33, on a GPU and on
-   * the software rasteriser alike. The rasteriser still passed, only because
-   * its first capture of a lit scene reads brighter (0.056 for the core, 0.040
-   * for the same scene captured again) and the core was captured first. The
-   * dome alone reads the same on the first capture as on every other.
+   * the software rasteriser alike. The rasteriser still passed then, only
+   * because its first capture drew the ground in the light of the hour before
+   * `dayPhase` moved (0.056 for the core, 0.040 for the same scene captured
+   * again) and the core was captured first; a capture is now a node frame of
+   * its own, and the first reads what every other does.
    *
    * The altitude is set and not inherited, because the flight's own is not the
    * test's business, and inside the deck the view is white: 120 m over the
@@ -267,6 +268,48 @@ test('the Milky Way bakes off the main thread and lights the sky toward its core
   const across = await sky(GALAXY_HEADING + Math.PI / 2);
   expect(core).toBeGreaterThan(away! * 1.4);
   expect(away).toBeGreaterThan(across! * 1.1);
+  expect(errors).toEqual([]);
+});
+
+test('the first capture draws the world as it stands, the same as the one after it', async ({ page }) => {
+  // The first capture compiles the scene a second time for its own target.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const picture = await page.evaluate(async () => {
+    const w = window.__world!;
+    const W = 160,
+      H = 90;
+    const shot = async () => Array.from((await w.capture(W, H))!.data);
+    const diff = (a: number[], b: number[]) => a.reduce((s, v, i) => s + Math.abs(v - b[i]!), 0) / a.length;
+    const frames = (n: number) =>
+      new Promise<void>((settled) => {
+        const next = (left: number) => (left ? requestAnimationFrame(() => next(left - 1)) : settled());
+        next(n);
+      });
+    // A render of the world as it was, and then the world moved -- the figure
+    // forty metres up, the day from dawn to noon -- inside the same animation
+    // frame. Three updates the lights, the shadow map and the bones once per
+    // frame of its own, so a capture that shared the frame drew the ground in
+    // the dawn's light and the figure where it had been: 0.10 away from the
+    // same scene captured once the browser had drawn a frame.
+    w.frame(0);
+    w.state.y += 40;
+    w.dayPhase = 0.5;
+    const first = await shot();
+    await frames(2);
+    const settled = await shot();
+    // And the figure is in the picture at all, or the comparison would not see it.
+    w.layers.set('figure', false);
+    const bare = await shot();
+    w.layers.set('figure', true);
+    let figure = 0;
+    for (let i = 0; i < settled.length; i += 4)
+      if (Math.abs(settled[i]! - bare[i]!) + Math.abs(settled[i + 1]! - bare[i + 1]!) > 0.01) figure++;
+    return { drift: diff(first, settled), figure };
+  });
+  expect(picture.figure).toBeGreaterThan(10);
+  expect(picture.drift).toBeLessThan(1e-5);
   expect(errors).toEqual([]);
 });
 
@@ -667,7 +710,11 @@ test('the deck lays its fog on the ground only where its sea is seen over it', a
         const diff = (a: number[], b: number[]) =>
           a.reduce((s, v, i) => s + Math.abs(v - b[i]!), 0) / a.length;
         w.layers.set('deck fog', true);
-        // the first picture after a jump is not the second: it is thrown away
+        // One picture thrown away, and not for the capture's sake: a hundred
+        // and twenty steps do not always see the last of what streams in after
+        // a jump, and the first capture's compile takes long enough for it to
+        // arrive. Seventy pixels of grass at the bottom left, measured -- gone
+        // with four more seconds or four hundred more steps before the picture.
         await shot();
         const on = await shot();
         const again = await shot();
@@ -711,7 +758,6 @@ test('the land reaches past the near window: the far terrain draws what it canno
       return c ? Array.from(c.data) : [];
     };
     const diff = (a: number[], b: number[]) => a.reduce((s, v, i) => s + Math.abs(v - b[i]!), 0) / a.length;
-    await shot();
     const on = await shot();
     w.layers.set('far', false);
     const off = await shot();
@@ -797,15 +843,6 @@ test('the registry reaches the page and two climates paint different ground', as
           pin();
           w.step(0.02);
         }
-        pin();
-        // One animation frame before the picture, and it is not politeness.
-        // Everything above happens inside one task, and three advances the node
-        // graph's frame id only in the renderer's own animation tick -- so a
-        // capture taken here carries whatever the nodes held before `dayPhase`
-        // was written, which on the first visit is the palette the page started
-        // at. CI read 0.243 between two visits to one place for exactly that
-        // reason, the same number twice.
-        await new Promise<void>((settled) => requestAnimationFrame(() => settled()));
         pin();
         const shot = await w.capture(96, 54);
         if (!shot) return null;
@@ -1913,13 +1950,6 @@ test('the dev panel switches a layer off and the frame loses it', async ({ page 
   };
   const diff = (x: number[] | null, y: number[] | null) =>
     x && y ? x.reduce((sum, v, i) => sum + Math.abs(v - y[i]!), 0) / x.length : NaN;
-  // One capture thrown away first. Taken in the same animation frame as the
-  // day was moved, it reads 0.07 away from every capture after it -- measured,
-  // and the cause is the node graph's frame id, which three advances only in
-  // the renderer's own tick: nodes that update once per id are still carrying
-  // the state from before the day moved. One animation frame later they are
-  // not, and from there the captures are identical to the last bit.
-  await shot();
   const full = await shot();
   const terrain = page.locator('#dev label.layer', { hasText: 'terrain' }).locator('input');
   await terrain.uncheck();
