@@ -775,6 +775,13 @@ test('the registry reaches the page and two climates paint different ground', as
         // heading left over from the last visit lands a few metres off, which
         // used to be invisible in the colour of the ground and stopped being so
         // the day trees stood on it.
+        // The rates are pinned with the pose. The picture is taken from where the
+        // last step left the flight, and a step turns the heading by `yawRate`,
+        // which eases over steps and so remembers every step before it: the first
+        // visit carried whatever turn the loop had built up before the pause, a
+        // number of frames the wall clock decides, and a heading a few ten-
+        // thousandths of a radian off moved every tuft and shoreline by a
+        // fraction of a pixel. That read 0.0009 to 0.0032 between two visits.
         const pin = () => {
           w.state.x = x;
           w.state.z = z;
@@ -785,6 +792,10 @@ test('the registry reaches the page and two climates paint different ground', as
           w.state.vy = 0;
           w.state.t = 100;
           w.state.speed = 40;
+          w.state.yawRate = 0;
+          w.state.steer = 0;
+          w.state.aim = 0;
+          w.state.aimHold = 0;
         };
         pin();
         w.step(0.05); // the window refills and the ring rebuilds on the jump
@@ -850,12 +861,12 @@ test('the registry reaches the page and two climates paint different ground', as
   // The pixels come back 0..1, so these are small numbers on purpose. Measured
   // at seed 42 under the morning sun: steppe reads (0.42, 0.37, 0.12), and the
   // two climates are 0.165 apart.
-  // Two visits are not bit-identical: the grass tufts and the sky differ between
-  // them (the ground and the trees do not), and that reads 0.0014 under the old
-  // flat light and 0.0019 to 0.0022 under a clear day's sun, whose shadows and
-  // translucent blades make the same tufts differ by more. 0.003 is still well
-  // under anything a person would see, and a fiftieth of what two climates are apart.
-  expect(apart(shotA, shotAgain)).toBeLessThan(0.003);
+  // Two visits are the same picture: 0 exactly, on SwiftShader and on a GPU. They
+  // read 0.0009 to 0.0032 for as long as the turn rate was left out of the pin
+  // (see `pin` above), which was blamed on the grass and the sky and was the
+  // camera. The margin is for a rasteriser that is not quite deterministic, and it
+  // is under half of the least a heading left over from the loop ever read.
+  expect(apart(shotA, shotAgain)).toBeLessThan(0.0004);
   expect(apart(shotA, shotB)).toBeGreaterThan(0.02);
   // and the place itself is the same place twice: the same forest, the same
   // meadow, the flight pinned where it was put
