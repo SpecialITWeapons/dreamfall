@@ -64,7 +64,11 @@ page works under a Pages subdirectory.
   redraws -- a switch, a jump, a test about to read what it drew -- and
   anything that wants a hundred real frames has to let the browser have its
   animation frames, which is what the loop is and what `tools/bench` counts.
-  A capture is not affected: it renders the scene into its own target.
+  The same id gates the lights' colour and direction, the shadow map and a
+  skeleton's bones, so a capture **advances the id itself** before it renders
+  into its own target: sharing one with a render made before the world moved,
+  it drew the old hour's light and the figure where it had stood, and only the
+  second capture was right.
 - Any WebGPU `uncapturederror` is treated as a fatal device loss on
   purpose (fail loud); a shader that only warns must not ship.
 - **A mesh binds at most eight vertex buffers.** That is WebGPU's default

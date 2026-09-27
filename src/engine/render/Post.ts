@@ -173,6 +173,17 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
   // which is seconds rather than milliseconds now that the ground carries a
   // branch per biome -- and it was paid again on every single capture.
   const captureTargets = new Map<string, RenderTarget>();
+  // A capture is a frame of its own. Three updates the lights' colour and
+  // direction, the shadow map and a skeleton's bones once per node frame id,
+  // and advances that id only in the renderer's own animation tick; a capture
+  // that shared an id with a render made before the world last moved drew the
+  // world with that render's lights and bones -- the ground lit for the old
+  // hour and the figure posed where it no longer stood, so off the picture --
+  // and the next capture, one tick later, was right. Measured: 0.10 mean
+  // difference between a capture made straight after `dayPhase` moved and the
+  // same scene one animation frame later. `compileAsync` advances the id the
+  // same way; the renderer offers no public call that does only this.
+  const internals = renderer as unknown as { _nodes: { nodeFrame: { update(): void } } };
   return {
     render() {
       pipeline.render();
@@ -213,6 +224,7 @@ export function createPost(renderer: WebGPURenderer, scene: Scene, camera: Camer
         // no tone mapping to switch off: the renderer never had it on
         renderer.setRenderTarget(target);
         try {
+          internals._nodes.nodeFrame.update();
           await renderer.renderAsync(scene, camera);
           const read = await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);
           const data = new Float32Array(read.length),
