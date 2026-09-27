@@ -372,7 +372,9 @@ export function createRing(deps: RingDeps): Ring {
       // The trees the plan stood, with its houses and on the same terms: whole
       // or not at all, and counted when refused rather than dropped.
       for (const spec of plan.trees ?? []) {
-        if (trees >= maxTrees || full.has(spec.species)) {
+        // The plan knows its own streets and not the roads that come in to
+        // them from the next settlement, which cross its gardens to get there.
+        if (trees >= maxTrees || full.has(spec.species) || claims.road(spec.x, spec.z)) {
           treesRefused++;
           continue;
         }

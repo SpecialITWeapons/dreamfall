@@ -44,6 +44,7 @@ import {
   mix,
   normalize,
   smoothstep,
+  step,
   texture,
   transformNormalToView,
   varying,
@@ -174,13 +175,17 @@ export function createCards(deps: {
     .add(right.mul(corner.x.mul(cardB.x)))
     .add(upward.mul(corner.y.sub(0.5).mul(height)));
   const distance = length(foot.sub(cameraPosition));
-  const fade = smoothstep(deps.treeLimit.x, deps.treeLimit.y, distance).mul(
+  // Whole before its tree starts to go (`cardBand`): the band's width before it.
+  const width = deps.treeLimit.y.sub(deps.treeLimit.x);
+  const fade = smoothstep(deps.treeLimit.x.sub(width), deps.treeLimit.x, distance).mul(
     float(1).sub(smoothstep(FAR_FADE[0], FAR_FADE[1], distance)),
   );
 
   // Which picture, and where in it: a column per species, mirrored for half of them.
-  const tile = cardA.w.mul(0.5).floor();
-  const mirror = cardA.w.sub(tile.mul(2));
+  // Rounded rather than floored (`decodeCard`): read here in the fragment stage,
+  // interpolated, a hair under an even number would be the neighbour's picture.
+  const tile = cardA.w.mul(0.5).add(0.25).floor();
+  const mirror = step(0.5, cardA.w.sub(tile.mul(2)));
   const inset = 0.5 / TILE;
   const across = corner.x.add(0.5);
   const u = mix(across, float(1).sub(across), mirror)

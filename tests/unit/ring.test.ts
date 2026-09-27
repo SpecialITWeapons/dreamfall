@@ -622,6 +622,36 @@ describe('the streamed ring', () => {
     r.ring.update(1, 0, true);
     expect(r.trees.map((t) => ({ ...t, tint: t.tint.getHexString() }))).toEqual(stood);
   });
+  it("refuses a plan's tree that stands on the road between settlements", () => {
+    const plan = planOf({
+      x: 0,
+      z: 0,
+      trees: [
+        { x: 180, z: 0, species: 'oak', yaw: 0 },
+        { x: 60, z: 90, species: 'oak', yaw: 0 },
+      ],
+    });
+    const sites = oneSite(plan);
+    const home = sites.near(0, 0, 3000, [])[0]!;
+    const route = {
+      id: 'village:0,0|village:1,0',
+      a: home,
+      b: { ...home, id: 'village:1,0', x: 900 },
+      points: Array.from({ length: 76 }, (_, i) => [-900 + i * 24, 0] as [number, number]),
+    };
+    const roads: RingDeps['roads'] = {
+      near: (_x, _z, _reach, out) => {
+        out.length = 0;
+        out.push(route);
+        return out;
+      },
+    };
+    const r = ring(library([everywhere('woods', 0)]), { sites, roads, radius: 300 });
+    r.ring.update(0, 0, false);
+    expect(r.routes.length).toBe(1);
+    expect(r.trees.map((t) => [t.x, t.z])).toEqual([[60, 90]]);
+    expect(r.ring.treesRefused).toBe(1);
+  });
   it('raises nothing at all for a site the ring has left behind', () => {
     const plan = planOf({ x: 0, z: 0, lots: [lotAt(40, -20), lotAt(-30, 50)] });
     const r = ring(library([everywhere('woods', 0)]), { sites: oneSite(plan), radius: 300 });

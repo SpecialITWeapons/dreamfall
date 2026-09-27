@@ -933,9 +933,9 @@ test('the woods go on past the ring as cards, out to the far terrain', async ({ 
   // every tree has its card, the ring's among them, and the pool had room for all
   expect(woods.cards).toBe(woods.trees + woods.farTrees);
   expect(woods.cardsRefused).toBe(0);
-  // Three kilometres on the origin has moved under the scene: the cards are
-  // written again in the new frame, not lost with the old one.
-  const on = await look(-45_000, -42_000);
+  // Five kilometres on, past the origin's own four, the origin has moved under
+  // the scene: the cards are written again in the new frame, not lost with the old one.
+  const on = await look(-43_000, -42_000);
   expect(on.cards).toBe(on.trees + on.farTrees);
   expect(on.farTrees).toBeGreaterThan(3 * on.trees);
   expect(errors).toEqual([]);

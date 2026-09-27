@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CARD_ATTRIBUTES, packCard, treeLimitOf } from '../../src/engine/scenery/cardPack';
+import {
+  CARD_ATTRIBUTES,
+  cardBand,
+  decodeCard,
+  packCard,
+  treeLimitOf,
+} from '../../src/engine/scenery/cardPack';
 import { cardGeometry } from '../../src/engine/scenery/Cards';
 
 const out = () => ({ a: new Float32Array(8), b: new Float32Array(8), c: new Float32Array(6) });
@@ -53,6 +59,26 @@ describe('treeLimitOf', () => {
     const gone = treeLimitOf(2300, 2560, 0);
     expect(gone[0]).toBe(0);
     expect(gone[1]).toBeGreaterThanOrEqual(gone[0] + 1);
+  });
+});
+
+describe('cardBand', () => {
+  it('brings the card in before the full tree starts to go, so the two never both thin out', () => {
+    // Alpha-to-coverage draws nested masks: a tree at 1 - s over a card at s
+    // covers max(s, 1 - s), half the pixels at the middle of the band.
+    expect(cardBand([2300, 2560])).toEqual([2040, 2300]);
+    const [a, b] = cardBand([0, 1]);
+    expect(b).toBe(0);
+    expect(b).toBeGreaterThanOrEqual(a + 1);
+  });
+});
+
+describe('decodeCard', () => {
+  it('reads the tile and the mirror back, however the interpolation rounds', () => {
+    for (const tile of [0, 3, 8, 15])
+      for (const mirror of [0, 1])
+        for (const wobble of [-1e-4, 0, 1e-4])
+          expect(decodeCard(tile * 2 + mirror + wobble)).toEqual({ tile, mirror });
   });
 });
 

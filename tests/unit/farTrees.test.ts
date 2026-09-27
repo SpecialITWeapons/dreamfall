@@ -121,6 +121,54 @@ describe('FarTrees', () => {
     expect(f.version).toBeGreaterThan(before);
   });
 
+  it('keeps a cell standing until it is sown again, and sows again only the cells a road touches', () => {
+    const claims = createClaims();
+    const f = far({ inner: 600, radius: 1500, claims });
+    f.update(AT.x, AT.z);
+    f.work(Infinity);
+    const before = f.trees,
+      version = f.version;
+    // a road straight through the far land, from one side of it to the other
+    const road = Array.from(
+      { length: 61 },
+      (_, i) => [AT.x - 1500 + i * 50, AT.z + 1000] as [number, number],
+    );
+    claims.addRoute('a|b', road, 5);
+    f.update(AT.x, AT.z);
+    // nothing has gone yet: the cards stand until their cells are sown again
+    expect(f.trees).toBe(before);
+    expect(f.version).toBe(version);
+    // and only the corridor's cells are queued, not the road's whole box
+    expect(f.queued).toBeGreaterThan(0);
+    expect(f.queued).toBeLessThanOrEqual(3 * (3000 / 96 + 2));
+    f.work(Infinity);
+    const onRoad: string[] = [];
+    f.forEach((t) => {
+      if (Math.abs(t.z - (AT.z + 1000)) < 2.5 + 5 && Math.abs(t.x - AT.x) < 1500) onRoad.push(rowOf(t));
+    });
+    expect(onRoad).toEqual([]);
+  });
+
+  it('grows the same wood whether a road came and went or never came', () => {
+    const claims = createClaims();
+    const f = far({ inner: 600, radius: 1500, claims });
+    f.update(AT.x, AT.z);
+    f.work(Infinity);
+    const untouched = rowsOf(f);
+    const road = Array.from(
+      { length: 61 },
+      (_, i) => [AT.x - 1500 + i * 50, AT.z + 1000] as [number, number],
+    );
+    claims.addRoute('a|b', road, 5);
+    f.update(AT.x, AT.z);
+    f.work(Infinity);
+    expect(rowsOf(f)).not.toEqual(untouched);
+    claims.clear();
+    f.update(AT.x, AT.z);
+    f.work(Infinity);
+    expect(rowsOf(f)).toEqual(untouched);
+  });
+
   it('sows again the cells a plan arrives over', () => {
     const claims = createClaims();
     const f = far({ inner: 600, radius: 1500, claims });

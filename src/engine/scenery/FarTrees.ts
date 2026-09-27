@@ -9,8 +9,9 @@
 // to decide which cells are wanted and in what order they are sown, so coming
 // at a wood from either side grows the same wood. The cells are sown from a
 // queue, nearest first, with a budget checked before a cell and never during
-// one; a cell that leaves the reach is forgotten at once. A plan that arrives
-// over cells already sown has them sown again, once, as the grass does.
+// one; a cell that leaves the reach is forgotten at once. A plan or a road
+// that arrives over cells already sown has the cells it touches sown again,
+// once, as the grass does, and their cards stand until it is done.
 //
 // Pure CPU: from three it takes nothing but what Sowing takes.
 import type { Library } from '../../../library/contract';
@@ -115,30 +116,59 @@ export function createFarTrees(deps: {
     },
   });
 
+  /**
+   * Cells to sow again: a claim has come over them or gone from them. Their old
+   * trees stand until then, so a road arriving over the far land never leaves a
+   * patch of it bare for the frames the queue takes.
+   */
+  const stale = new Set<number>();
+  /** Cells sown while a claim reached into them: when none does, they grow back. */
+  const claimed = new Set<number>();
+  const touched = (key: number) => {
+    if (!claims) return false;
+    const ix = ixOf(key),
+      iz = izOf(key);
+    return claims.touches(ix * size, iz * size, (ix + 1) * size, (iz + 1) * size);
+  };
+
   const forget = (key: number) => {
     const held = live.get(key);
     if (!held) return false;
     trees -= held.length;
     live.delete(key);
+    stale.delete(key);
+    claimed.delete(key);
     return true;
   };
 
-  /** Plans the cells were sown around; a new one has the cells under it sown again. */
+  /**
+   * Plans and roads the cells were sown around. A new one has the cells it
+   * reaches into sown again -- the cells its claims touch, not its whole box,
+   * which for a road between settlements is kilometres of land it never
+   * crosses -- and one that has gone has the cells it cleared sown again, so a
+   * cell is a function of its coordinates and the claims over it now.
+   */
   const accounted = new Set<string>();
-  const account = () => {
-    if (!claims) return false;
-    let changed = false;
+  const account = (x: number, z: number) => {
+    if (!claims) return;
     const plans = claims.plans;
     for (const plan of plans) {
       if (accounted.has(plan.id)) continue;
       accounted.add(plan.id);
-      for (let iz = Math.floor(plan.z0 / size); iz <= Math.floor(plan.z1 / size); iz++)
-        for (let ix = Math.floor(plan.x0 / size); ix <= Math.floor(plan.x1 / size); ix++)
-          changed = forget(keyOf(ix, iz)) || changed;
+      // only as far as the far land reaches: a road's box can be fourteen kilometres
+      const x0 = Math.max(plan.x0, x - radius),
+        x1 = Math.min(plan.x1, x + radius),
+        z0 = Math.max(plan.z0, z - radius),
+        z1 = Math.min(plan.z1, z + radius);
+      for (let iz = Math.floor(z0 / size); iz <= Math.floor(z1 / size); iz++)
+        for (let ix = Math.floor(x0 / size); ix <= Math.floor(x1 / size); ix++) {
+          const key = keyOf(ix, iz);
+          if (live.has(key) && touched(key)) stale.add(key);
+        }
     }
     if (accounted.size > plans.length)
       for (const id of accounted) if (!plans.some((plan) => plan.id === id)) accounted.delete(id);
-    return changed;
+    for (const key of claimed) if (!touched(key)) stale.add(key);
   };
 
   return {
@@ -158,16 +188,9 @@ export function createFarTrees(deps: {
           if (!live.has(key)) distance.set(key, d);
         }
       for (const key of [...live.keys()]) if (!wanted.has(key)) changed = forget(key) || changed;
-      if (account()) {
-        changed = true;
-        // the cells a plan made stale are wanted and no longer live
-        for (const key of wanted)
-          if (!live.has(key) && !distance.has(key)) {
-            const ix = ixOf(key),
-              iz = izOf(key);
-            distance.set(key, Math.hypot((ix + 0.5) * size - x, (iz + 0.5) * size - z));
-          }
-      }
+      account(x, z);
+      for (const key of stale)
+        distance.set(key, Math.hypot((ixOf(key) + 0.5) * size - x, (izOf(key) + 0.5) * size - z));
       queue = [...distance.keys()].sort((a, b) => distance.get(a)! - distance.get(b)!);
       head = 0;
       if (changed) version++;
@@ -178,11 +201,15 @@ export function createFarTrees(deps: {
       while (head < queue.length) {
         if (now() - started >= budgetMs) break;
         const key = queue[head++]!;
-        if (!wanted.has(key) || live.has(key)) continue;
+        if (!wanted.has(key) || (live.has(key) && !stale.has(key))) continue;
         current = [];
         if (sowing.enter(ixOf(key), izOf(key))) sowing.sowTrees();
+        // the old trees of a stale cell go only now, as the new ones arrive
+        trees += current.length - (live.get(key)?.length ?? 0);
         live.set(key, current);
-        trees += current.length;
+        stale.delete(key);
+        if (touched(key)) claimed.add(key);
+        else claimed.delete(key);
         sown = true;
       }
       if (sown) version++;

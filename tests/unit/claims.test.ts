@@ -50,6 +50,34 @@ describe('createClaims', () => {
     expect(claims.trees(100 + edge + 0.1, 50)).toBe(false);
   });
 
+  it('knows which squares a road between settlements touches, and not the whole box it spans', () => {
+    const claims = createClaims();
+    // a diagonal road eight kilometres long: its box is most of 64 km², its corridor a sliver
+    const points = Array.from({ length: 170 }, (_, i) => [i * 34, i * 34] as [number, number]);
+    claims.addRoute('a|b', points, 5);
+    expect(claims.touches(2000, 2000, 2096, 2096)).toBe(true);
+    // inside the box, a kilometre and more off the corridor
+    expect(claims.touches(5000, 1000, 5096, 1096)).toBe(false);
+    expect(claims.touches(-500, -500, -404, -404)).toBe(false);
+  });
+
+  it("tells a road between settlements from a plan's own ground", () => {
+    const claims = createClaims();
+    claims.addRoute(
+      'a|b',
+      [
+        [0, 0],
+        [400, 0],
+      ],
+      5,
+    );
+    claims.add(plan({ trees: [{ x: 100, z: 60, species: 'oak', yaw: 0 }] }), shapes);
+    expect(claims.road(200, 2)).toBe(true);
+    expect(claims.road(200, 2.5 + ROUTE_CLEARING + 0.5)).toBe(false);
+    expect(claims.road(100, 60)).toBe(false);
+    expect(claims.trees(100, 60)).toBe(true);
+  });
+
   it("keeps the country's trees off a tree the plan stood, and leaves the grass under it", () => {
     const claims = createClaims();
     claims.add(plan({ trees: [{ x: 30, z: -20, species: 'oak', yaw: 0 }] }), shapes);

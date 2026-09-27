@@ -66,3 +66,25 @@ export function treeLimitOf(near: number, far: number, k: number): [number, numb
   const a = near * k;
   return [a, Math.max(far * k, a + 1)];
 }
+
+/**
+ * The band a card comes up in, given the band its full tree dissolves in: the
+ * width before it, so the card is whole by the time the tree starts to go.
+ * Both are drawn through alpha-to-coverage, whose masks nest, so a tree at
+ * `1 - s` over a card at `s` covers `max(s, 1 - s)` -- half the pixels at the
+ * middle of a shared band, which reads as a ring of thinner forest.
+ */
+export function cardBand(tree: readonly [number, number]): [number, number] {
+  const width = tree[1] - tree[0];
+  return [tree[0] - width, tree[0]];
+}
+
+/**
+ * The tile and the mirror back out of `a.w` (`tile * 2 + mirror`), as the
+ * card's shader reads them: rounded, because the fragment stage reads it
+ * interpolated, and a hair under an even number must not be the neighbour's.
+ */
+export function decodeCard(w: number): { tile: number; mirror: number } {
+  const tile = Math.floor(w * 0.5 + 0.25);
+  return { tile, mirror: w - tile * 2 >= 0.5 ? 1 : 0 };
+}
