@@ -37,7 +37,8 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
-  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
+  `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
+  `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -393,6 +394,12 @@ page works under a Pages subdirectory.
   is scaled by that share and the cap of three trees per cell belongs to the kit,
   not to the hook. The biome says how much grows; the prop's own `place` says
   how it stands.
+- A cell's trees are sown in `scenery/Sowing.ts` and nowhere else, over any
+  `GroundQuery`: the ring hands it the near window, and whatever sows past the
+  window hands it `terrain/SampledGround.ts`, which samples the points the
+  window would have filled and so answers to the bit what the window would --
+  and never reads the far window. `ringGolden.test.ts` holds what the ring
+  sows over the real library; a change that moves it is a change to the world.
 - `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
   own top and radius -- never the entry's data, so a generator cannot understate
   how much sky it takes; a building is measured the same way, and its entry's own
