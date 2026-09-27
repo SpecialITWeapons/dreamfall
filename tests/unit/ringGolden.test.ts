@@ -102,3 +102,100 @@ describe('the ring over the real library', () => {
     `);
   });
 });
+
+/**
+ * The ring's refusals, frozen the same way: a pool that fills in the middle of
+ * a cell, a species nobody baked, the ring's own ceiling, and overrides that
+ * skip a cell or stand trees of their own. A refused tree has drawn its rolls
+ * already and must not count toward its cell, or every tree after it moves.
+ */
+const sowRefusing = (x: number, z: number, capped: string, unbaked: string) => {
+  const heightfield = createHeightfield(sampler, { size: 192 });
+  heightfield.fillAll(Math.round(x / 16), Math.round(z / 16));
+  const rows: string[] = [];
+  const held = new Map<string, number>();
+  const sink: ScenerySink = {
+    begin() {
+      rows.length = 0;
+      held.clear();
+    },
+    tree(t) {
+      const n = held.get(t.species) ?? 0;
+      const row = `${t.species} ${t.x.toFixed(3)} ${t.z.toFixed(3)} ${t.scale.toFixed(4)} ${t.tall.toFixed(4)} ${t.yaw.toFixed(4)}`;
+      // one species' pool holds twenty and no more; the rest take what comes
+      if (n >= 20 && t.species === capped) {
+        rows.push(`refused ${row}`);
+        return false;
+      }
+      held.set(t.species, n + 1);
+      rows.push(`t ${row}`);
+      return true;
+    },
+    prop: () => true,
+    structure: () => true,
+    site() {},
+    end() {},
+  };
+  const gx = Math.floor(x / 96),
+    gz = Math.floor(z / 96);
+  const ring = createRing({
+    seed: 42,
+    library: lib,
+    sampler,
+    heightfield,
+    obstacles: createObstacles(),
+    overrides: createOverrides([
+      { key: `cell:${gx},${gz}`, skip: true },
+      {
+        key: `cell:${gx + 1},${gz}`,
+        placements: [
+          { species: 'elder', x: (gx + 1) * 96 + 20, z: gz * 96 + 30 },
+          { species: 'oak', x: (gx + 1) * 96 + 60, z: gz * 96 + 70, scale: 1.5, yaw: 1 },
+        ],
+      },
+      {
+        key: `cell:${gx},${gz + 1}`,
+        placements: [{ species: 'pine', x: gx * 96 + 48, z: (gz + 1) * 96 + 48 }],
+      },
+    ]),
+    metrics: {
+      // one species was never baked: the ring must pass over it without a roll
+      species: (id) => (id === unbaked ? null : { top: 12, radius: 4 }),
+      prop: () => ({ radius: 2, height: 2 }),
+      structure: () => null,
+    },
+    sink,
+    propKit: {
+      sstep: (a: number, b: number, v: number) => Math.max(0, Math.min(1, (v - a) / (b - a || 1))),
+    } as never,
+    radius: 1200,
+    maxTrees: 150,
+  });
+  ring.update(x, z, true);
+  return {
+    stood: rows.filter((r) => r.startsWith('t ')).length,
+    refused: rows.filter((r) => r.startsWith('refused')).length,
+    digest: fnv(rows.join('\n')),
+  };
+};
+
+describe('the ring refusing', () => {
+  it('refuses in mixed country as it always has', () => {
+    expect(sowRefusing(-30000, 25000, 'elder', 'blossom')).toMatchInlineSnapshot(`
+      {
+        "digest": "961f29dc",
+        "refused": 1,
+        "stood": 150,
+      }
+    `);
+  });
+  it('refuses at the origin as it always has', () => {
+    expect(sowRefusing(0, 0, 'oak', 'cypress')).toMatchInlineSnapshot(`
+      {
+        "digest": "ab90a9d5",
+        "refused": 1,
+        "stood": 150,
+      }
+    `);
+  });
+});

@@ -79,6 +79,44 @@ describe('Sowing', () => {
     expect(keep(without)).toEqual(keep(all));
   });
 
+  it('does not count a refused tree toward its cell', () => {
+    // Mixed country, where two or three biomes share a cell and between them
+    // offer more trees than CELL_TREES. The first tree of every cell is refused
+    // after its rolls are drawn; the cell must still fill to CELL_TREES where
+    // it has the offers to, or a full pool thins every wood it touches.
+    const ground = createSampledGround(sampler);
+    let offered = 0,
+      stood = 0,
+      fullAfterRefusal = 0;
+    const sowing = createSowing({
+      seed: 42,
+      library: lib,
+      sampler,
+      ground,
+      size: SIZE,
+      occupied: () => false,
+      admit: () => true,
+      baked: () => true,
+      emit: () => {
+        offered++;
+        if (offered === 1) return false;
+        stood++;
+        return true;
+      },
+    });
+    const gx = Math.floor(-30000 / SIZE),
+      gz = Math.floor(25000 / SIZE);
+    for (let iz = gz - 12; iz < gz + 12; iz++)
+      for (let ix = gx - 12; ix < gx + 12; ix++) {
+        if (!sowing.enter(ix, iz)) continue;
+        offered = stood = 0;
+        sowing.sowTrees();
+        expect(stood).toBeLessThanOrEqual(CELL_TREES);
+        if (offered > 0 && stood === CELL_TREES) fullAfterRefusal++;
+      }
+    expect(fullAfterRefusal).toBeGreaterThan(0);
+  });
+
   it('says a cell over the sea is not sown', () => {
     const ground = createSampledGround(sampler);
     // Walk out along a row until the centre of a cell is under LAND; seed 42 has sea within 40 km of the origin.
