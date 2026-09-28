@@ -373,7 +373,11 @@ Chrome) bez mierzalnej różnicy, także na vantage `cliff` (2,16 ms po, 2,17–
 przed w trzech z czterech przebiegów). Na SwiftShader (rasteryzator CI)
 wszystkie vantage z ziemią podrożały o 40–110%, także te bez klifu na
 ekranie: programowy rasteryzator płaci za ciało gałęzi, której żaden
-fragment nie bierze.
+fragment nie bierze. Te 40–110% zmierzono przed poprawką po przeglądzie,
+która dołożyła do gałęzi koloru dwa szumy i zatrzymała rzeźbę za 1200 m (tak
+samo mówi `docs/perf-notes.md`; znaczniki GPU powyżej są już po niej): dwa
+szumy więcej mogą tę liczbę tylko podnieść, a bramka nic SwiftShaderowi nie
+oszczędza, skoro płaci on za gałąź, której nie bierze.
 
 ## 10. Testy
 

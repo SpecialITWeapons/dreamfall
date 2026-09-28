@@ -154,7 +154,7 @@ page works under a Pages subdirectory.
   The caches alias, so a slot is read out before the next is asked for.
   `seaCliffsWorld.test.ts` counts what the eye sees at two cliffs of seed 42 --
   no pit (a cell 3 m under all four neighbours), no islet (land under nine cells
-  standing a metre over the sea) -- and a fill costs 5 to 6 % more, measured
+  standing a metre over the sea) -- and a fill costs 4.7 to 6.7 % more, measured
   with the two sides interleaved a row at a time because this machine drops its
   clock mid-run (`seaCliffsCost.test.ts` under `MEASURE=1`; the levers are in
   `docs/perf-notes.md`). The face is 32 m wide and never less: a narrower step
