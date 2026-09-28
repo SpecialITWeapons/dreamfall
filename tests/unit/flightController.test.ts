@@ -312,6 +312,37 @@ describe('createFlightController', () => {
     expect(up.state.y).toBeLessThanOrEqual(MAX_ALTITUDE);
     expect(up.state.y).toBeGreaterThan(MAX_ALTITUDE - 60);
   });
+  it('climbs a sea cliff no faster than it can climb, flown by hand or not', () => {
+    // a face 32 m wide out of water 7 m deep: what SeaCliffs stands on a coast
+    const smooth = (a: number, b: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    for (const pilot of [false, true])
+      for (const tall of [60, 160]) {
+        const groundAt = (x: number) => -7 + (tall + 7) * smooth(1000, 1032, x);
+        const c = createFlightController({
+          seed: 1,
+          groundAt,
+          pulls: hold(Math.PI / 2),
+          start: { heading: Math.PI / 2, y: 30 },
+          schedule: () => 0,
+        });
+        if (pilot) c.fly(0, 0); // the pilot has the stick and holds the height
+        let prev = c.state.y,
+          fastest = 0,
+          minClearance = Infinity;
+        for (let i = 0; i < 1200; i++) {
+          c.step(0.05);
+          fastest = Math.max(fastest, (c.state.y - prev) / 0.05);
+          prev = c.state.y;
+          minClearance = Math.min(minClearance, c.clearance());
+        }
+        expect(c.state.x).toBeGreaterThan(1100); // it went over the cliff
+        expect(minClearance).toBeGreaterThanOrEqual(MIN_CLEARANCE - 1e-9);
+        expect(fastest).toBeLessThanOrEqual(CLIMB + 1e-6);
+      }
+  });
   it('turns aside from a range it cannot climb, in either mode', () => {
     // a ridge across the path, higher than the ceiling, with a gap to the left (-x)
     const groundAt = (x: number, z: number) => (z > 2000 && x > -400 ? 2200 : 0);
