@@ -116,6 +116,29 @@ describe('createSeaCliffs', () => {
       expect(cliffs.at(x, z, 16, 1)).toBe(first);
     }
   });
+  it('fades the cut toward a node none of whose walks found the water, without a step', () => {
+    // A coast rising to a flat plateau at x = 100: a walk from x >= 128 sees
+    // no slope and goes nowhere, so the node at x = 192 has no walk in its
+    // 3x3 that found the line, while the node at x = 128 has one (from x = 64)
+    // and sits 128 m in, inside a 150 m band. The cut has to end between
+    // them by fading, not on the lattice line: that node's distance is no
+    // distance at all.
+    const plateau: BaseHeight = (x, _z, out) => {
+      out[0] = x < 0 ? Math.max(-46, x * 0.08) : Math.min(x * 0.4, 40);
+    };
+    const h = heightOn(plateau, { ...EVERYWHERE, width: [150, 150] });
+    const out = new Float64Array(5);
+    const baseAt = (x: number) => {
+      plateau(x, 0, out);
+      return out[0]!;
+    };
+    expect(h(2 * COAST_NODE)).toBeLessThan(20); // the found node's side is still cut
+    expect(h(3 * COAST_NODE)).toBe(40); // and the unfound node's is not
+    for (let x = 2 * COAST_NODE; x < 3 * COAST_NODE; x += 1) {
+      const step = Math.abs(h(x + 1) - h(x)) - Math.abs(baseAt(x + 1) - baseAt(x));
+      expect(step, `at x = ${x}`).toBeLessThanOrEqual(4);
+    }
+  });
   it('answers the same whatever the order of the questions and whatever the cache forgot', () => {
     const base = coast(0.4);
     const points: Array<[number, number]> = [];

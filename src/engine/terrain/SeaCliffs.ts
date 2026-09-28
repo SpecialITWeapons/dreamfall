@@ -96,6 +96,9 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
   // pale shoal in front of the cliff. The mask is not: it is what makes a
   // cliff fade along the coast, and that has to take hundreds of metres.
   const sharp = (v: number) => sstep(0.35, 0.65, v);
+  // The furthest a node's line can be and one of its cells still reach a
+  // band: the widest band, its wander, and the diagonal of a cell.
+  const REACH = C.width[1] + C.jag + COAST_NODE * Math.SQRT2;
   // The walk: a node's own straight Newton descent toward the water line,
   // cached by (ix, iz) exactly like a node was before. Whether its coast is a
   // cliff coast -- `sea` and `front` -- is read off the walk's own end and
@@ -189,10 +192,18 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
       }
     nodeKeyX[slot] = ix;
     nodeKeyZ[slot] = iz;
-    const sign = Math.sign(height(x0, z0));
-    // No walk in the neighbourhood converged: far from any line, so no cut.
-    const found = weights > 0;
-    distance[slot] = found ? sign * bestDist : sign * 1e4;
+    // No walk in the neighbourhood converged: the node has no distance at all
+    // (NaN, which lookup() leaves out) and says no cliff. A made-up distance
+    // there -- it was 1e4 -- was mixed with a neighbour's real one and put
+    // the end of the cut on the lattice line: a straight step of 28 m in 2 m.
+    // A line further than REACH is no better. A walk's line is a real line,
+    // so the nearest one is never nearer than the truth, only further; if
+    // the node were right, no point of its four cells could be in a band,
+    // and where a neighbour's line is in one, the neighbour is the one to
+    // believe -- mixed with 457 m against 125 m a cell away, the face was
+    // squeezed into 4 m.
+    const found = weights > 0 && bestDist <= REACH;
+    distance[slot] = found ? Math.sign(height(x0, z0)) * bestDist : Number.NaN;
     cliffOf[slot] = found ? cliff / weights : 0;
     return slot;
   };
@@ -221,10 +232,30 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
     const e = node(ix + 1, iz + 1),
       ed = distance[e]!,
       ec = cliffOf[e]!;
-    const mix = (av: number, bv: number, cv: number, ev: number) =>
-      (av * (1 - tx) + bv * tx) * (1 - tz) + (cv * (1 - tx) + ev * tx) * tz;
-    coast.d = mix(ad, bd, cd, ed);
-    coast.cliff = mix(ac, bc, cc, ec);
+    const wa = (1 - tx) * (1 - tz),
+      wb = tx * (1 - tz),
+      wc = (1 - tx) * tz,
+      we = tx * tz;
+    // The cliff term is mixed over all four corners, an unfound one saying 0,
+    // so it is that term which fades the cut out toward a node with no line.
+    // The distance is mixed over the corners that have one, their weights
+    // made up to one again. On a lattice line both cells mix the same two
+    // corners, so it is continuous across it; it is not continuous only as
+    // the weight of the corners that have one goes to 0, and there the cliff
+    // term, which only they give, is under the sharpening and cuts nothing.
+    coast.cliff = wa * ac + wb * bc + wc * cc + we * ec;
+    let sum = 0,
+      d = 0;
+    const add = (w: number, v: number) => {
+      if (Number.isNaN(v)) return;
+      sum += w;
+      d += w * v;
+    };
+    add(wa, ad);
+    add(wb, bd);
+    add(wc, cd);
+    add(we, ed);
+    coast.d = sum > 0 ? d / sum : 0;
     return coast;
   };
   return {

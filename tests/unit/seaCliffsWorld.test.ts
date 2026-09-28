@@ -99,8 +99,8 @@ describe('sea cliffs in the sampler', () => {
           }
         }
 
-      // an islet: land (h > 0) under 9 cells, touching a cut cell, whose
-      // highest point still stands over a metre
+      // an islet: land (h > 0) under 9 cells, clear of the window's edge,
+      // touching a cut cell, whose highest point still stands over a metre
       const seen = new Uint8Array(size * size);
       for (let k = 0; k < size * size; k++) {
         if (seen[k] || !(h[k]! > 0)) continue;
@@ -120,6 +120,14 @@ describe('sea cliffs in the sampler', () => {
           }
         }
         if (cells.length >= 9 || !cells.some((c) => near(c).some((n) => cut[n]))) continue;
+        // land that runs off the window may be the mainland: the window cut
+        // it off, not the sea
+        const border = (c: number) => {
+          const i = c % size,
+            j = Math.floor(c / size);
+          return i === 0 || j === 0 || i === size - 1 || j === size - 1;
+        };
+        if (cells.some(border)) continue;
         const highest = Math.max(...cells.map((c) => h[c]!));
         if (highest <= 1) continue;
         totalIslets++;
