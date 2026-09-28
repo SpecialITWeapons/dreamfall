@@ -1062,3 +1062,117 @@ about 296 000 triangles (-21 %), eight to nine draws (the tree pools and their
 shadow casting) and 1.4 to 1.5 ms of a frame; the three low ones are what they
 were. The ring still plants its trees up there, because the flight needs their
 obstacles; only their drawing stops.
+
+## The frames around a crossing
+
+Every time the flight crossed a 96 m ring cell the page drew two slow frames in
+a row: one or two dropped frames at 60 Hz every 2.4 s of a low flight, and
+older than the far trees (it is there at `43dd8a2` as well). Measured with
+`tools/bench/crossing.mjs`: this machine's GPU (ANGLE on D3D11, WebGL2),
+vsync and the frame-rate limit off, seed 42, the autopilot 150 m over the woods
+at (-48 000, -42 000), 20 s and ten crossings a run, every frame's interval
+taken in the page with the scenery's counters beside it. A Chrome trace of the
+same flight (the script's second argument; a build with `--minify false`, so
+the profile names the functions) says where the time went.
+
+**The second frame was the shade sheet.** `GroundShade` painted the ground's
+ambient occlusion on a 2D canvas, one radial gradient per tree -- some three
+thousand. Chromium accelerates a canvas: the gradients are recorded on the main
+thread and rasterised in the GPU process when the texture is uploaded, and there
+one task of `RasterDecoderImpl::DoRasterCHROMIUM` (deserialising, 6 to 15 ms)
+and `DoEndRasterCHROMIUM` (the flush, 9 to 21 ms) took 15 to 35 ms. The next
+frame's first `bufferSubData` waited all of it out in
+`CommandBufferProxyImpl::WaitForToken`. The sheet is now painted on the CPU
+(`ShadeSheet.ts`) into a byte a texel and uploaded as one 512 x 512 R8 texture:
+the same gradient stop for stop, laid over what is there as `source-over` laid
+it, including the canvas's habit of giving a spot under a texel across only the
+share of the texel its square covers. Against the canvas in Chromium over three
+thousand trees of this world's size the total shade differs by 1.6 %, and no
+texel by more than 11 of 255 (the canvas rounds to a byte at every gradient).
+Painting it is a quarter of a millisecond warm, two to four in flight.
+
+**The first frame was everything a rebuild did, at once.** From the profile,
+the crossing frame (21.7 to 29.9 ms against 7 ms for an ordinary one):
+
+| work                                    | ms in the crossing frame |
+| --------------------------------------- | -----------------------: |
+| the ring's rebuild (`Ring.ts`)          |                 6.2-13.0 |
+| recording the canvas (`shade.update`)   |                  3.2-5.1 |
+| `farTrees.update`                       |                  2.1-4.7 |
+| the far sowing's 2 ms and `cards.write` |                  2.3-3.2 |
+| the grass window, when it moved too     |                    0-4.6 |
+| rendering                               |                  4.0-4.7 |
+
+Two changes spread it. A crossing's own frame now holds the ring and nothing it
+can put off (`owed` in `Scenery.ts`): the shade sheet and the grass go in the
+next frame, the far cells in the one after and the cards once the cells that
+left the ring are sown, and no card is written while the far cells still stand
+where the last ring left them, so the cards stay one whole picture throughout. An origin jump and `settle` still pay everything
+in their own frame, because a matrix or a card written before the jump is in a
+frame that has gone. And `farTrees.update` no longer rebuilds a set of twenty
+thousand wanted cells at every crossing: a cell is wanted by where it lies, the
+line of cells still waiting is carried over, and only the rim that came into
+reach is looked up in the map of sown cells.
+
+Before is `f84e0fe`, after is this change, the script run alternately on the
+two builds (medians of ten crossings a run, ms). In runs 6 and 7 the grass in a
+ring's frame still says whether it is shown and only puts its rebuild off; in 1
+to 5 it was not asked at all in that frame, which a browser test caught as a
+window left showing for one frame after a climb out of sight. Run 8 is the
+final code, alone: the cards wait for the far queue to sow the cells that just
+left the ring (below), so their rewrite moves out of the +2 frame.
+
+| run | build  | ordinary | crossing | +1 frame | +2 frame | +3 frame |
+| --- | ------ | -------: | -------: | -------: | -------: | -------: |
+| 1   | before |      6.7 |     20.4 |     21.5 |      7.3 |      6.7 |
+| 1   | after  |      6.4 |      9.1 |      7.6 |      8.0 |      6.2 |
+| 2   | before |      6.4 |     18.2 |     18.3 |      6.7 |      6.4 |
+| 2   | after  |      7.9 |     18.6 |     11.4 |      9.7 |      9.0 |
+| 3   | before |      6.7 |     24.3 |     19.2 |      6.8 |      6.7 |
+| 3   | after  |      7.4 |     11.4 |      9.7 |      9.3 |      8.9 |
+| 4   | after  |      6.5 |      9.3 |      8.0 |      8.3 |      6.7 |
+| 4   | before |      7.4 |     32.7 |     31.1 |      8.9 |      9.0 |
+| 5   | after  |      6.4 |      9.1 |      7.3 |      8.2 |      6.2 |
+| 5   | before |      6.4 |     18.1 |     18.9 |      6.7 |      6.4 |
+| 6   | before |      6.9 |     22.3 |     26.2 |      6.8 |      6.8 |
+| 6   | after  |      6.5 |      9.9 |      8.0 |      8.9 |      6.5 |
+| 7   | before |      6.3 |     17.8 |     17.7 |      6.7 |      6.3 |
+| 7   | after  |      6.2 |      9.1 |      7.5 |      8.9 |      6.6 |
+| 8   | final  |      6.4 |      8.8 |      7.3 |      7.4 |      6.6 |
+
+Across the seven runs the crossing frame went from a median of 20.4 ms to 9.3
+and the frame after it from 19.2 to 8.0; the frame after that, which now pays
+the far cells and the cards, is 8.9 where it was 6.8. In the runs where the
+machine was quiet (an ordinary frame at 6.2 to 6.7 ms) the four frames of a
+crossing are 9 to 11 ms at most, with now and then one pair near 20 when the
+ring itself takes 11 ms, where before every crossing was two frames of 16 to 41.
+
+A trace of the final code (the same flight, ten crossings) puts the work where
+it was meant to go:
+
+| frame    | what it pays                                            | ms                        |
+| -------- | ------------------------------------------------------- | ------------------------- |
+| crossing | the ring's rebuild                                      | 4.0-7.8                   |
+| +1       | the shade sheet; the grass window when it moved too     | 1.7-2.6; 0-4.6            |
+| +2       | `farTrees.update`; the far sowing's 2 ms; `cards.write` | 0.5-1.9; 0.5-2.4; 1.1-2.5 |
+
+with one collection of garbage in forty frames (0.5 ms), and no wait on the GPU
+longer than an ordinary frame has.
+
+That trace also showed a gap older than this change: the cards were rewritten in
+the frame the far cells moved, while the 50 to 180 cells that had just left the
+ring were still in the far queue, so for a frame the land at 2.6 km had neither
+its full trees nor their cards. The cards now wait for those cells -- until the
+queue is empty, one or two frames, or 250 ms at most -- and stand as the last
+whole picture until then. An origin jump still writes them at once.
+
+What is left of a crossing is the ring itself: 4 to 6 ms on a quiet run, and up
+to 13 on a noisy one on either build (runs 2 and 3 after, 3 and 4 before -- the
+ordinary frame slows with it, so it is the machine), which is when a crossing
+still reaches 20 ms. The ring is rebuilt whole by design (every pool filled from
+zero, obstacles included); making it incremental is the next step if that ever
+matters, and nothing here stands in its way.
+
+An experiment that made the pools and the cards upload only the used range of
+their instance buffers (`addUpdateRange`) changed nothing, which fits: the
+uploads were never the wait, the canvas was.

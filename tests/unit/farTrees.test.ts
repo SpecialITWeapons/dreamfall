@@ -96,6 +96,23 @@ describe('FarTrees', () => {
     expect(rowsOf(travelled)).toEqual(rowsOf(fresh));
   });
 
+  it('loses no cell it was still owed when the flight moves on before the queue is done', () => {
+    // A crossing asks only about the rims, so what was waiting has to be carried.
+    let t = 0;
+    const travelled = far({ inner: 500, radius: 1200, now: () => ++t });
+    travelled.update(AT.x, AT.z);
+    for (let step = 1; step <= 8; step++) {
+      travelled.work(15);
+      travelled.update(AT.x + step * TREE_CELL, AT.z - step * 0.6 * TREE_CELL);
+    }
+    travelled.work(Infinity);
+    const fresh = far({ inner: 500, radius: 1200 });
+    fresh.update(AT.x + 8 * TREE_CELL, AT.z - 8 * 0.6 * TREE_CELL);
+    fresh.work(Infinity);
+    expect(travelled.cells).toBe(fresh.cells);
+    expect(rowsOf(travelled)).toEqual(rowsOf(fresh));
+  });
+
   it('sows the nearest cells first and stops on its budget before a cell', () => {
     let t = 0;
     const f = far({ inner: 600, radius: 1500, now: () => ++t });

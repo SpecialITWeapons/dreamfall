@@ -39,7 +39,7 @@ page works under a Pages subdirectory.
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
   `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
   `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
-  `scenery/TreeLimit.ts`,
+  `scenery/TreeLimit.ts`, `scenery/ShadeSheet.ts`,
   `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
@@ -396,6 +396,16 @@ page works under a Pages subdirectory.
   when `Origin` jumps**: the instances the pools wrote are relative to an origin
   that no longer exists. Positions are decided in the world, matrices are written
   in the local frame, and that is the only conversion.
+- **A crossing's own frame holds the ring and nothing it can put off**
+  (`owed` in `Scenery.ts`): the shade sheet and the grass go in the next frame,
+  the far cells in the one after, and the cards once the cells that left the
+  ring are sown. No card is written while the far cells still stand where the
+  last ring left them, or a band of the far land is missing or doubled. An
+  origin jump and `settle` pay it all at once.
+  The shade sheet is painted on the CPU (`ShadeSheet.ts`), never on a 2D canvas:
+  Chromium rasterises a canvas in the GPU process when it is uploaded, and three
+  thousand gradients were 15 to 35 ms that the next frame waited out in its first
+  `bufferSubData`. `tools/bench/crossing.mjs` measures the frames around a crossing.
 - `populate` runs once per biome with more than 0.05 of a cell, so the density
   is scaled by that share and the cap of three trees per cell belongs to the kit,
   not to the hook. The biome says how much grows; the prop's own `place` says

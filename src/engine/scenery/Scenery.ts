@@ -266,7 +266,12 @@ export function createScenery(deps: {
   const CARD_LAG = 250;
   let cardsDirty = true,
     cardsVersion = -1,
-    cardsWritten = -Infinity;
+    cardsWritten = -Infinity,
+    // A ring's trees waiting for their cards, and since when: they are written
+    // once the far cells that just left the ring are sown too, or the band
+    // between the two stands bare for a frame.
+    cardsOwed = false,
+    owedSince = 0;
 
   // How high over the land the trees become cards, and what that makes of the band now.
   const limitForm: TreeLimitForm = { ...TREE_LIMIT };
@@ -285,23 +290,61 @@ export function createScenery(deps: {
     seenRoutes = 0;
   let sitesMs = 0;
   const nearby: Site[] = [];
-  /** The ring rebuilt at (x, z): the far cells are the ones past its reach from where it stood. */
-  const rebuilt = (x: number, z: number) => {
-    rebuilds++;
-    shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
+  /**
+   * What a rebuild still owes, paid a frame at a time after it: the shade
+   * sheet (and the grass, which reads the claims the ring has just filled),
+   * then the far cells, and the cards once the cells that left the ring are
+   * sown. A crossing used to pay all of it in its own frame, on top of the ring
+   * (docs/perf-notes.md, "The frames around a crossing"). Nothing is wrong
+   * while it waits: the sheet carries its own anchor, and the cards are the
+   * last whole picture -- the ring's trees and the far ones of one rebuild --
+   * until they are written from both again.
+   */
+  const OWED_NONE = 0,
+    OWED_SHADE = 1,
+    OWED_FAR = 2;
+  let owed = OWED_NONE,
+    owedX = 0,
+    owedZ = 0;
+  const payShade = () => shade.update(shadeRecords, ring.anchorX, ring.anchorZ);
+  /**
+   * The ring rebuilt at (x, z): the far cells are the ones past its reach from
+   * where it stood. The cards follow at once only when they must -- an origin
+   * jump leaves the old ones in a frame that has gone.
+   */
+  const payFar = (x: number, z: number, atOnce: boolean) => {
     // Together the two hold every cell once.
     farTrees.update(x, z);
-    cardsDirty = true;
+    if (atOnce) cardsDirty = true;
+    else {
+      cardsOwed = true;
+      owedSince = performance.now();
+    }
+  };
+  /** A rebuild settled in its own frame: an origin jump, or a settle, which cannot wait. */
+  const rebuilt = (x: number, z: number) => {
+    rebuilds++;
+    owed = OWED_NONE;
+    payShade();
+    payFar(x, z, true);
+  };
+  /** Whatever an earlier rebuild still owes, paid now. */
+  const payOwed = () => {
+    if (owed === OWED_SHADE) payShade();
+    if (owed !== OWED_NONE) payFar(owedX, owedZ, true);
+    owed = OWED_NONE;
   };
   /** The far sowing's share of a frame, and the cards written when they have fallen behind it. */
   const sowFar = (budget: number) => {
     farTrees.work(budget);
     const now = performance.now();
-    if (farTrees.version !== cardsVersion && (farTrees.queued === 0 || now - cardsWritten >= CARD_LAG))
+    const waited = now - (cardsOwed ? owedSince : cardsWritten);
+    if ((cardsOwed || farTrees.version !== cardsVersion) && (farTrees.queued === 0 || waited >= CARD_LAG))
       cardsDirty = true;
     if (cardsDirty) {
       cards.write(mirror, farTrees, origin);
       cardsDirty = false;
+      cardsOwed = false;
       cardsVersion = farTrees.version;
       cardsWritten = now;
     }
@@ -323,15 +366,37 @@ export function createScenery(deps: {
       roads.update(x, z);
       const routed = roads.version !== seenRoutes;
       seenRoutes = roads.version;
-      if (ring.update(x, z, moved || sites.built > planned || routed)) rebuilt(x, z);
-      grass.update(x, z, cameraY, origin, moved);
-      sowFar(FAR_TREES_BUDGET_MS);
+      // A rebuild's own frame holds the ring and nothing else it can put off.
+      // An origin jump puts off nothing: every matrix and card is written
+      // relative to an origin that has just gone.
+      let ringFrame = false;
+      if (ring.update(x, z, moved || sites.built > planned || routed)) {
+        if (moved) rebuilt(x, z);
+        else {
+          rebuilds++;
+          owed = OWED_SHADE;
+          owedX = x;
+          owedZ = z;
+          ringFrame = true;
+        }
+      } else if (owed === OWED_SHADE) {
+        payShade();
+        owed = OWED_FAR;
+      } else if (owed === OWED_FAR) {
+        owed = OWED_NONE;
+        payFar(owedX, owedZ, false);
+      }
+      grass.update(x, z, cameraY, origin, moved, ringFrame);
+      // Nor are cards written while the far cells stand where the last ring
+      // left them: this ring's trees and those cells would miss or double a band.
+      if (owed === OWED_NONE) sowFar(FAR_TREES_BUDGET_MS);
       hand(x, z, cameraY);
     },
     settle(x, z) {
       // The ring where it would be anyway -- built now if it never was -- and
       // then every far cell at once. The plans and the grass are the frame's.
       if (ring.update(x, z, false)) rebuilt(x, z);
+      else payOwed();
       sowFar(Infinity);
     },
     siteNear(x, z) {

@@ -456,6 +456,36 @@ describe('createGrass', () => {
     expect(grass.count).toBe(written);
     grass.dispose();
   });
+
+  it('puts a rebuild off when asked to wait, but never whether it is shown, nor an origin jump', () => {
+    let reads = 0;
+    const grass = grassOver(
+      0.2,
+      flat(100, () => reads++),
+    );
+    const origin = createOrigin();
+    const asked = () => {
+      const was = reads;
+      reads = 0;
+      return was;
+    };
+    grass.update(0, 0, 120, origin, false);
+    asked();
+    // a new cell in a ring rebuild's frame: nothing written yet
+    grass.update(STEP * 3, 0, 120, origin, false, true);
+    expect(asked()).toBe(1);
+    // and in the next frame it is
+    grass.update(STEP * 3, 0, 120, origin, false);
+    expect(asked()).toBeGreaterThan(1000);
+    // climbing out of sight is seen at once, waiting or not
+    grass.update(STEP * 3, 0, 9000, origin, false, true);
+    expect(grass.mesh.visible).toBe(false);
+    // an origin jump cannot wait: every matrix is in a frame that has gone
+    grass.update(STEP * 3, 0, 120, origin, true, true);
+    expect(grass.mesh.visible).toBe(true);
+    expect(asked()).toBeGreaterThan(1000);
+    grass.dispose();
+  });
 });
 
 describe('tuftTint', () => {
