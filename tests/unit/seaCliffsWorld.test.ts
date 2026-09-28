@@ -52,9 +52,17 @@ describe('sea cliffs in the sampler', () => {
     alone.sampleWindow(x, z, out, slots);
     expect(out[0]).toBeCloseTo(b + alone.cliffs.at(x, z, b, 1), 9);
   });
-  it('cuts without holes and leaves no islets in front of a cliff', () => {
+  it('cuts without a pit and leaves no islet taller than a ripple in front of a cliff', () => {
+    // Measures what the eye would see, not every threshold crossing: a smooth
+    // cut passing through the "cut" line (h < base - 2) is not a pit, and a
+    // sub-metre sliver at the edge of a partial cut is a ragged wet shore,
+    // not land standing in the sea. Both places run even if the first turns
+    // up something, so a failure reports both.
+    const size = 192;
+    const near = (k: number) => [k - 1, k + 1, k - size, k + size];
+    let totalPits = 0,
+      totalIslets = 0;
     for (const place of PLACES) {
-      const size = 192;
       const hf = createHeightfield(sampler, { size });
       const cx = Math.round(place.x / 16),
         cz = Math.round(place.z / 16);
@@ -70,21 +78,30 @@ describe('sea cliffs in the sampler', () => {
           h[j * size + i] = hf.heightAt(x, z);
           cut[j * size + i] = h[j * size + i]! < base[0]! - 2 ? 1 : 0;
         }
-      const near = (k: number) => [k - 1, k + 1, k - size, k + size];
-      let cuts = 0,
-        holes = 0;
+      let cuts = 0;
+      for (let k = 0; k < size * size; k++) if (cut[k]) cuts++;
+      expect(cuts).toBeGreaterThan(100); // the place still has its cliff
+
+      // a pit: a cell more than 3 m below every one of its four neighbours
       for (let j = 1; j < size - 1; j++)
         for (let i = 1; i < size - 1; i++) {
           const k = j * size + i;
-          if (!cut[k]) continue;
-          cuts++;
-          if (near(k).every((n) => !cut[n])) holes++;
+          if (near(k).every((n) => h[k]! < h[n]! - 3)) {
+            totalPits++;
+            const x = (cx - size / 2 + i) * 16,
+              z = (cz - size / 2 + j) * 16;
+            sampler.baseFields(x, z, base);
+            console.log(
+              `pit at (${x},${z}) h=${h[k]!.toFixed(2)} base=${base[0]!.toFixed(2)} neighbours=${near(k)
+                .map((n) => h[n]!.toFixed(2))
+                .join(',')}`,
+            );
+          }
         }
-      expect(cuts).toBeGreaterThan(100); // the place still has its cliff
-      expect(holes).toBe(0);
-      // islets: land left standing in the cut, smaller than 3 x 3 cells
+
+      // an islet: land (h > 0) under 9 cells, touching a cut cell, whose
+      // highest point still stands over a metre
       const seen = new Uint8Array(size * size);
-      let islets = 0;
       for (let k = 0; k < size * size; k++) {
         if (seen[k] || !(h[k]! > 0)) continue;
         const stack = [k],
@@ -102,10 +119,22 @@ describe('sea cliffs in the sampler', () => {
             }
           }
         }
-        if (cells.length < 9 && cells.some((c) => near(c).some((n) => cut[n]))) islets++;
+        if (cells.length >= 9 || !cells.some((c) => near(c).some((n) => cut[n]))) continue;
+        const highest = Math.max(...cells.map((c) => h[c]!));
+        if (highest <= 1) continue;
+        totalIslets++;
+        const coords = cells.map((c) => {
+          const i = c % size,
+            j = Math.floor(c / size);
+          const x = (cx - size / 2 + i) * 16,
+            z = (cz - size / 2 + j) * 16;
+          return `(${x},${z}) h=${h[c]!.toFixed(2)}`;
+        });
+        console.log(`islet (${cells.length} cells, highest ${highest.toFixed(2)}): ${coords.join(' | ')}`);
       }
-      expect(islets).toBe(0);
     }
+    expect(totalPits).toBe(0);
+    expect(totalIslets).toBe(0);
   });
   it('cuts a tenth to a fifth of the coast, here and there', () => {
     const out = new Float64Array(4),

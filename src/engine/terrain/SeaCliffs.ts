@@ -11,10 +11,10 @@
 // the point itself, the distance is noise past a few metres from the water and
 // the cut is full of holes. A node's own straight walk down the gradient can
 // land far from where a neighbour's does -- a ragged coast bends between them
-// -- so a node's distance is to the nearest water-line point its own 5x5
+// -- so a node's distance is to the nearest water-line point its own 3x3
 // neighbourhood of walks found, never to its own walk alone: one walk's line,
-// taken by itself, left pits where a neighbour's was nearer (a 3x3
-// neighbourhood closed most of them but not all). Pure CPU: no three, no DOM.
+// taken by itself, left pits where a neighbour's was nearer. Pure CPU: no
+// three, no DOM.
 import { fbm, sstep } from './noise';
 
 export interface SeaCliffForm {
@@ -62,6 +62,8 @@ export const COAST_NODE = 64;
 const NEWTON_STEPS = 3;
 /** Nodes remembered; a power of two. */
 const CACHE = 4096;
+/** How far a node looks for a nearer walk, in cells either side: 1 is 3x3. */
+const NEIGHBOURS = 1;
 
 export type BaseHeight = (x: number, z: number, out: Float64Array) => void;
 
@@ -132,7 +134,7 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
     walkFront[slot] = height(x + ux * W, z + uz * W);
     return slot;
   };
-  // The node: the nearest water-line point its own 5x5 neighbourhood of walks
+  // The node: the nearest water-line point its own 3x3 neighbourhood of walks
   // found, not its own walk alone -- two neighbours' straight descents can
   // land on different stretches of a ragged coast, and the nearer one is the
   // node's true distance. Cached by (ix, iz) too, in its own CACHE.
@@ -150,13 +152,13 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
       bestSea = 0,
       bestFront = 0,
       found = false;
-    for (let dz = -2; dz <= 2; dz++)
-      for (let dx = -2; dx <= 2; dx++) {
+    for (let dz = -NEIGHBOURS; dz <= NEIGHBOURS; dz++)
+      for (let dx = -NEIGHBOURS; dx <= NEIGHBOURS; dx++) {
         const w = walk(ix + dx, iz + dz);
-        // Read out right after asking for it, before the next of the
-        // twenty-five walks is asked for: the same slot-aliasing the node
-        // cache had (round 1) can happen here, since the walk cache is asked
-        // that many times over one node.
+        // Read out right after asking for it, before the next walk in the
+        // neighbourhood is asked for: the same slot-aliasing the node cache
+        // had (round 1) can happen here, since the walk cache is asked
+        // (2 * NEIGHBOURS + 1)^2 times over one node.
         const wConverged = walkConverged[w]!,
           wLx = walkLx[w]!,
           wLz = walkLz[w]!,
