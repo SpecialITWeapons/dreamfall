@@ -1225,3 +1225,54 @@ give up, the coast share stays at 13% (13.3 against 13.0), no test of the
 cut's shape moved, and the ring's golden digests moved with it. A cache twice
 the size (8 192) spared 1% of the walks and was left out; two Newton steps
 instead of three failed the pit-and-islet test.
+
+### The wall's branch
+
+What a frame costs with the wall's look in the ground shader (the wide normal,
+the wall's colour and the relief bent into the light), seed 42, `npm run bench`
+at its defaults (WebGL2 on SwiftShader, two rounds of 24 frames, the median of
+the fastest round), with the `cliff` vantage: 450 m out to sea from the cliff at
+(3584, -2992), at 45 m. Two pairs, each run straight after the other; the same
+build measured twice moved by up to 25% between the pairs.
+
+| Vantage | Before, 1 | After, 1 | Before, 2 | After, 2 |
+| ------- | --------- | -------- | --------- | -------- |
+| dawn    | 1 544 ms  | 3 280 ms | 1 712 ms  | 2 888 ms |
+| noon    | 1 645 ms  | 3 364 ms | 2 052 ms  | 2 844 ms |
+| far     | 18 ms     | 17 ms    | 17 ms     | 18 ms    |
+| deck    | 1 439 ms  | 3 015 ms | 1 632 ms  | 2 459 ms |
+| night   | 2 004 ms  | 3 224 ms | 2 381 ms  | 3 429 ms |
+| cliff   | 1 566 ms  | 2 504 ms | 1 855 ms  | 2 770 ms |
+
+(`far` is the bimodal artefact described above: its window reads 1.69, 0.59,
+1.34 and 0.79 frames a second, so it went the way of the rest.)
+
+**On SwiftShader the branch is not free where there is no wall.** Dawn, noon
+and the deck have no cliff on screen and got 40 to 110% dearer, as much as the
+cliff did. The branch is gated (`If(wallAt > 0.01)`) and a fragment off a wall
+never takes it. A software rasteriser runs a shader over lanes of fragments
+with masks, and these numbers look like one that pays for the body of a branch
+no lane takes -- seventeen noise calls a fragment (five for the colour, four in
+each of three reliefs), over a frame that is almost all fragment shading. That
+is a reading of the numbers, not something taken apart.
+
+On this machine's GPU (ANGLE on D3D11, still WebGL2 -- the page picks WebGL2
+under Playwright's Chromium here), the same bench with the arguments of
+`playwright.gpu.config.ts` plus `--disable-gpu-vsync --disable-frame-rate-limit`
+so the frame is not held to the display, three rounds of 120 frames, the two
+builds interleaved:
+
+| Vantage | Before, A | After, A | After, B | Before, B |
+| ------- | --------- | -------- | -------- | --------- |
+| dawn    | 5.8 ms    | 5.7 ms   | 5.7 ms   | 5.7 ms    |
+| noon    | 5.8 ms    | 5.5 ms   | 5.7 ms   | 5.6 ms    |
+| far     | 4.1 ms    | 4.1 ms   | 4.1 ms   | 4.0 ms    |
+| deck    | 4.6 ms    | 4.6 ms   | 4.7 ms   | 4.5 ms    |
+| night   | 6.4 ms    | 6.4 ms   | 6.3 ms   | 6.3 ms    |
+| cliff   | 6.3 ms    | 6.2 ms   | 6.3 ms   | 6.1 ms    |
+
+There the branch costs nothing measurable anywhere, the cliff included: every
+difference is inside what one build does twice. The frame here is the page's
+own interval, not GPU time (WebGL2 has none worth reading), so a fragment cost
+hidden under the CPU's share of the frame would not show; what shows is that
+the frame did not get longer.

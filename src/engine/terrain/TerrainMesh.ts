@@ -25,6 +25,8 @@ import {
   Fn,
   If,
   abs,
+  cameraPosition,
+  cross,
   float,
   fract,
   ivec2,
@@ -233,6 +235,30 @@ export function createTerrain(deps: {
     hv = mix(ownHeight, surfaceHeight(deps.coarse, FAR_CELL)(vec2(wx, wz)), rim);
     surfaceNormal = normalize(mix(ownNormal, cellNormal(deps.coarse, FAR_CELL, fx, fz), rim));
   }
+  // The light on a cliff. A normal from one cell either side flips between
+  // neighbouring vertices of a face two cells wide -- one at its top, one at
+  // its foot -- and the light draws the triangles. Two cells either side is
+  // one normal for the whole face. Only the light takes it: the slope the
+  // biomes and the snow read is the cell's own, as it was.
+  const wideNormal = normalize(
+    vec3(
+      loadCell(ix.sub(2), iz).x.sub(loadCell(ix.add(2), iz).x),
+      cell * 4,
+      loadCell(ix, iz.sub(2)).x.sub(loadCell(ix, iz.add(2)).x),
+    ),
+  );
+  let lightNormal: Node<'vec3'> = normalize(
+    mix(
+      ownNormal,
+      wideNormal,
+      smoothstep(0.3, 0.55, float(1).sub(ownNormal.y)).mul(float(1).sub(smoothstep(180, 240, ownHeight))),
+    ),
+  );
+  if (deps.coarse) {
+    const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
+    lightNormal = normalize(mix(lightNormal, surfaceNormal, rim));
+  }
+  const lightV = varying(lightNormal).normalize();
   const normalV = varying(surfaceNormal).normalize();
   const slope = float(1).sub(normalV.y);
   const worldXZ = positionWorld.xz.add(u.uWorldOrigin);
@@ -268,6 +294,33 @@ export function createTerrain(deps: {
   // its share of a fragment is handed to the country beside it below.
   const hooks = biomes.map((biome) => (biome.ground ? resolveGround(biome.ground) : null));
   const inherits = biomes.map((biome) => biome.inherit !== undefined);
+  // How much of a fragment is a cliff's wall: steep, and low enough not to be
+  // a mountain's face, which keeps its own look (the snow, the alpine rock).
+  const wallAt = smoothstep(0.42, 0.7, float(1).sub(lightV.y).max(slope)).mul(
+    float(1).sub(smoothstep(180, 240, positionWorld.y)),
+  );
+  // The rock's relief on a wall, in metres: strata, ledges every 4.5 m, cracks
+  // cut in, and a little grain. It only bends the light (the bump below).
+  const relief = (p: Node<'vec3'>) =>
+    mx_noise_float(vec3(p.x.mul(0.01), p.y.mul(0.16), p.z.mul(0.01)))
+      .mul(0.9)
+      .add(
+        smoothstep(
+          0.55,
+          0.8,
+          fract(
+            p.y.div(4.5).add(mx_noise_float(vec3(p.x.mul(0.006), p.y.mul(0.02), p.z.mul(0.006))).mul(1.5)),
+          ),
+        ).mul(0.5),
+      )
+      .sub(
+        float(1)
+          .sub(
+            smoothstep(0.02, 0.09, abs(mx_noise_float(vec3(p.x.mul(0.07), p.y.mul(0.0015), p.z.mul(0.07))))),
+          )
+          .mul(0.8),
+      )
+      .add(mx_noise_float(p.mul(0.15)).mul(0.35));
   const colorNode = Fn(() => {
     const ground = vec3(0).toVar();
     // How much of this fragment belongs to biomes that want the world's snow.
@@ -327,6 +380,40 @@ export function createTerrain(deps: {
       snowShare.divAssign(total.max(0.0001));
     }
     ground.assign(mix(palette.seaFloor, ground, smoothstep(-10.0, 0.5, h)));
+    // A cliff's wall is the biome's rock in more than one colour. Noise over
+    // world x and z smears into streaks on a wall, so everything here is 3D:
+    // strata that change fast with height and slowly along the wall, ledges
+    // every 4.5 m, thin cracks and water streaks running down it, lichen, and
+    // a wet foot. The cracks and streaks are read along the wall (`run`), not
+    // over x and z: a face that leans moves in x and z as it rises, and a crack
+    // read there wanders like handwriting.
+    If(wallAt.greaterThan(0.01), () => {
+      const x = worldXZ.x,
+        z = worldXZ.y;
+      const run = worldXZ.dot(normalize(vec2(lightV.z.negate(), lightV.x).add(vec2(0.0001, 0))));
+      const bands = mx_noise_float(vec3(x.mul(0.01), h.mul(0.16), z.mul(0.01)));
+      const ledges = smoothstep(
+        0.55,
+        0.8,
+        fract(h.div(4.5).add(mx_noise_float(vec3(x.mul(0.006), h.mul(0.02), z.mul(0.006))).mul(1.5))),
+      ).sub(0.5);
+      const crack = float(1).sub(
+        smoothstep(0.02, 0.08, abs(mx_noise_float(vec2(run.mul(0.08), h.mul(0.004))))),
+      );
+      const streak = mx_noise_float(vec2(run.mul(0.22), h.mul(0.01))).max(0);
+      const lichen = smoothstep(0.3, 0.6, mx_noise_float(vec3(x.mul(0.035), h.mul(0.05), z.mul(0.035))));
+      const stone = mix(
+        ground.mul(vec3(0.88, 0.96, 1.06)),
+        ground.mul(vec3(1.12, 1.03, 0.86)),
+        bands.mul(0.5).add(0.5),
+      ).toVar();
+      stone.assign(mix(stone, vec3(0.62, 0.6, 0.46), lichen.mul(0.3)));
+      stone.mulAssign(
+        float(0.88).add(bands.mul(0.2)).add(ledges.mul(0.16)).sub(streak.mul(0.28)).sub(crack.mul(0.4)),
+      );
+      stone.assign(mix(stone, stone.mul(vec3(0.5, 0.56, 0.5)), smoothstep(7, 1.5, h).mul(0.85)));
+      ground.assign(mix(ground, stone, wallAt));
+    });
     // The world's snow, above the same line the tree line is drawn sixty metres
     // over. `snowLineAt` is the library's and lives there because `library/`
     // never imports from `src/`; what crosses over is its two numbers, so there
@@ -364,12 +451,38 @@ export function createTerrain(deps: {
     .add(1);
   // Shore masks use the actual fragment height, never interpolated corner colors.
   // The clouds' shadow is the lit material's: it dims the sun, not the ground's colour.
-  const material = litMaterial(mix(palette.sand, colorNode, smoothstep(1.5, 7.5, h)).mul(brush));
+  // Sand lies on the shore, never up a wall: the steepness takes it off.
+  const material = litMaterial(
+    mix(palette.sand, colorNode, max(smoothstep(1.5, 7.5, h), smoothstep(0.3, 0.5, slope))).mul(brush),
+  );
   // The shade under the trees reads the same worldXZ as the ground hooks, so
   // its sheet stays where the trees are when the origin jumps under the scene.
   if (deps.shade) material.aoNode = deps.shade.aoNode(worldXZ);
   material.positionNode = vec3(positionLocal.x, hv, positionLocal.z);
-  material.normalNode = transformNormalToView(normalV);
+  // The light's normal: the wall's own, bent by the rock's relief. Finite
+  // differences along the wall and up it, in metres, rather than screen
+  // derivatives, which are undefined inside a branch that not every fragment
+  // of a quad takes. Faded out with distance, where it would only shimmer.
+  const bumped = Fn(() => {
+    const n = lightV.toVar();
+    If(wallAt.greaterThan(0.01), () => {
+      const p = vec3(worldXZ.x, h, worldXZ.y);
+      const along = normalize(cross(n, vec3(0, 1, 0)).add(vec3(0.0001, 0, 0)));
+      const up = cross(along, n);
+      const e = 0.5;
+      const h0 = relief(p);
+      const ga = relief(p.add(along.mul(e)))
+        .sub(h0)
+        .div(e);
+      const gu = relief(p.add(up.mul(e)))
+        .sub(h0)
+        .div(e);
+      const fade = wallAt.mul(float(1).sub(smoothstep(300, 1200, positionWorld.distance(cameraPosition))));
+      n.assign(normalize(n.sub(along.mul(ga.mul(fade))).sub(up.mul(gu.mul(fade)))));
+    });
+    return n;
+  })();
+  material.normalNode = transformNormalToView(bumped);
   const mesh = new Mesh(buildGrid(deps.cells ?? TERRAIN_CELLS, cell, deps.hole ?? 0), material);
   mesh.frustumCulled = false;
   mesh.receiveShadow = true;
