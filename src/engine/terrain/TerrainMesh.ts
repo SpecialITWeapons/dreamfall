@@ -239,22 +239,26 @@ export function createTerrain(deps: {
   // neighbouring vertices of a face two cells wide -- one at its top, one at
   // its foot -- and the light draws the triangles. Two cells either side is
   // one normal for the whole face. Only the light takes it: the slope the
-  // biomes and the snow read is the cell's own, as it was.
-  const wideNormal = normalize(
-    vec3(
-      loadCell(ix.sub(2), iz).x.sub(loadCell(ix.add(2), iz).x),
-      cell * 4,
-      loadCell(ix, iz.sub(2)).x.sub(loadCell(ix, iz.add(2)).x),
-    ),
-  );
-  let lightNormal: Node<'vec3'> = normalize(
-    mix(
-      ownNormal,
-      wideNormal,
-      smoothstep(0.3, 0.55, float(1).sub(ownNormal.y)).mul(float(1).sub(smoothstep(180, 240, ownHeight))),
-    ),
-  );
+  // biomes and the snow read is the cell's own, as it was. Only the near grid
+  // -- the one handed a `coarse` loader -- takes it at all (spec 8): a far
+  // cell is 64 m, a face there is already a slope across one cell, and two
+  // cells either side would light it with 256 m of hillside.
+  let lightNormal: Node<'vec3'> = ownNormal;
   if (deps.coarse) {
+    const wideNormal = normalize(
+      vec3(
+        loadCell(ix.sub(2), iz).x.sub(loadCell(ix.add(2), iz).x),
+        cell * 4,
+        loadCell(ix, iz.sub(2)).x.sub(loadCell(ix, iz.add(2)).x),
+      ),
+    );
+    lightNormal = normalize(
+      mix(
+        ownNormal,
+        wideNormal,
+        smoothstep(0.3, 0.55, float(1).sub(ownNormal.y)).mul(float(1).sub(smoothstep(180, 240, ownHeight))),
+      ),
+    );
     const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
     lightNormal = normalize(mix(lightNormal, surfaceNormal, rim));
   }

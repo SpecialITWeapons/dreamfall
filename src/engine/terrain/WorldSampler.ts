@@ -127,10 +127,22 @@ export function createWorldSampler(
     h = h * (0.55 + 0.45 * shelf) + (1 - shelf) * -6;
     return h;
   };
+  // The cliffs walk `ground` alone -- the base height, without the climate
+  // `baseFields` adds -- so they need nothing of the sampler below.
+  const cliffs =
+    opts.seaCliffs === false
+      ? NO_CLIFFS
+      : createSeaCliffs(
+          (x, z, o) => {
+            o[0] = ground(x, z, false);
+          },
+          S3 + 101,
+          opts.seaCliffs ?? SEA_CLIFF,
+        );
   const sampler: WorldSampler = {
     seed: seed >>> 0,
     seeds,
-    cliffs: NO_CLIFFS,
+    cliffs,
     sample(x, z, out) {
       this.baseFields(x, z, scratch);
       out[0] = scratch[0]!;
@@ -257,17 +269,5 @@ export function createWorldSampler(
   };
   // The fields read the sampler's own base fields, so they are built after it.
   const fields = createFields(sampler);
-  // The cliffs read the sampler's own base fields, so they are built after it.
-  const cliffs =
-    opts.seaCliffs === false
-      ? NO_CLIFFS
-      : createSeaCliffs(
-          (x, z, o) => {
-            o[0] = ground(x, z, false);
-          },
-          S3 + 101,
-          opts.seaCliffs ?? SEA_CLIFF,
-        );
-  (sampler as { cliffs: SeaCliffs }).cliffs = cliffs;
   return sampler;
 }

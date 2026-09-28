@@ -500,7 +500,7 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
           .join(' · ');
         costs.textContent =
           `hooks ${fixed(measured.hooks, 2)} µs/texel (budget ${measured.budget}) · ` +
-          `base ${fixed(measured.base, 2)} · all ${fixed(measured.all, 2)} · ${measured.samples} samples\n${worst}`;
+          `no registry ${fixed(measured.base, 2)} · all ${fixed(measured.all, 2)} · ${measured.samples} samples\n${worst}`;
         costs.classList.toggle('bad', measured.hooks > measured.budget);
       });
     },
