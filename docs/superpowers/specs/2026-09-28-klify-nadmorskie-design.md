@@ -1,7 +1,7 @@
 # Klify nadmorskie
 
 Data: 2026-09-28. Status: kierunek wybrany po dwóch probe; spec do przeglądu
-właściciela. Zaktualizowany po implementacji: §5.2, §5.3, §5.5, §5.6, §8, §9,
+właściciela. Zaktualizowany po implementacji: §5.2, §5.3, §5.5–§5.7, §7, §8, §9,
 §10 i §13 opisują to, co zbudowano, a nie to, co planowano. Dokłada do
 terenu z sekcji 6 projektu (`2026-09-14-dreamfall-design.md`) jedną warstwę
 świata: miejscami morze podcina ląd i zostawia po sobie ścianę.
@@ -304,7 +304,10 @@ reszta terenu na GPU nie płaci za nic (SwiftShader płaci, §9).
   do niej tam, gdzie teren jest stromy (`smoothstep(0.3, 0.55)` nachylenia,
   poniżej 180–240 m). Ta normalna idzie tylko do światła; nachylenie dla
   warstw biomów i śniegu liczy się jak dziś. Na krawędzi bliskiej siatki
-  przechodzi w normalną dalekiej, jak dziś.
+  przechodzi w normalną dalekiej, jak dziś. Daleka siatka (ta bez `coarse`)
+  jej nie bierze i świeci własną normalną komórki: komórka ma tam 64 m, więc
+  ±2 komórki to 256 m stoku w świetle jednej ściany; w pierwszej wersji brała
+  ją też, wbrew temu akapitowi.
 - **Rzeźba skały.** Pole wysokości skały w metrach, szum 3D po `(x, h, z)`:
   ławice, warstwy, spękania (wklęsłe) i drobny szum. Normalna ściany
   zaburzona różnicami skończonymi tego pola wzdłuż ściany i w górę jej, krok
@@ -337,7 +340,10 @@ reszta terenu na GPU nie płaci za nic (SwiftShader płaci, §9).
   kosztują dwa szumy więcej. Spękania to cienkie ciemne linie prawie
   pionowe, zacieki to szersze pionowe smugi.
 - **Porost:** plamy jasnej żółtawej szarości, do 30%.
-- **Mokra stopa:** ściemnienie do połowy w dolnych 1,5–7 m.
+- **Mokra stopa:** ściemnienie do połowy w dolnych 1,5–7 m. Jest w shaderze,
+  ale na zdjęciach jej nie widać: z każdej odległości z `look.mjs` to pas 2–4
+  px u stopy ściany, który przykrywa reguła piasku. Zostaje bez zmian; kto
+  będzie chciał ją zobaczyć, musi ją wyciągnąć ponad piasek, nie ściemnić.
 
 Kolor skały zostaje kolorem biomu (`rock` z warstwy `slope`); warstwa świata
 go tylko moduluje, więc klif nad dżunglą i nad wrzosowiskiem są różne. Liczby
@@ -372,6 +378,17 @@ która strona trafiła za spadek (+4..+12% dla tego samego kodu); wiersze na
 przemian idą pod jednym zegarem, a ten sam przeplot bez klifów po obu
 stronach czyta się w granicach 1,5% od zera. Zapas do budżetu to więc ok.
 1,5–2,5 punktu.
+
+Budżet i te liczby dotyczą **bliskiego okna**. Dalekie okno (264×264
+tekseli co 64 m) płaci za podcięcie **+40..50%** (127–132 ms bez, 180–195 ms
+z klifami; ten sam test, przypadek `far`, tylko raportowany): teksel dalekiego
+okna stoi dokładnie na węźle siatki 64 m, więc żadne dwa nie dzielą komórki i
+pamiętane narożniki nigdy nie trafiają, a teksel to 64 m wybrzeża, więc
+więcej ich leży w pasie. To ok. +52..65 ms na starcie (dalekie okno
+wypełniane w całości za zasłoną) i ok. 0,2 ms na każde przekroczenie dalekiej
+komórki (jeden wiersz albo kolumna). Szybka ścieżka dla teksela na węźle
+została odrzucona: druga droga czytania siatki za 0,2 ms na przekroczenie.
+Tabela w `docs/perf-notes.md`.
 
 Po rundach dołków i wysepek (3×3 marszów na węzeł, każdy z własnym odczytem
 wybrzeża) warstwa kosztowała +33..36%. Z dźwigni z listy weszła pierwsza
@@ -424,7 +441,14 @@ oszczędza, skoro płaci on za gałąź, której nie bierze.
   na 400 m” i „żadnej wysepki `h > 0` mniejszej niż 3×3”; oba łapały takie
   przejścia.
   - **bez dołków:** żadna komórka nie leży ponad 3 m niżej niż każda z
-    czterech sąsiednich;
+    czterech sąsiednich. Dotyczy dwóch klifów, na których algorytm był
+    strojony. Na całym wybrzeżu ta sama definicja znajduje dołki w ok.
+    jednym klifie na siedem, osiem: w kwadracie 120 km, okno 192×192 komórek
+    wokół każdego miejsca podciętego o ponad 20 m (co najmniej 3 km od
+    poprzedniego), seed 42: 68 z 555 (12,3%), seed 7: 77 z 541 (14,2%),
+    seed 1234: 75 z 541 (13,9%); np. seed 42 (56864, −51888), seed 7
+    (−11504, −9792), seed 1234 (3888, −9696). Algorytm zostaje bez zmian
+    (§13);
   - **bez wysepek:** żaden spójny kawałek lądu (`h > 0`) mniejszy niż 9
     komórek, stykający się z podciętą komórką i nie dotykający brzegu okna
     (ląd uciekający za okno może być stałym lądem, który okno ucięło), nie
@@ -491,3 +515,10 @@ normalna na piksel, osobny kolor skały klifu w bibliotece, suwaki w panelu.
   maski.
 - Start lotu (0, 0): klif może stanąć 900 m od startu (probe 2). Scena
   otwarcia leci pod pokładem chmur; do obejrzenia, czy klif jej nie psuje.
+- Dołki poza dwoma klifami, na których algorytm był strojony: ok. 12–14%
+  klifów trzech seedów ma co najmniej jeden (§10, lista w
+  `docs/perf-notes.md`). Test ich nie widzi, bo pyta tylko o te dwa miejsca;
+  następna runda przy dołkach powinna zacząć od tej listy.
+- Podcięcie liczone jest z `base`, a dodawane do `h` po hakach. Dziś hak
+  wysokości mają tylko osady (`plateau`), a im klif ustępuje; biom z `offset`
+  albo `terraces` na wybrzeżu przesunąłby dno podcięcia o swoją zmianę.

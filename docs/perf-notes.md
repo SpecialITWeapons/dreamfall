@@ -1226,6 +1226,47 @@ cut's shape moved, and the ring's golden digests moved with it. A cache twice
 the size (8 192) spared 1% of the walks and was left out; two Newton steps
 instead of three failed the pit-and-islet test.
 
+### The far window pays seven times as much, and is left that way
+
+Everything above is the near window. The far one (264 texels a side at 64 m,
+69 696 of them) goes through the same `sampleWindow`, and the same test times
+it the same way (a far case in `seaCliffsCost.test.ts`, reported and never
+held to the budget), two runs after the settlements' share was moved to their
+raw presence:
+
+| Place                | Without      | With         | More          | A row           |
+| -------------------- | ------------ | ------------ | ------------- | --------------- |
+| cliff (3584, -2992)  | 127 / 132 ms | 180 / 188 ms | +41.8 / 42.0% | +0.20 / 0.21 ms |
+| cliff 2 (2720, 2240) | 124 / 130 ms | 184 / 195 ms | +48.3 / 49.9% | +0.23 / 0.25 ms |
+| origin               | 129 / 131 ms | 181 / 185 ms | +40.1 / 41.2% | +0.20 / 0.20 ms |
+
+(The near window in the same two runs: +5.7 to 6.7%.) A far texel stands on a
+node of the cliffs' 64 m lattice, so no two texels share a lattice cell and the
+four corners a row keeps are never asked twice, and a texel is 64 m of coast,
+so more of them are in a band. That is +52 to 65 ms on the start, where the
+far window is filled whole behind the veil, and about 0.2 ms each time the
+flight crosses a far cell and a row or a column is written. A fast path for a
+texel exactly on a node would take most of it back; it was ruled out as not
+worth a second way of reading the lattice for 0.2 ms a crossing.
+
+### Pits away from the photographed cliffs
+
+`seaCliffsWorld.test.ts` holds two cliffs of seed 42 near the origin to no pit
+(a cell 3 m under all four neighbours). Asked of the whole coast, the same
+definition finds pits in about one cliff in seven or eight: over a 120 km
+square, every point on a 256 m grid the cut takes down by more than 20 m, at
+least 3 km from the last one taken, and a window of 192 x 192 cells around it:
+
+| Seed | Cliffs | With a pit | Share |
+| ---- | ------ | ---------- | ----- |
+| 42   | 555    | 68         | 12.3% |
+| 7    | 541    | 77         | 14.2% |
+| 1234 | 541    | 75         | 13.9% |
+
+Among them seed 42 at (56864, -51888), seed 7 at (-11504, -9792) and seed
+1234 at (3888, -9696). The algorithm is left as it is; a test that asks more
+of it should walk this list rather than the two cliffs it was tuned on.
+
 ### The wall's branch
 
 What a frame costs with the wall's look in the ground shader (the wide normal,

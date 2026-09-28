@@ -136,40 +136,25 @@ page works under a Pages subdirectory.
   the sea, and the face stands where the cut ends, as tall as the land is there,
   so a cliff rises where high land meets the sea and a low coast stays a beach.
   It is a world layer added in `sampleWindow` after the hooks, weighed by no
-  biome (a hook's weight ended a cliff at a biome's border like a block cut off)
-  and by one minus a settlement's **raw presence**, so a village on the shore
-  stands in a cove whose sides rise over its feather -- never its slot weight,
-  which stays the settlement's until the last cell and put a wall side-on to
-  the coast there. `sample` and `baseFields` do not see it, so the golden
-  values hold; the route worker searches over it (`scenery/RouteGround.ts`)
-  with a cove kept at both ends over each end's own radius and feather. Where
-  the water line is and whether a cliff stands on it (the sea past it -- a pond is shallow 300 m past its line -- and land tall enough
-  behind it) are asked of **a lattice of nodes every 64 m**, each a pure
-  function of its indices: asked of the point, the distance is noise and the cut
-  is full of holes. Each node walks toward the line off the lattice's own
-  heights, and its distance is to the nearest line any walk of its 3x3 found,
-  its cliff term every such walk's answer weighed by `exp(-d / 64 m)`: its own
-  walk alone left pits where a neighbour's line was nearer, and the nearest
-  walk's answer alone flipped from node to node and left pits and islets. A node
-  with no line within reach says nothing (a NaN distance, left out of the mix):
-  a made-up one mixed with a real one drew a straight step on a lattice line.
-  The caches alias, so a slot is read out before the next is asked for.
-  `seaCliffsWorld.test.ts` counts what the eye sees at two cliffs of seed 42 --
-  no pit (a cell 3 m under all four neighbours), no islet (land under nine cells
-  standing a metre over the sea) -- and a fill costs 4.7 to 6.7 % more, measured
-  with the two sides interleaved a row at a time because this machine drops its
-  clock mid-run (`seaCliffsCost.test.ts` under `MEASURE=1`; the levers are in
-  `docs/perf-notes.md`). The face is 32 m wide and never less: a narrower step
-  saws along the 16 m grid. On the GPU (`TerrainMesh.ts`) a wall takes its light
-  from a normal two cells either side and a bump by finite differences, not
-  screen derivatives, which are undefined in a branch, and not past 1200 m; its
-  cracks and streaks are read on the (x, h) and (z, h) planes, because in 3D a
-  leaning face writes them like handwriting and a coordinate along the wall has
-  the distance from the origin for a lever arm. The branch is free on a GPU and
-  not on SwiftShader, which pays for it at every vantage, wall or none. Flown by
-  hand at a 160 m wall the clearance clamp still pops the figure up for two
-  steps, pinned as `it.fails` in `flightController.test.ts`.
-  `tools/cliffs/look.mjs` photographs one.
+  biome (a hook's weight ended a cliff at a biome's border like a block cut
+  off); `sample` and `baseFields` do not see it, so the golden values hold.
+  Where the line is and whether a cliff stands on it are asked of **a lattice
+  of nodes every 64 m**: each walks toward the line off the lattice's heights,
+  takes the nearest line any walk of its 3x3 found and a cliff term blended from
+  all of them, and says nothing past `REACH`; a point mixes its cell's corners.
+  A node is a pure function of its indices, so a point is too, whatever the
+  order or the caches -- and the caches alias, so a slot is read out before
+  the next is asked for. The face is 32 m and never less: narrower, it saws
+  along the 16 m grid. A settlement gives the cut way by its **raw presence**,
+  never its slot weight, which stays the settlement's to the last cell and put
+  a wall side-on to the coast there; so a village on the shore stands in a cove
+  whose sides rise over its feather, and the route worker keeps the same cove
+  at both ends (`scenery/RouteGround.ts`, each `Site`'s radius and feather).
+  The cut is decided on the base height and added to the hooked one, so a
+  coastal biome's `offset` or `terraces` would move its floor too. A fill of
+  the near window costs 4.7 to 6.7 % more and one of the far window 40 to 50 %
+  (its texels sit on the lattice's nodes; numbers and levers in
+  `docs/perf-notes.md`); `tools/cliffs/look.mjs` photographs one.
 - The simulation works in world coordinates (double precision); the scene is
   in the local frame of `Origin`, which jumps in whole cells. Shaders that
   read the world add `uWorldOrigin`; nothing else may read `positionWorld`
