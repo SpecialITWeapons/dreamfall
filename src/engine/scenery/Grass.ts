@@ -267,9 +267,11 @@ export interface Grass {
   /**
    * Places the window around (x, z) in world metres. Rebuilds when the 32 m
    * cell changed or when forced -- an origin jump -- and does nothing at all
-   * while the flyer is too high to see a blade.
+   * while the flyer is too high to see a blade. `wait` puts a rebuild off to
+   * the next update -- the scenery asks it in a ring rebuild's own frame -- but
+   * never one an origin jump forces, and never whether the window is shown.
    */
-  update(x: number, z: number, cameraY: number, origin: Origin, forced: boolean): void;
+  update(x: number, z: number, cameraY: number, origin: Origin, forced: boolean, wait?: boolean): void;
   /** Tufts standing after the last rebuild, over all the forms. */
   readonly count: number;
   /**
@@ -567,7 +569,7 @@ export function createGrass(deps: GrassDeps): Grass {
     jumped = false;
   return {
     mesh: group,
-    update(x, z, cameraY, origin, forced) {
+    update(x, z, cameraY, origin, forced, wait = false) {
       // An origin jump under a hidden window invalidates its matrices just the
       // same, so it is remembered until there is something to rebuild.
       if (forced) jumped = true;
@@ -576,7 +578,7 @@ export function createGrass(deps: GrassDeps): Grass {
       group.visible = visible;
       // From any normal altitude the whole window costs that one height read:
       // the material has faded the last blade out long before this.
-      if (!visible) return;
+      if (!visible || (wait && !jumped)) return;
       const ix = Math.floor(x / STEP),
         iz = Math.floor(z / STEP);
       if (!jumped && stale.size === 0 && ix === atX && iz === atZ) return;

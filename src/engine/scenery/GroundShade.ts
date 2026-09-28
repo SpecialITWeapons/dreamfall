@@ -1,39 +1,32 @@
 // The shade under the trees: one bounded sheet of ambient occlusion, painted
-// on a canvas out of the tree records the ring has just placed, and read by
-// the ground as its AO map. The sun's shadow map only reaches the near field,
-// so without this the far half of the forest floats a metre above its own
-// ground. Repainted once per ring rebuild, never per frame.
+// out of the tree records the ring has just placed (`ShadeSheet.ts`, on the
+// CPU) and read by the ground as its AO map. The sun's shadow map only reaches
+// the near field, so without this the far half of the forest floats a metre
+// above its own ground. Repainted once per ring rebuild, never per frame.
 // Ported from fly-with-me's updateGroundAO.
-import { CanvasTexture, Vector2 } from 'three';
+import {
+  DataTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  RedFormat,
+  UnsignedByteType,
+  Vector2,
+} from 'three';
 import type { Node } from 'three/webgpu';
 import { Fn, abs, max, mix, smoothstep, texture, uniform } from 'three/tsl';
-
-/** The side of the square of world the sheet covers, m. */
-export const AO_SPAN = 4096;
-/** The sheet itself, texels per side. */
-const AO_SIZE = 512;
-/** How much of a tree's own radius its shade covers. */
-const SHADE_RADIUS = 0.6;
-
-/** What the sheet asks of a record: where it stands and how wide it is, in the world. */
-export interface ShadeRecord {
-  x: number;
-  z: number;
-  radius: number;
-}
+import { AO_SIZE, AO_SPAN, createShadeSheet, type ShadeRecord } from './ShadeSheet';
 
 export function createGroundShade() {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = AO_SIZE;
-  const context = canvas.getContext('2d');
-  // The sheet is the ground's AO map; a terrain without it would light wrong
-  // and say nothing, so this fails loud like the rest of the engine.
-  if (!context) throw new Error('ground shade: the canvas has no 2d context');
-  const map = new CanvasTexture(canvas);
-  // The sheet is painted in world order, so it must upload unflipped: a
-  // flipped upload mirrors every shade in z, and the mirrored shades then
-  // jump two cells whenever the sheet re-centers.
-  map.flipY = false;
+  const sheet = createShadeSheet();
+  // A byte a texel, in world order: row 0 is the sheet's low z, as the canvas's
+  // top row was, and a DataTexture uploads unflipped. A flipped upload mirrors
+  // every shade in z, and the mirrored shades then jump two cells whenever the
+  // sheet re-centers.
+  const map = new DataTexture(sheet.data, AO_SIZE, AO_SIZE, RedFormat, UnsignedByteType);
+  map.magFilter = LinearFilter;
+  map.minFilter = LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.needsUpdate = true;
   /** Where the middle of the sheet stands in the world. */
   const uOrigin = uniform(new Vector2(0, 0));
   return {
@@ -54,24 +47,12 @@ export function createGroundShade() {
     }),
     /**
      * Repaints the whole sheet around (centerX, centerZ) in world metres -- the
-     * centre of the ring's cell -- from the records the ring has just placed.
-     * One radial gradient per tree and one upload; nothing here runs per frame.
+     * centre of the ring's cell -- from the records the ring has just placed,
+     * and uploads it once.
      */
     update(records: readonly ShadeRecord[], centerX: number, centerZ: number) {
       uOrigin.value.set(centerX, centerZ);
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, AO_SIZE, AO_SIZE);
-      for (const record of records) {
-        const px = ((record.x - centerX) / AO_SPAN + 0.5) * AO_SIZE,
-          pz = ((record.z - centerZ) / AO_SPAN + 0.5) * AO_SIZE,
-          r = ((record.radius * SHADE_RADIUS) / AO_SPAN) * AO_SIZE;
-        const gradient = context.createRadialGradient(px, pz, 0, px, pz, r);
-        gradient.addColorStop(0, '#0006');
-        gradient.addColorStop(0.3, '#0004');
-        gradient.addColorStop(1, '#0000');
-        context.fillStyle = gradient;
-        context.fillRect(px - r, pz - r, r * 2, r * 2);
-      }
+      sheet.paint(records, centerX, centerZ);
       map.needsUpdate = true;
     },
     dispose() {

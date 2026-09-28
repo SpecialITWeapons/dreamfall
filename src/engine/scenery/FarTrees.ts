@@ -83,7 +83,21 @@ export function createFarTrees(deps: {
   const claims = deps.claims;
 
   const live = new Map<number, FarTree[]>();
-  const wanted = new Set<number>();
+  /**
+   * Where the cells are wanted from: a cell is wanted when its centre lies
+   * between the ring's reach and the far one from here. A predicate and not a
+   * set, because a set of twenty thousand keys rebuilt at every ring rebuild
+   * was most of what a crossing cost this side of the ring.
+   */
+  let fromX = NaN,
+    fromZ = NaN;
+  const reach = (ix: number, iz: number, x: number, z: number) =>
+    Math.hypot((ix + 0.5) * size - x, (iz + 0.5) * size - z);
+  const wantedFrom = (ix: number, iz: number, x: number, z: number) => {
+    const d = reach(ix, iz, x, z);
+    return d > inner && d <= radius;
+  };
+  const wanted = (key: number) => wantedFrom(ixOf(key), izOf(key), fromX, fromZ);
   let queue: number[] = [];
   let head = 0;
   let version = 0,
@@ -174,23 +188,32 @@ export function createFarTrees(deps: {
   return {
     update(x, z) {
       let changed = false;
-      wanted.clear();
-      const distance = new Map<number, number>();
       const cx = Math.floor(x / size),
         cz = Math.floor(z / size),
         span = Math.ceil(radius / size);
+      // What was waiting and is still wanted keeps its place in the line; what
+      // came into reach since the last update joins it. Only a cell that was
+      // not wanted from the old place can be new, so a crossing asks the map
+      // about the rims and not about every cell out to 8 km.
+      const waiting: number[] = [];
+      const fresh = Number.isNaN(fromX);
+      for (let i = head; i < queue.length; i++) {
+        const key = queue[i]!;
+        if (!live.has(key) && wantedFrom(ixOf(key), izOf(key), x, z)) waiting.push(key);
+      }
       for (let iz = cz - span; iz <= cz + span; iz++)
         for (let ix = cx - span; ix <= cx + span; ix++) {
-          const d = Math.hypot((ix + 0.5) * size - x, (iz + 0.5) * size - z);
-          if (d <= inner || d > radius) continue;
+          if (!wantedFrom(ix, iz, x, z) || (!fresh && wantedFrom(ix, iz, fromX, fromZ))) continue;
           const key = keyOf(ix, iz);
-          wanted.add(key);
-          if (!live.has(key)) distance.set(key, d);
+          if (!live.has(key)) waiting.push(key);
         }
-      for (const key of [...live.keys()]) if (!wanted.has(key)) changed = forget(key) || changed;
+      fromX = x;
+      fromZ = z;
+      for (const key of live.keys()) if (!wanted(key)) changed = forget(key) || changed;
       account(x, z);
-      for (const key of stale)
-        distance.set(key, Math.hypot((ixOf(key) + 0.5) * size - x, (izOf(key) + 0.5) * size - z));
+      for (const key of stale) waiting.push(key);
+      const distance = new Map<number, number>();
+      for (const key of waiting) distance.set(key, reach(ixOf(key), izOf(key), x, z));
       queue = [...distance.keys()].sort((a, b) => distance.get(a)! - distance.get(b)!);
       head = 0;
       if (changed) version++;
@@ -201,7 +224,7 @@ export function createFarTrees(deps: {
       while (head < queue.length) {
         if (now() - started >= budgetMs) break;
         const key = queue[head++]!;
-        if (!wanted.has(key) || (live.has(key) && !stale.has(key))) continue;
+        if (!wanted(key) || (live.has(key) && !stale.has(key))) continue;
         current = [];
         if (sowing.enter(ixOf(key), izOf(key))) sowing.sowTrees();
         // the old trees of a stale cell go only now, as the new ones arrive
