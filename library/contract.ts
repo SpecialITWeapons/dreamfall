@@ -439,6 +439,21 @@ export interface SiteKit extends SceneryKit {
    */
   line(points: Array<[number, number]>, kind: string, opts?: { height?: number }): void;
   reserve(x: number, z: number, radius: number): void;
+  /**
+   * One tree where the plan wants it: a garden, an empty lot, the edge of a
+   * square. Not a sowing -- a plan says where a person planted one tree, and
+   * the country's own scatter says how thickly the rest grows. `null` asks for
+   * a tree of the country around the settlement, chosen by its biomes' own
+   * weights, so a village in the steppe has acacias and not somebody's orchard;
+   * a country with no species to give stands nothing there. The tree is of the
+   * species' own size, drawn from where it stands.
+   */
+  tree(
+    speciesId: string | null,
+    x: number,
+    z: number,
+    opts?: { scale?: number; yaw?: number; tint?: SceneryColor },
+  ): void;
 }
 /** One ribbon of road along a polyline, in world metres. */
 export interface RoadSpec {
@@ -454,6 +469,13 @@ export interface LotSpec {
   structure: string;
   floors: number;
   tint?: SceneryColor;
+}
+/** One tree a plan stands: where, of which species, turned which way. */
+export interface TreeSpec {
+  x: number;
+  z: number;
+  species: string;
+  yaw: number;
 }
 /** Ground spoken for: no tree, no prop, nothing scattered. */
 export interface Reservation {
@@ -483,6 +505,8 @@ export interface SitePlan {
   lines: LineSpec[];
   lots: LotSpec[];
   reservations: Reservation[];
+  /** The trees the plan stood, species resolved; a plan that stands none may leave it out. */
+  trees?: TreeSpec[];
 }
 
 /**

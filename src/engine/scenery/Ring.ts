@@ -11,27 +11,23 @@
 import { Color } from 'three';
 import {
   swatchColor,
-  type Cell,
   type Library,
   type Placement,
   type PropKit,
   type Prop,
-  type SceneryKit,
   type SitePlan,
-  type Species,
 } from '../../../library/contract';
-import { CELL_TREES, resolvePopulate } from '../../../library/standard/index.js';
-import { countryOf, standingOf } from '../terrain/Country';
-import { createFields } from '../terrain/Fields';
 import type { Heightfield } from '../terrain/Heightfield';
-import { sstep } from '../terrain/noise';
 import { hash2, mulberry32 } from '../terrain/noise';
-import { SLOTS, type WorldSampler } from '../terrain/WorldSampler';
+import type { WorldSampler } from '../terrain/WorldSampler';
 import { createClaims, type ClaimShapes, type Claims } from './Claims';
 import type { Obstacles } from './Obstacles';
 import { ROUTE_WIDTH, stretchOf, type RoadRoute } from './Roads';
 import { cellKey, type Overrides } from './Overrides';
 import type { Site, Sites } from './Sites';
+import { createSowing, saltOf, type TreeInstance } from './Sowing';
+
+export { POPULATE_FLOOR, type TreeInstance } from './Sowing';
 
 /** The side of one streaming cell, m. */
 export const TREE_CELL = 96;
@@ -55,31 +51,13 @@ export const MAX_TREES = 4000;
  * more than about half of a ring.
  */
 export const MAX_RING_TREES = 6000;
-/** A biome with less than this share of a cell does not get to populate it (spec 7). */
-export const POPULATE_FLOOR = 0.05;
-/** Ground above this is land, in the only sense the scenery cares about. */
-const LAND = 3;
 /**
  * What share of a settlement's windows are lit after dark, at the two ends.
  * Never 0 and never 1: a place with nothing lit is a ruin and a place with
  * everything lit is an office block, and neither is a village at night.
  */
 const WAKE: [number, number] = [0.22, 0.6];
-const TAU = Math.PI * 2;
 
-export interface TreeInstance {
-  species: string;
-  x: number;
-  /** Ground height under it, m. */
-  y: number;
-  z: number;
-  scale: number;
-  /** Vertical scale; a tree is never quite as tall as it is wide. */
-  tall: number;
-  yaw: number;
-  /** Scratch: the sink must copy it, because the next tree overwrites it. */
-  tint: Color;
-}
 export interface PropInstance {
   prop: string;
   x: number;
@@ -153,6 +131,8 @@ export interface Ring {
    * a zero rather than trust one.
    */
   readonly buildingsRefused: number;
+  /** Trees a plan stood that did not stand: a species nobody baked, a pool full, the ring's ceiling. */
+  readonly treesRefused: number;
   /** Milliseconds the last rebuild took. */
   readonly ms: number;
   /** Where the ring is centred, m in the world: the shade sheet is anchored here. */
@@ -182,71 +162,13 @@ export interface RingDeps {
   maxTrees?: number;
 }
 
-/** A hash of the whole id, so two entries collide only by being the same entry. */
-const idHash = (id: string) => {
-  let h = 7;
-  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) | 0;
-  return h >>> 0;
-};
-
 export function createRing(deps: RingDeps): Ring {
   const { seed, library, sampler, heightfield, obstacles, overrides, metrics, sites, sink, propKit } = deps;
   const size = deps.cell ?? TREE_CELL;
   const radius = deps.radius ?? TREE_RADIUS;
   const maxTrees = deps.maxTrees ?? MAX_RING_TREES;
 
-  const biomes = library.biomes;
-  const sown = biomes.map((biome) => (biome.populate ? resolvePopulate(biome.populate) : null));
-  // What each biome wants of each prop, and the colours its params name: both
-  // are read once per cell through the Cell, so resolve them once here.
-  const wants = sown.map((entry) => entry?.scatter?.props ?? {});
-  const palette = biomes.map((biome) => {
-    const colors = new Map<string, Color>();
-    for (const [key, value] of Object.entries(biome.params ?? {}))
-      if (typeof value === 'string') colors.set(key, new Color(swatchColor(value)));
-    return colors;
-  });
-  const propEntries: Prop[] = library.props ?? [];
-  const byId = new Map(propEntries.map((entry) => [entry.id, entry]));
-  const speciesById = new Map((library.species ?? []).map((entry) => [entry.id, entry]));
-  const tints = new Map(
-    (library.species ?? []).map((entry) => [
-      entry.id,
-      {
-        cold: new Color(swatchColor(entry.tint.cold)),
-        warm: new Color(swatchColor(entry.tint.warm)),
-        dry: new Color(swatchColor(entry.tint.dry)),
-      },
-    ]),
-  );
-  // One stream per cell per entry, from the whole id: adding a prop must not
-  // reshuffle the trees, and adding a biome must not reshuffle the props.
-  const biomeSalt = biomes.map((biome) => (seed ^ idHash(`biome:${biome.id}`)) >>> 0);
-  const propSalt = propEntries.map((entry) => (seed ^ idHash(`prop:${entry.id}`)) >>> 0);
-  const overrideSalt = (seed ^ idHash('override')) >>> 0;
-
-  const fields = createFields(sampler);
-  const slotIds = new Uint8Array(4);
-  const slotWeights = new Float32Array(4);
-  // The country under the cell. A settlement's slot is its presence and its
-  // plateau, not a planting: its share goes to the biomes beside it, and what
-  // they sow is thinned by `clearing` (terrain/Country.ts).
-  const standing = standingOf(biomes);
-  const countryIds = new Uint8Array(4);
-  const countryWeights = new Float32Array(4);
-  let clearing = 1;
-  const blended = new Color();
   const scratch = new Color();
-
-  let gx = 0,
-    gz = 0,
-    centerX = 0,
-    centerZ = 0,
-    share = 0,
-    cellTrees = 0,
-    read = false;
-  let here = fields.at(0, 0);
-  let roll: () => number = () => 0;
 
   // The ground the site plans in reach speak for (scenery/Claims.ts), refilled
   // from nothing at every rebuild. A house claims its ground by its baked
@@ -292,102 +214,60 @@ export function createRing(deps: RingDeps): Ring {
 
   const occupied = (x: number, z: number) => claims.trees(x, z);
 
-  const cell: Cell = {
-    size,
-    corner: { x: 0, z: 0 },
-    center: { x: 0, z: 0 },
-    get share() {
-      return share;
-    },
-    // Lazily: a cell that turns out to be sea, or that nobody claims, never
-    // pays for a field sample, and a field sample is the expensive part.
-    get fields() {
-      if (!read) {
-        here = fields.at(centerX, centerZ);
-        read = true;
-      }
-      return here;
-    },
-    weight(id) {
-      for (let s = 0; s < SLOTS; s++) if (biomes[countryIds[s]!]?.id === id) return countryWeights[s]!;
-      return 0;
-    },
-    mix(id) {
-      // A prop is thinned in a settlement exactly as a tree is: the country's
-      // boulders, a clearing's share of them.
-      let sum = 0;
-      for (let s = 0; s < SLOTS; s++) {
-        const weight = countryWeights[s]!;
-        if (weight > 0) sum += weight * (wants[countryIds[s]!]?.[id] ?? 0);
-      }
-      return sum * clearing;
-    },
-    blend(param) {
-      blended.setRGB(0, 0, 0);
-      for (let s = 0; s < SLOTS; s++) {
-        const weight = countryWeights[s]!,
-          color = palette[countryIds[s]!]?.get(param);
-        if (weight > 0 && color) {
-          blended.r += weight * color.r;
-          blended.g += weight * color.g;
-          blended.b += weight * color.b;
-        }
-      }
-      return blended;
-    },
-    height: (x, z) => heightfield.heightAt(x, z),
-    slope: (x, z) => heightfield.slopeAt(x, z),
-    land: (x, z) => heightfield.heightAt(x, z) > LAND,
-    roll: () => roll(),
-    occupied,
-  };
-
   let trees = 0,
     props = 0,
     buildings = 0,
     buildingsRefused = 0,
+    treesRefused = 0,
     cells = 0,
     ms = 0;
   const full = new Set<string>();
 
-  /** The climate tint of one tree, in the scratch colour the sink copies. */
-  const climateTint = (species: Species) => {
-    const tint = tints.get(species.id)!;
-    const climate = cell.fields;
-    return scratch
-      .copy(tint.cold)
-      .lerp(tint.warm, sstep(0.3, 0.7, climate.temp))
-      .lerp(tint.dry, sstep(0.45, 0.25, climate.moist));
-  };
+  const propEntries: Prop[] = library.props ?? [];
+  const byId = new Map(propEntries.map((entry) => [entry.id, entry]));
+  // One stream per cell per entry, from the whole id: adding a prop must not
+  // reshuffle the trees, and adding a biome must not reshuffle the props.
+  const propSalt = propEntries.map((entry) => saltOf(seed, `prop:${entry.id}`));
+  const overrideSalt = saltOf(seed, 'override');
 
-  const plantTree = (
-    speciesId: string,
-    x: number,
-    z: number,
-    opts?: { scale?: number; yaw?: number; tint?: unknown },
-  ) => {
-    if (cellTrees >= CELL_TREES || trees >= maxTrees || full.has(speciesId)) return;
-    const species = speciesById.get(speciesId),
-      shape = metrics.species(speciesId);
-    if (!species || !shape) return;
-    const [min, max] = species.scale;
-    const scale = opts?.scale ?? min + roll() * (max - min);
-    const tall = scale * (0.9 + roll() * 0.4);
-    const yaw = opts?.yaw ?? roll() * TAU;
-    const y = heightfield.heightAt(x, z);
-    const tint =
-      opts?.tint === undefined
-        ? climateTint(species)
-        : scratch.set(swatchColor(opts.tint as string | number));
-    if (!sink.tree({ species: speciesId, x, y, z, scale, tall, yaw, tint })) {
-      full.add(speciesId);
-      return;
+  /** A tree into the pools and the obstacles; false when its pool is full, which closes the species. */
+  const standTree = (tree: TreeInstance) => {
+    if (!sink.tree(tree)) {
+      full.add(tree.species);
+      return false;
     }
     // Clearance comes from the baked shape, so no generator can understate itself.
-    obstacles.add({ x, z, ground: y, top: y + shape.top * tall, radius: scale * shape.radius });
-    cellTrees++;
+    const shape = metrics.species(tree.species)!;
+    obstacles.add({
+      x: tree.x,
+      z: tree.z,
+      ground: tree.y,
+      top: tree.y + shape.top * tree.tall,
+      radius: tree.scale * shape.radius,
+    });
     trees++;
+    return true;
   };
+  /** Where a plan's tree draws its size from: its own place, so it is the same tree every rebuild. */
+  const planTreeSalt = saltOf(seed, 'plan-tree');
+
+  // A cell's trees are sown where the far trees sow theirs (Sowing.ts): what
+  // the ring adds is its ceilings, the pools and the obstacles.
+  const sowing = createSowing({
+    seed,
+    library,
+    sampler,
+    ground: heightfield,
+    size,
+    occupied,
+    admit: (speciesId) => trees < maxTrees && !full.has(speciesId),
+    baked: (speciesId) => metrics.species(speciesId) !== null,
+    emit: standTree,
+    prop: (propId, x, z, opts) => {
+      standProp(propId, { x, z, ...opts });
+    },
+  });
+  const cell = sowing.cell;
 
   /** @returns true when the prop actually stood: a pool at its ceiling refuses one. */
   const standProp = (propId: string, put: Placement) => {
@@ -489,31 +369,28 @@ export function createRing(deps: RingDeps): Ring {
         });
         buildings++;
       }
+      // The trees the plan stood, with its houses and on the same terms: whole
+      // or not at all, and counted when refused rather than dropped.
+      for (const spec of plan.trees ?? []) {
+        // The plan knows its own streets and not the roads that come in to
+        // them from the next settlement, which cross its gardens to get there.
+        if (trees >= maxTrees || full.has(spec.species) || claims.road(spec.x, spec.z)) {
+          treesRefused++;
+          continue;
+        }
+        const draw = mulberry32(hash2(Math.round(spec.x * 8), Math.round(spec.z * 8), planTreeSalt));
+        const tree = sowing.stand(spec.species, spec.x, spec.z, spec.yaw, draw);
+        if (!tree || !standTree(tree)) treesRefused++;
+      }
     }
   };
-
-  const kit: SceneryKit = {
-    tree: (speciesId, x, z, opts) => plantTree(speciesId, x, z, opts),
-    prop: (propId, x, z, opts) => standProp(propId, { x, z, ...opts }),
-    structure: () => {
-      // Not unfinished work: a scatter says what grows on a cell, and a
-      // building is not something that grows. Buildings stand on site plans,
-      // which are placed whole by `raise`.
-      throw new Error(
-        'scenery library: a biome scatters, it does not build; a building belongs to a site plan',
-      );
-    },
-    color: (value) => new Color(swatchColor(value)),
-  };
-
-  const stream = (salt: number) => mulberry32(hash2(gx, gz, salt));
 
   const rebuild = (x: number, z: number, cx: number, cz: number) => {
     const started = performance.now();
     sink.begin(x, z);
     obstacles.clear();
     indexPlans(x, z);
-    trees = props = buildings = buildingsRefused = cells = 0;
+    trees = props = buildings = buildingsRefused = treesRefused = cells = 0;
     full.clear();
     const span = Math.ceil(radius / size);
     for (let iz = cz - span; iz <= cz + span && trees < maxTrees; iz++)
@@ -521,28 +398,18 @@ export function createRing(deps: RingDeps): Ring {
         const ccx = (ix + 0.5) * size,
           ccz = (iz + 0.5) * size;
         if (Math.hypot(ccx - x, ccz - z) > radius) continue;
-        if (heightfield.heightAt(ccx, ccz) < LAND) continue;
+        if (!sowing.enter(ix, iz)) continue;
         cells++;
-        gx = ix;
-        gz = iz;
-        cell.corner.x = ix * size;
-        cell.corner.z = iz * size;
-        cell.center.x = centerX = ccx;
-        cell.center.z = centerZ = ccz;
-        read = false;
-        cellTrees = 0;
-        heightfield.weightsAt(ccx, ccz, slotIds, slotWeights);
-        clearing = countryOf(slotIds, slotWeights, standing, countryIds, countryWeights);
         // The layer is asked before any hook runs, and while it is empty it does
         // not even cost the key.
         const override = overrides.size === 0 ? null : overrides.for(cellKey(ix, iz));
         if (override?.skip) continue;
         if (override?.placements) {
-          roll = stream(overrideSalt);
+          sowing.stream(overrideSalt);
           for (const put of override.placements) {
             // an override names a tree's scale as one number, like the hooks do
             if (put.species)
-              plantTree(put.species, put.x, put.z, {
+              sowing.plant(put.species, put.x, put.z, {
                 scale: typeof put.scale === 'number' ? put.scale : undefined,
                 yaw: put.yaw,
                 tint: put.tint,
@@ -553,24 +420,13 @@ export function createRing(deps: RingDeps): Ring {
         }
         for (let p = 0; p < propEntries.length; p++) {
           const entry = propEntries[p]!;
-          roll = stream(propSalt[p]!);
+          sowing.stream(propSalt[p]!);
           // A scattered prop keeps off a plan as a tree does. A prop the plan
           // asked for is the plan's own and is stood by `raise`, not here.
           for (const put of entry.place(cell, propKit) ?? [])
             if (!occupied(put.x, put.z)) standProp(entry.id, put);
         }
-        for (let s = 0; s < SLOTS; s++) {
-          // The floor is the country's own share: which biomes get a say in a
-          // cell is not changed by a village standing on it, only how much of
-          // what they sow comes up.
-          const weight = countryWeights[s]!;
-          if (weight < POPULATE_FLOOR) continue;
-          const entry = sown[countryIds[s]!];
-          if (!entry) continue;
-          share = weight * clearing;
-          roll = stream(biomeSalt[countryIds[s]!]!);
-          entry.hook(cell, kit);
-        }
+        sowing.sowTrees();
       }
     raise(x, z);
     sink.end();
@@ -603,6 +459,9 @@ export function createRing(deps: RingDeps): Ring {
     },
     get buildingsRefused() {
       return buildingsRefused;
+    },
+    get treesRefused() {
+      return treesRefused;
     },
     get ms() {
       return ms;

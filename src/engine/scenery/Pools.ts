@@ -24,6 +24,7 @@ import {
   Matrix4,
   Mesh,
   Quaternion,
+  Vector2,
   Vector3,
   type BufferGeometry,
   type Material,
@@ -38,6 +39,7 @@ import {
   positionLocal,
   smoothstep,
   step,
+  uniform,
   vec3,
 } from 'three/tsl';
 import {
@@ -50,6 +52,7 @@ import {
   type SceneryColor,
   type SitePlan,
 } from '../../../library/contract';
+import type { UniformNode } from 'three/webgpu';
 import type { Origin } from '../sim/Origin';
 import { countryOf, standingOf } from '../terrain/Country';
 import type { Heightfield } from '../terrain/Heightfield';
@@ -68,6 +71,7 @@ import {
   type TreeInstance,
 } from './Ring';
 import { bakeStructure, createStructureKit } from './StructureKit';
+import { RING_FADE } from './TreeLimit';
 import {
   bakeSpecies,
   crownThinning,
@@ -78,15 +82,9 @@ import {
 
 /** Where the full crown gives way to the thinned one, m. */
 const CROWN_FADE = [540, 680] as const;
-/**
- * Where a thing standing on the ground fades out, m. It ends just inside
- * TREE_RADIUS: past that the ring has nothing to show anyway. The original
- * folded a tree into its own base across this band, which is cheap and reads
- * as a tree sprouting out of the ground in front of the flight -- two and a
- * half to four seconds of it, at the speeds this world flies. A tree stands at
- * its own height here and dissolves instead.
- */
-export const RING_FADE = [2300, 2560] as const;
+// Where a thing standing on the ground fades out: TreeLimit.ts, beside the band
+// a tree hands over to its card in, which starts from it.
+export { RING_FADE } from './TreeLimit';
 /**
  * Which crown a tree is given at a rebuild. The margins are the original's,
  * and they are generous on purpose: a rebuild happens at most one cell after
@@ -157,6 +155,14 @@ interface StructurePool {
 
 export interface Pools {
   readonly sink: ScenerySink;
+  /**
+   * The band a full tree dissolves in and its card comes up in, m: the ring's
+   * own band on the ground, read by the trees' materials and the cards'. Props
+   * and buildings keep the constant band.
+   */
+  readonly treeLimit: UniformNode<'vec2', Vector2>;
+  /** Every baked species with its trunk's tint, in the registry's order: what the cards are photographed from. */
+  readonly species: ReadonlyArray<{ id: string; baked: BakedSpecies; trunkTint: Color }>;
   readonly metrics: SceneryMetrics;
   /** What a prop's bake() and place() are handed; the ring passes it on. */
   readonly propKit: PropKit;
@@ -180,6 +186,10 @@ export function createPools(deps: {
   const { library, textures, materials, uniforms, origin, heightfield } = deps;
   const meshes: InstancedMesh[] = [];
   const materialsMade: Material[] = [];
+  const treeLimit = uniform(new Vector2(RING_FADE[0], RING_FADE[1]));
+  // A tree is there as much as it is inside the band it hands over to its card in.
+  const treeFade = float(1).sub(smoothstep(treeLimit.x, treeLimit.y, baseDistance));
+  const bakedSpecies: Array<{ id: string; baked: BakedSpecies; trunkTint: Color }> = [];
 
   // `layer` is the dev panel's switch this pool answers to, and the only thing
   // a mesh's name is used for here.
@@ -208,7 +218,8 @@ export function createPools(deps: {
   for (const entry of library.species ?? []) {
     const baked = bakeSpecies(entry, { leafTexture: (form) => textures.leaf(form) });
     const trunkTint = new Color(swatchColor(entry.trunk?.tint ?? 'white'));
-    const bark = materials.wood(trunkTint, ringFade);
+    const bark = materials.wood(trunkTint, treeFade);
+    bakedSpecies.push({ id: entry.id, baked, trunkTint });
     const wood = pool(baked.wood, bark, MAX_TREES, 'trees');
     wood.castShadow = true;
     const record: SpeciesPool = {
@@ -231,7 +242,7 @@ export function createPools(deps: {
         baked.crown,
         materials.leaf(
           map,
-          float(1).sub(distantCrown).mul(ringFade),
+          float(1).sub(distantCrown).mul(treeFade),
           cardWorld.add(positionLocal.sub(cardWorld).mul(cardScale)),
         ),
         MAX_TREES,
@@ -239,7 +250,7 @@ export function createPools(deps: {
       );
       record.distant = pool(
         baked.distant,
-        materials.leaf(map, distantCrown.mul(ringFade), positionLocal),
+        materials.leaf(map, distantCrown.mul(treeFade), positionLocal),
         MAX_TREES,
         'trees',
       );
@@ -607,6 +618,8 @@ export function createPools(deps: {
 
   return {
     sink,
+    treeLimit,
+    species: bakedSpecies,
     metrics,
     propKit,
     meshes,

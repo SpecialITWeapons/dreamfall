@@ -22,6 +22,12 @@ export const TREE_MARGIN = 3;
 export const GRASS_ROAD_MARGIN = 0.5;
 /** Metres a tuft keeps from a wall: the eaves overhang it. */
 export const GRASS_WALL_MARGIN = 1;
+/**
+ * What a tree the plan stood keeps clear of the country's own, m: a trunk's
+ * width and a little, so the scatter does not stand a second tree in the same
+ * garden. It claims no grass: grass grows under a tree.
+ */
+export const PLAN_TREE_CLAIM = 4;
 /** What a prop a plan asked for -- a well, a trough -- keeps clear, m. */
 export const PROP_CLAIM = 2;
 /**
@@ -56,6 +62,14 @@ export interface Claims {
   trees(x: number, z: number): boolean;
   /** Is (x, z) ground a tuft of grass may not stand on? */
   grass(x: number, z: number): boolean;
+  /** Is (x, z) on a road between settlements, clearing included? A plan's tree may not stand there. */
+  road(x: number, z: number): boolean;
+  /**
+   * Does any claim reach into this square? Answered by the index's own cells,
+   * so a road is its corridor and not the box round it: what the far trees ask
+   * before they sow a cell again.
+   */
+  touches(x0: number, z0: number, x1: number, z1: number): boolean;
   readonly plans: ReadonlyArray<PlanBounds>;
 }
 
@@ -132,6 +146,13 @@ function createGrid() {
         z + reach,
       );
     },
+    any(x0: number, z0: number, x1: number, z1: number) {
+      if (cells.size === 0) return false;
+      for (let cz = Math.floor(z0 / CELL); cz <= Math.floor(z1 / CELL); cz++)
+        for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++)
+          if (cells.has(`${cx},${cz}`)) return true;
+      return false;
+    },
     has(x: number, z: number) {
       // A world with no settlements pays one comparison for the question.
       if (cells.size === 0) return false;
@@ -145,12 +166,14 @@ function createGrid() {
 
 export function createClaims(): Claims {
   const trees = createGrid(),
-    grass = createGrid();
+    grass = createGrid(),
+    roads = createGrid();
   const plans: PlanBounds[] = [];
   return {
     clear() {
       trees.clear();
       grass.clear();
+      roads.clear();
       plans.length = 0;
     },
     add(plan, shapes) {
@@ -175,6 +198,10 @@ export function createClaims(): Claims {
           reach(a[0], a[1], half + GRASS_ROAD_MARGIN);
           reach(b[0], b[1], half + GRASS_ROAD_MARGIN);
         }
+      }
+      for (const tree of plan.trees ?? []) {
+        trees.capsule(tree.x, tree.z, tree.x, tree.z, PLAN_TREE_CLAIM);
+        reach(tree.x, tree.z, PLAN_TREE_CLAIM);
       }
       for (const lot of plan.lots) {
         // A lot with no floors is a prop the plan asked for: a well, a trough.
@@ -210,6 +237,7 @@ export function createClaims(): Claims {
         const a = points[i - 1]!,
           b = points[i]!;
         trees.capsule(a[0], a[1], b[0], b[1], reach);
+        roads.capsule(a[0], a[1], b[0], b[1], reach);
         grass.capsule(a[0], a[1], b[0], b[1], half + GRASS_ROAD_MARGIN);
         for (const [x, z] of [a, b]) {
           bounds.x0 = Math.min(bounds.x0, x - reach);
@@ -222,6 +250,8 @@ export function createClaims(): Claims {
     },
     trees: (x, z) => trees.has(x, z),
     grass: (x, z) => grass.has(x, z),
+    road: (x, z) => roads.has(x, z),
+    touches: (x0, z0, x1, z1) => trees.any(x0, z0, x1, z1),
     get plans() {
       return plans;
     },

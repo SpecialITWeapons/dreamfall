@@ -515,6 +515,10 @@ const debug: WorldDebug = {
     return world.scenery?.stats ?? null;
   },
   scenerySample: (i: number) => world.scenery?.sample(i) ?? null,
+  settleScenery: () => world.scenery?.settle(world.sim.state.x, world.sim.state.z),
+  get treeLimit() {
+    return world.scenery?.treeLimit ?? null;
+  },
   siteNear: (x: number, z: number) => world.scenery?.siteNear(x, z) ?? null,
   get obstacles() {
     return world.obstacles.size;

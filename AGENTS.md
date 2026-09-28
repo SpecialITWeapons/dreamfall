@@ -37,7 +37,10 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
-  `scenery/Claims.ts`, `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
+  `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
+  `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
+  `scenery/TreeLimit.ts`,
+  `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -397,6 +400,31 @@ page works under a Pages subdirectory.
   is scaled by that share and the cap of three trees per cell belongs to the kit,
   not to the hook. The biome says how much grows; the prop's own `place` says
   how it stands.
+- A cell's trees are sown in `scenery/Sowing.ts` and nowhere else, over any
+  `GroundQuery`: the ring hands it the near window, and whatever sows past the
+  window hands it `terrain/SampledGround.ts`, which samples the points the
+  window would have filled and so answers to the bit what the window would --
+  and never reads the far window. `ringGolden.test.ts` holds what the ring
+  sows over the real library; a change that moves it is a change to the world.
+- **Every tree is also a card, out to the far terrain's 8.2 km.** Past the
+  ring, `FarTrees` sows the cells from the ring's reach to `FAR_TREE_RADIUS`
+  through the same `Sowing`, over `SampledGround`, from a queue at 2 ms a
+  frame -- the two sets are split at the ring's own rebuild position, so every
+  cell is in exactly one -- and keeps off the ground the ring's plans claim.
+  The cards are one instanced mesh (`Cards.ts`) drawn from photographs the CPU
+  takes of each species from the side and from above (`ImpostorBake.ts`: no
+  render target, no readback, no second compile), holding the ring's trees too.
+  A full tree and its card trade places over one band read from one uniform,
+  `treeLimit` in the pools, which only the trees read: props and buildings keep
+  the constant `RING_FADE`. A card past the near grid stands on the far surface,
+  read in its shader, because nothing on the CPU reads the far window.
+  `scenery.settle` sows everything at once; the world pays that behind the veil.
+- **High over the land every tree is a card.** The band (`treeLimit`) is
+  `RING_FADE` near the ground and draws in as the eye rises over the land under
+  it (`scenery/TreeLimit.ts`, `TREE_LIMIT` 700..1100 m, moved live in `?dev=1`);
+  when it is gone the tree pools are hidden -- the engine's own reason, so a
+  `trees` switch still hides them after it. The ring keeps planting: the flight
+  needs the obstacles. Never a band of no width: a smoothstep over one is NaN.
 - `Obstacles` is filled by the ring and by nothing else, out of the baked shape's
   own top and radius -- never the entry's data, so a generator cannot understate
   how much sky it takes; a building is measured the same way, and its entry's own
@@ -448,19 +476,28 @@ page works under a Pages subdirectory.
   `settlements/settlement.js`, makes the village and the town alike, and the
   parameters carry the id, the name and the landmark, because a factory that
   knew the word "village" could only ever make one.
-- A plan may not plant and a scatter may not build: `kit.tree` inside a plan and
-  `kit.structure` inside a `populate` both throw. What a plan can lay is a
-  `kit.line` -- a fence, a wall, a hedge -- and it claims no ground, so it says
-  where people drew a boundary and nothing about what grows inside it. It does
-  not stand in for planting: a hedge squared off around a plot, on the argument
-  that the scatter would fill it, came out an empty green frame lying on bare
-  clay. A hedgerow beside a lane needs nothing inside it to read.
+- A plan may not sow and a scatter may not build: `kit.structure` inside a
+  `populate` throws. A plan **stands single trees** (`kit.tree`, into
+  `plan.trees`) -- a garden behind a house, an empty lot, the edge of a square
+  -- and never a density: `null` asks for a tree of the country around the
+  settlement, and how many of them come up follows how thickly that country
+  grows (`PLAN_TREES` in `Sites.ts`, never under 0.4), so a place is sparser
+  than its country and a village in the dunes still has its palms. Where a plan
+  stands a tree is decided by the place (`rollAt`), never by the site's stream,
+  so trees never move a house; the ring stands them with the houses, the
+  scatter keeps 4 m off them (`PLAN_TREE_CLAIM`), and a refused one is counted
+  (`treesRefused`). The far cards know no plans: a settlement past the ring
+  shows its country's trees until its plan is built. What a plan lays in a line
+  -- a fence, a wall, a hedge -- claims no ground and does not stand in for
+  planting: a hedge squared off around a plot came out an empty green frame
+  lying on bare clay. A hedgerow beside a lane needs nothing inside it to read.
 - A settlement **stands in its country** (`inherit: { trees }`): its weight
   is its presence and its plateau, and the ground, the snow, the grass, the
   trees and the props, the sound and the air under it are the country's
   beside it (`terrain/Country.ts`, and the same sums in nodes in
   `TerrainMesh`). Its trees and props are the country's thinned to `trees`
-  (0.4, a clearing). It used to paint its own disc and sow its own species,
+  (0.5, a clearing), with the plan's own trees on top; `settlementTrees.test.ts`
+  holds seed 42's places between 0.3 and 1 of their country's density. It used to paint its own disc and sow its own species,
   and the owner read that as a patch cut out of the country. The first biome
   of the registry may not inherit: it takes the ground no presence claims,
   which is also where a texel with no country in its slots goes.

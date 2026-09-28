@@ -741,7 +741,9 @@ test('the deck lays its fog on the ground only where its sea is seen over it', a
 test('the land reaches past the near window: the far terrain draws what it cannot', async ({ page }) => {
   // The near window ends 4.2 km from the flyer. From high up, looking level,
   // with the air and every cloud term off, what the far grid draws is land
-  // where there used to be only the horizon's colour.
+  // where there used to be only the horizon's colour. The cards stand on that
+  // land in both pictures and would hide part of what is measured, so they go
+  // with the clouds: this is the far grid's own share.
   test.slow();
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
@@ -750,7 +752,8 @@ test('the land reaches past the near window: the far terrain draws what it canno
     w.jump(0, 0, 1500);
     w.dayPhase = 0.3;
     w.look.set({ air: 0 });
-    for (const name of ['clouds', 'deck', 'deck fog', 'underside', 'high']) w.layers.set(name, false);
+    for (const name of ['clouds', 'deck', 'deck fog', 'underside', 'high', 'far trees'])
+      w.layers.set(name, false);
     for (let i = 0; i < 120; i++) w.step(0);
     const shot = async () => {
       w.frame(0);
@@ -951,6 +954,65 @@ test('the forest stands where the climate wants it, and the flight is told about
   expect(dunes.id).toBe('dunes');
   expect(dunes.scenery.trees).toBeLessThan(woods.scenery.trees / 5);
   expect(dunes.scenery.rebuilds).toBeGreaterThan(woods.scenery.rebuilds);
+  expect(errors).toEqual([]);
+});
+
+test('the woods go on past the ring as cards, out to the far terrain', async ({ page }) => {
+  // One jump and one settle: a window refill, a ring rebuild and every far
+  // cell to 8.2 km, on a software rasteriser.
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const look = (x: number, z: number) =>
+    page.evaluate(
+      ({ x, z }) => {
+        const w = window.__world!;
+        w.jump(x, z, 400);
+        w.jump(x, z, 400); // the first jump reads the ground from the window it leaves
+        w.settleScenery();
+        return w.scenery!;
+      },
+      { x, z },
+    );
+  const woods = await look(-48_000, -42_000);
+  // the far land holds several times the ring's trees, and all of them are sown
+  expect(woods.farTrees).toBeGreaterThan(3 * woods.trees);
+  expect(woods.farQueued).toBe(0);
+  // every tree has its card, the ring's among them, and the pool had room for all
+  expect(woods.cards).toBe(woods.trees + woods.farTrees);
+  expect(woods.cardsRefused).toBe(0);
+  // Five kilometres on, past the origin's own four, the origin has moved under
+  // the scene: the cards are written again in the new frame, not lost with the old one.
+  const on = await look(-43_000, -42_000);
+  expect(on.cards).toBe(on.trees + on.farTrees);
+  expect(on.farTrees).toBeGreaterThan(3 * on.trees);
+  expect(errors).toEqual([]);
+});
+
+test('high over the land every tree is a card, and low over it nothing changed', async ({ page }) => {
+  test.slow();
+  const errors = await begun(page, 'seed=42&webgl=1');
+  await paused(page);
+  const at = (above: number) =>
+    page.evaluate((above) => {
+      const w = window.__world!;
+      w.jump(-48_000, -42_000, above);
+      w.jump(-48_000, -42_000, above); // the first jump reads the ground from the window it leaves
+      w.step(1 / 60);
+      const s = w.scenery!;
+      return { band: s.treeBand, full: s.fullTrees, trees: s.trees, cards: s.cards };
+    }, above);
+  const low = await at(150);
+  expect(low.band).toEqual([2300, 2560]);
+  expect(low.full).toBe(true);
+  const high = await at(1300);
+  expect(high.band[0]).toBe(0);
+  expect(high.full).toBe(false);
+  // the ring still stands its trees up there -- the flight needs them -- and they are cards
+  expect(high.trees).toBeGreaterThan(0);
+  expect(high.cards).toBeGreaterThanOrEqual(high.trees);
+  // and coming down gives the full trees back
+  expect((await at(150)).full).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -1558,16 +1620,19 @@ test('the flight does not fly through the town, landmark included', async ({ pag
   const errors = await begun(page, 'seed=42&webgl=1');
   await paused(page);
   const { site } = await overTown(page);
+  expect(site.landmark).not.toBeNull();
   const flown = await page.evaluate((s) => {
     const w = window.__world!;
-    // The tallest thing standing in the town, found the way the forest is
-    // counted: by asking what stands over the ground. The landmark is three or
-    // four stages of 10.8 m on a plinth, so it is half again the tallest roof
-    // and taller than anything the flight has had to climb over before.
-    let tallest = { x: s.x, z: s.z, top: 0 };
-    for (let x = s.x - s.radius; x <= s.x + s.radius; x += 4)
-      for (let z = s.z - s.radius; z <= s.z + s.radius; z += 4) {
-        if (Math.hypot(x - s.x, z - s.z) > s.radius) continue;
+    // The landmark, found where the plan stood it and measured the way the
+    // forest is counted: by asking what stands over the ground, on its own
+    // footprint. It is three or four stages of 10.8 m on a plinth, half again
+    // the tallest roof. It is asked for by name because it is no longer the
+    // tallest thing in every town: a town stands trees now, and an elder in
+    // one can top it.
+    const at = s.landmark!;
+    let tallest = { x: at.x, z: at.z, top: 0 };
+    for (let x = at.x - 4; x <= at.x + 4; x += 1)
+      for (let z = at.z - 4; z <= at.z + 4; z += 1) {
         const top = w.floorAt(x, z) - w.heightAt(x, z);
         if (top > tallest.top) tallest = { x, z, top };
       }
@@ -1606,8 +1671,8 @@ test('the flight does not fly through the town, landmark included', async ({ pag
     };
     return { tallest, worst, closest, lifted, buildings: w.scenery!.buildings };
   }, site);
-  // It really is a landmark and not a roof: the tallest thing a town has after
-  // it is a four-storey mill at about sixteen metres, and this is over thirty.
+  // It really is a landmark and not a roof: the tallest building a town has
+  // after it is a four-storey mill at about sixteen metres, and this is over thirty.
   expect(flown.tallest.top).toBeGreaterThan(30);
   expect(flown.buildings).toBeGreaterThan(500);
   // The same envelope that holds over the canopy and over the village's roofs,

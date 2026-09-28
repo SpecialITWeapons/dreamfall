@@ -438,6 +438,32 @@ export function createDevPanel(doc: Document, world: WorldDebug): DevPanel {
       `${fixed(scenery?.ringMs ?? 0, 1)} · ${fixed(scenery?.grassMs ?? 0, 1)} · ${fixed(scenery?.sitesMs ?? 0, 2)}`,
   );
   reading('bake · rebuilds', () => `${scenery?.bakeMs ?? 0} ms · ${scenery?.rebuilds ?? 0}`);
+  reading(
+    'far trees · cells · queued',
+    () => `${scenery?.farTrees ?? 0} · ${scenery?.farCells ?? 0} · ${scenery?.farQueued ?? 0}`,
+  );
+  reading('cards', () => {
+    const refused = scenery?.cardsRefused ?? 0;
+    return `${scenery?.cards ?? 0}${refused > 0 ? ` (${refused} refused)` : ''}`;
+  });
+  reading('trees become cards', () => {
+    const band = scenery?.treeBand;
+    if (!band) return '--';
+    return scenery?.fullTrees ? `${Math.round(band[0])}–${Math.round(band[1])} m` : 'all of them';
+  });
+  // How high over the land every tree is a card: where the band starts drawing
+  // in, and where it is gone. "print" gives the new defaults for TREE_LIMIT.
+  const limit = world.treeLimit;
+  if (limit) {
+    formSliders(
+      limit.ranges,
+      () => limit.form,
+      (change) => limit.set(change),
+    );
+    const limitButtons = make('div', 'wrap');
+    button('print', () => console.log('tree limit', JSON.stringify(limit.form)), limitButtons);
+    panel.append(limitButtons);
+  }
 
   section('layers');
   const layerBox = make('div');

@@ -14,6 +14,7 @@ import { createHeightfield } from '../../src/engine/terrain/Heightfield';
 import { createWorldSampler } from '../../src/engine/terrain/WorldSampler';
 import { createFields } from '../../src/engine/terrain/Fields';
 import { resolvePresence, widthOf } from '../../library/standard/index.js';
+import { createLibrary } from '../../library/index.js';
 
 const ground = (() => ({ albedo: null })) as unknown as GroundHook;
 const cottage = defineStructure({
@@ -301,6 +302,69 @@ describe('createSites', () => {
     const t = sites(library([tall]));
     t.near(0, 0, 3000, []);
     expect(() => t.work(100)).toThrow(/cottage has no 5-storey bake, only 1\.\.2/);
+  });
+  it('stands a tree of the country where the plan asks for one of no species', () => {
+    // The country around the village is a meadow of oak and pine; the plan asks
+    // for a dozen trees and names none of them.
+    const meadow = defineBiome({
+      id: 'meadow',
+      name: 'meadow',
+      params: {},
+      presence: () => 1,
+      ground,
+      // thicker than any real country, so every tree the plan asks for comes up
+      // whatever share of the slots this test's village keeps for itself
+      populate: { type: 'scatter', species: { oak: 1, pine: 1 }, density: 5 },
+    });
+    const planted = village({
+      build: (site, kit: SiteKit) => {
+        for (let i = 0; i < 12; i++) kit.tree(null, site.x + 20 + i * 7, site.z);
+        kit.tree('oak', site.x, site.z + 30, { yaw: 1.25 });
+      },
+    });
+    const lib: Library = {
+      biomes: [meadow, planted],
+      structures: [cottage],
+      species: createLibrary().species,
+    };
+    const plant = () => {
+      const s = sites(lib);
+      const one = s.near(0, 0, 3000, [])[0]!;
+      s.work(100);
+      return s.planFor(one)!.trees!;
+    };
+    const trees = plant();
+    expect(trees).toHaveLength(13);
+    expect(new Set(trees.slice(0, 12).map((t) => t.species))).toEqual(new Set(['oak', 'pine']));
+    expect(trees[12]).toMatchObject({ species: 'oak', yaw: 1.25 });
+    // a pure function of the site: the same trees, species and all, planned again
+    expect(plant()).toEqual(trees);
+
+    // A thin country keeps fewer of them, and never none.
+    const heath = defineBiome({
+      ...meadow,
+      id: 'heath',
+      populate: { type: 'scatter', species: { pine: 1 }, density: 0.05 },
+    });
+    const thin = sites({ biomes: [heath, planted], structures: [cottage], species: createLibrary().species });
+    const there = thin.near(0, 0, 3000, [])[0]!;
+    thin.work(100);
+    const few = thin.planFor(there)!.trees!.filter((t) => t.species === 'pine').length;
+    expect(few).toBeGreaterThan(0);
+    expect(few).toBeLessThan(12);
+
+    // and a species nobody baked is said here, in the queue
+    const wrong = village({ build: (site, kit: SiteKit) => kit.tree('baobab', site.x, site.z) });
+    const w = sites({ biomes: [meadow, wrong], structures: [cottage], species: createLibrary().species });
+    w.near(0, 0, 3000, []);
+    expect(() => w.work(100)).toThrow(/unknown species "baobab"/);
+  });
+  it('stands no tree of no species in a country with none to give', () => {
+    const bare = village({ build: (site, kit: SiteKit) => kit.tree(null, site.x, site.z) });
+    const s = sites(library([bare]));
+    const one = s.near(0, 0, 3000, [])[0]!;
+    s.work(100);
+    expect(s.planFor(one)!.trees ?? []).toEqual([]);
   });
   it('builds no plan until it is given the time, and then keeps it', () => {
     const s = sites(library([village()]));
