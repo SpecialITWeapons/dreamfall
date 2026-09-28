@@ -287,7 +287,9 @@ rund).
   cypel):
   - ściana od 80% do 20% swojej wysokości mieści się w 2 komórkach;
   - za frontem wysokość jest nietknięta co do bitu;
-  - punkty morza bez zmian; płytki staw bez klifu;
+  - morze pod ścianą pogłębione do `-floor`, a dalej niż 160 m od dawnej
+    linii wody bez zmian; płytki staw bez klifu; niski brzeg (czoło poniżej
+    `minFace`) i góra (powyżej `maxFace`) bez zmian;
   - `share = 0` i maska zero dają 0;
   - ten sam wynik przy dowolnej kolejności zapytań i po wyparciu cache.
 - **Seed 42** (prawdziwy sampler z biblioteką):
