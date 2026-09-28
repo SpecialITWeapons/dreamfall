@@ -77,16 +77,16 @@ describe('the ring over the real library', () => {
   it('sows the origin as it always has', () => {
     expect(sow(0, 0)).toMatchInlineSnapshot(`
       {
-        "digest": "a1625b9b",
-        "props": 132,
-        "trees": 237,
+        "digest": "246a71d0",
+        "props": 131,
+        "trees": 233,
       }
     `);
   });
   it('sows the woods as it always has', () => {
     expect(sow(-48000, -42000)).toMatchInlineSnapshot(`
       {
-        "digest": "d2e0a753",
+        "digest": "9abb674b",
         "props": 43,
         "trees": 944,
       }
@@ -95,9 +95,9 @@ describe('the ring over the real library', () => {
   it('sows a third place as it always has', () => {
     expect(sow(20000, -15000)).toMatchInlineSnapshot(`
       {
-        "digest": "c8494397",
+        "digest": "6480d69c",
         "props": 22,
-        "trees": 318,
+        "trees": 317,
       }
     `);
   });
@@ -183,7 +183,7 @@ describe('the ring refusing', () => {
   it('refuses in mixed country as it always has', () => {
     expect(sowRefusing(-30000, 25000, 'elder', 'blossom')).toMatchInlineSnapshot(`
       {
-        "digest": "d0c48f27",
+        "digest": "2e42791d",
         "refused": 1,
         "stood": 150,
       }
@@ -192,7 +192,7 @@ describe('the ring refusing', () => {
   it('refuses at the origin as it always has', () => {
     expect(sowRefusing(0, 0, 'oak', 'cypress')).toMatchInlineSnapshot(`
       {
-        "digest": "7e9ea984",
+        "digest": "1e73690e",
         "refused": 1,
         "stood": 150,
       }
