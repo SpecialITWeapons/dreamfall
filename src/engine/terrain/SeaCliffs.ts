@@ -9,7 +9,12 @@
 // front stands are asked of a lattice of nodes every COAST_NODE metres, each a
 // pure function of its own indices, and read between them bilinearly: asked of
 // the point itself, the distance is noise past a few metres from the water and
-// the cut is full of holes. Pure CPU: no three, no DOM.
+// the cut is full of holes. A node's own straight walk down the gradient can
+// land far from where a neighbour's does -- a ragged coast bends between them
+// -- so a node's distance is to the nearest water-line point its own 5x5
+// neighbourhood of walks found, never to its own walk alone: one walk's line,
+// taken by itself, left pits where a neighbour's was nearer (a 3x3
+// neighbourhood closed most of them but not all). Pure CPU: no three, no DOM.
 import { fbm, sstep } from './noise';
 
 export interface SeaCliffForm {
@@ -77,16 +82,24 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
   };
   const widthAt = (x: number, z: number) =>
     C.width[0] + (C.width[1] - C.width[0]) * (0.5 + 0.5 * fbm(x / 1400 + 5.1, z / 1400 - 2.7, salt + 1, 2));
-  const keyX = new Float64Array(CACHE).fill(Number.NaN),
-    keyZ = new Float64Array(CACHE),
-    distance = new Float64Array(CACHE),
-    seaness = new Float64Array(CACHE),
-    frontOf = new Float64Array(CACHE);
-  // One node: walk down the gradient to the water line, then look past it for
-  // the sea and back up it for the land the front stands in.
-  const node = (ix: number, iz: number) => {
-    const slot = (Math.imul(ix, 73856093) ^ Math.imul(iz, 19349663)) & (CACHE - 1);
-    if (keyX[slot] === ix && keyZ[slot] === iz) return slot;
+  const hashSlot = (ix: number, iz: number) =>
+    (Math.imul(ix, 73856093) ^ Math.imul(iz, 19349663)) & (CACHE - 1);
+  // The walk: a node's own straight Newton descent toward the water line,
+  // cached by (ix, iz) exactly like a node was before. `sea` and `front` are
+  // read off the walk's own end and travel direction, because both belong to
+  // the walk that found them, not to whoever later reads the node.
+  const walkKeyX = new Float64Array(CACHE).fill(Number.NaN),
+    walkKeyZ = new Float64Array(CACHE),
+    walkConverged = new Uint8Array(CACHE),
+    walkLx = new Float64Array(CACHE),
+    walkLz = new Float64Array(CACHE),
+    walkUx = new Float64Array(CACHE),
+    walkUz = new Float64Array(CACHE),
+    walkSea = new Float64Array(CACHE),
+    walkFront = new Float64Array(CACHE);
+  const walk = (ix: number, iz: number) => {
+    const slot = hashSlot(ix, iz);
+    if (walkKeyX[slot] === ix && walkKeyZ[slot] === iz) return slot;
     const x0 = ix * COAST_NODE,
       z0 = iz * COAST_NODE;
     let x = x0,
@@ -107,12 +120,64 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
       h = height(x, z);
       if (Math.abs(h) < 0.5) break;
     }
-    const W = widthAt(x0, z0);
-    keyX[slot] = ix;
-    keyZ[slot] = iz;
-    distance[slot] = Math.hypot(x - x0, z - z0) * Math.sign(height(x0, z0));
-    seaness[slot] = sstep(C.deep[0], C.deep[1], -height(x - ux * C.probe, z - uz * C.probe));
-    frontOf[slot] = height(x + ux * W, z + uz * W);
+    const W = widthAt(x, z);
+    walkKeyX[slot] = ix;
+    walkKeyZ[slot] = iz;
+    walkConverged[slot] = Math.abs(h) < 0.5 ? 1 : 0;
+    walkLx[slot] = x;
+    walkLz[slot] = z;
+    walkUx[slot] = ux;
+    walkUz[slot] = uz;
+    walkSea[slot] = sstep(C.deep[0], C.deep[1], -height(x - ux * C.probe, z - uz * C.probe));
+    walkFront[slot] = height(x + ux * W, z + uz * W);
+    return slot;
+  };
+  // The node: the nearest water-line point its own 5x5 neighbourhood of walks
+  // found, not its own walk alone -- two neighbours' straight descents can
+  // land on different stretches of a ragged coast, and the nearer one is the
+  // node's true distance. Cached by (ix, iz) too, in its own CACHE.
+  const nodeKeyX = new Float64Array(CACHE).fill(Number.NaN),
+    nodeKeyZ = new Float64Array(CACHE),
+    distance = new Float64Array(CACHE),
+    seaness = new Float64Array(CACHE),
+    frontOf = new Float64Array(CACHE);
+  const node = (ix: number, iz: number) => {
+    const slot = hashSlot(ix, iz);
+    if (nodeKeyX[slot] === ix && nodeKeyZ[slot] === iz) return slot;
+    const x0 = ix * COAST_NODE,
+      z0 = iz * COAST_NODE;
+    let bestDist = Infinity,
+      bestSea = 0,
+      bestFront = 0,
+      found = false;
+    for (let dz = -2; dz <= 2; dz++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const w = walk(ix + dx, iz + dz);
+        // Read out right after asking for it, before the next of the
+        // twenty-five walks is asked for: the same slot-aliasing the node
+        // cache had (round 1) can happen here, since the walk cache is asked
+        // that many times over one node.
+        const wConverged = walkConverged[w]!,
+          wLx = walkLx[w]!,
+          wLz = walkLz[w]!,
+          wSea = walkSea[w]!,
+          wFront = walkFront[w]!;
+        if (!wConverged) continue;
+        const dist = Math.hypot(wLx - x0, wLz - z0);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestSea = wSea;
+          bestFront = wFront;
+          found = true;
+        }
+      }
+    nodeKeyX[slot] = ix;
+    nodeKeyZ[slot] = iz;
+    const sign = Math.sign(height(x0, z0));
+    // No walk in the neighbourhood converged: far from any line, so no cut.
+    distance[slot] = found ? sign * bestDist : sign * 1e4;
+    seaness[slot] = found ? bestSea : 0;
+    frontOf[slot] = found ? bestFront : 0;
     return slot;
   };
   const coast = { d: 0, sea: 0, front: 0 };
