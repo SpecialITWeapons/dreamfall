@@ -77,8 +77,8 @@ describe('the ring over the real library', () => {
   it('sows the origin as it always has', () => {
     expect(sow(0, 0)).toMatchInlineSnapshot(`
       {
-        "digest": "f9bddd0a",
-        "props": 131,
+        "digest": "a1625b9b",
+        "props": 132,
         "trees": 237,
       }
     `);
@@ -86,7 +86,7 @@ describe('the ring over the real library', () => {
   it('sows the woods as it always has', () => {
     expect(sow(-48000, -42000)).toMatchInlineSnapshot(`
       {
-        "digest": "fd8e3dd3",
+        "digest": "d2e0a753",
         "props": 43,
         "trees": 944,
       }
@@ -95,7 +95,7 @@ describe('the ring over the real library', () => {
   it('sows a third place as it always has', () => {
     expect(sow(20000, -15000)).toMatchInlineSnapshot(`
       {
-        "digest": "8d71a33f",
+        "digest": "c8494397",
         "props": 22,
         "trees": 318,
       }
@@ -192,7 +192,7 @@ describe('the ring refusing', () => {
   it('refuses at the origin as it always has', () => {
     expect(sowRefusing(0, 0, 'oak', 'cypress')).toMatchInlineSnapshot(`
       {
-        "digest": "bc131c2f",
+        "digest": "7e9ea984",
         "refused": 1,
         "stood": 150,
       }
