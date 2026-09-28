@@ -1,9 +1,10 @@
 # Klify nadmorskie
 
 Data: 2026-09-28. Status: kierunek wybrany po dwóch probe; spec do przeglądu
-właściciela. Dokłada do terenu z sekcji 6 projektu
-(`2026-09-14-dreamfall-design.md`) jedną warstwę świata: miejscami morze
-podcina ląd i zostawia po sobie ścianę.
+właściciela. Zaktualizowany po implementacji: §5.2, §5.3, §5.5, §5.6, §8, §9,
+§10 i §13 opisują to, co zbudowano, a nie to, co planowano. Dokłada do
+terenu z sekcji 6 projektu (`2026-09-14-dreamfall-design.md`) jedną warstwę
+świata: miejscami morze podcina ląd i zostawia po sobie ścianę.
 
 ## 1. Cel
 
@@ -123,26 +124,59 @@ wybrzeża dostaje klif, reguluje `cover` (cel w §10).
 
 ### 5.2 Odległość od linii wody
 
-Siatka węzłów co `COAST_NODE = 64 m`. W węźle: trzy kroki Newtona w dół
-gradientu bazy (różnice centralne ±12 m, krok przycięty do ±400 m, stop przy
-`|h| < 0,5 m`); odległość to długość drogi do punktu końcowego, ze znakiem
-wysokości węzła (+ na lądzie). Węzeł trzyma trzy liczby: odległość, `sea`
-(§5.3) i `front` (§5.5). Dla punktu: interpolacja dwuliniowa czterech
-węzłów, wszystkich trzech liczb.
+Siatka węzłów co `COAST_NODE = 64 m`. Z każdego węzła wychodzi **marsz** w
+stronę linii wody: z wysokości węzła i nachylenia wziętego z wysokości czterech
+sąsiednich węzłów (różnice centralne na siatce), jeden krok Newtona, a potem
+sieczne po tej samej prostej, razem do czterech próbek; krok przycięty do
+±400 m, stop przy `|h| < 0,5 m`. Marsz, któremu nachylenie każe szukać linii
+dalej niż 400 m, poddaje się bez próbki. Marsze czytają samą wysokość bazy
+(`ground()` w `WorldSampler`, ta sama, z której składa się `baseFields`, bez
+klimatu i bez pasma gór tam, gdzie jego maska jest zerem; wynik ten sam co do
+bitu). W probe były trzy kroki Newtona z gradientem z próbek ±12 m; sieczna
+z nachylenia siatki znajduje linię tak samo często za mniej niż połowę próbek
+(§9).
+
+**Odległość węzła to nie długość jego własnego marszu**, tylko odległość od
+węzła do najbliższego punktu linii, który znalazł którykolwiek zbieżny marsz
+z jego sąsiedztwa 3×3, ze znakiem wysokości węzła (+ na lądzie). Na
+postrzępionym brzegu dwa sąsiednie marsze lądują na różnych odcinkach linii
+(odległości różniły się o ok. 3× między węzłami 64 m od siebie), i własny
+marsz sam zostawiał pojedyncze dołki po 13 m. Sąsiedztwo 5×5 kosztowało
+25 odczytów marszu na węzeł i też nie usuwało wszystkich wad; resztę usunął
+człon klifu z §5.5.
+
+Węzeł, w którego sąsiedztwie żaden marsz nie znalazł linii albo którego
+najbliższa linia leży dalej niż `REACH` (najszerszy pas + `jag` + przekątna
+komórki, ok. 303 m), **nie mówi nic**: odległość NaN, człon klifu 0.
+Wymyślona odległość (w pierwszej wersji 1e4) mieszała się z prawdziwą
+sąsiada i stawiała koniec podcięcia na linii siatki: prosty stopień 28 m na
+2 m.
+
+Węzeł trzyma dwie liczby: odległość i człon klifu (§5.5). Dla punktu:
+interpolacja dwuliniowa czterech węzłów; człon klifu po wszystkich czterech
+(nieznaleziony mówi 0, więc to on wygasza podcięcie w stronę węzła bez
+linii), odległość tylko po narożnikach, które ją mają, z wagami
+znormalizowanymi z powrotem do jedności.
 
 Wartość węzła to czysta funkcja jego indeksów, więc wynik punktu jest czystą
 funkcją punktu, niezależnie od kolejności wypełniania i od cache. Na tym stoi
-`SampledGround` (odpowiada co do bitu jak okno) i dalekie okno. Cache: tablica
-haszowana po indeksach węzła (4096 miejsc w probe), wypierana bez
-konsekwencji dla wyniku; test tego pilnuje (§10).
+`SampledGround` (odpowiada co do bitu jak okno) i dalekie okno. Cache: trzy
+tablice haszowane po indeksach (wysokości węzłów, marsze, węzły), po 4096
+miejsc, wypierane bez konsekwencji dla wyniku; test tego pilnuje (§10).
+Dwa zapytania mogą trafić w to samo miejsce, więc wartość czyta się z miejsca
+od razu, przed następnym zapytaniem: w pierwszej wersji cztery narożniki
+czytane po czterech zapytaniach nadpisywały się i zostawiały dołki tam, gdzie
+dwa z nich miały jedno miejsce.
 
 ### 5.3 Czy to morze
 
-W węźle, oprócz odległości: wysokość bazy w punkcie `probe = 300 m` dalej w
-dół stoku od znalezionej linii wody. `sea = sstep(deep[0], deep[1], -h)`,
-`deep = [3, 10]`. Staw jest płytki (mediana maks. głębokości zbiornika do
-0,1 km² to 7 m), morze za pasem przybrzeżnym jest głębsze. Interpolowane jak
-odległość.
+W marszu, który znalazł linię: wysokość bazy w punkcie `probe = 300 m` dalej
+w dół stoku od znalezionej linii wody, w kierunku marszu. `sea =
+sstep(deep[0], deep[1], -h)`, `deep = [3, 10]`. Staw jest płytki (mediana
+maks. głębokości zbiornika do 0,1 km² to 7 m), morze za pasem przybrzeżnym
+jest głębsze. `sea` nie jest interpolowane osobno: należy do marszu, który je
+zmierzył, i wchodzi do jego członu klifu (§5.5). Marsz, który linii nie
+znalazł, morza nie sprawdza wcale.
 
 ### 5.4 Front i ściana
 
@@ -158,11 +192,11 @@ piłę.
 
 ### 5.5 Jak wysoka ściana
 
-Ściana ma wysokość lądu na froncie. Liczy ją węzeł: od znalezionej linii
-wody idzie `W` (szerokość pasa w węźle) w górę stoku i czyta tam bazę. Jedna
-próbka więcej na węzeł. Dzięki temu wysokość czoła znają też punkty morza
-przed klifem (§5.6), a szacunek nie zaniża ściany na stoku wklęsłym, jak
-szacunek liniowy z punktu w probe 2.
+Ściana ma wysokość lądu na froncie. Liczy ją marsz: od znalezionej linii
+wody idzie `W` (szerokość pasa w tym punkcie) w górę stoku, w kierunku
+marszu, i czyta tam bazę. Jedna próbka więcej na zbieżny marsz. Dzięki temu
+wysokość czoła znają też punkty morza przed klifem (§5.6), a szacunek nie
+zaniża ściany na stoku wklęsłym, jak szacunek liniowy z punktu w probe 2.
 
 `worth = sstep(minFace) · (1 - sstep(maxFace))`, `minFace = [18, 34] m`,
 `maxFace = [140, 190] m`: poniżej plaża zostaje plażą (niższa ściana przy
@@ -170,8 +204,20 @@ szacunek liniowy z punktu w probe 2.
 
 Mielizny z probe biorą się z częściowego `worth · sea`: podcięcie w połowie
 zostawia płaski ląd tuż pod wodą. `worth · sea` przechodzi więc przez
-wyostrzenie (`sstep(0.35, 0.65, ·)`), a maska `m` nie, bo ona ma zanikać
-łagodnie. Test liczy wysepki (§10).
+wyostrzenie (`sharp = sstep(0.35, 0.65, ·)`), a maska `m` nie, bo ona ma
+zanikać łagodnie.
+
+**Człon klifu węzła** to `sharp(worth · sea)` każdego zbieżnego marszu z jego
+sąsiedztwa 3×3, uśredniony z wagą `exp(-d / 64 m)`, gdzie `d` to odległość od
+węzła do linii tego marszu; w punkcie, po interpolacji, wyostrzany jeszcze
+raz. Wyostrzany w marszu, a nie dopiero po zmieszaniu: mieszanka `sea` i
+`front` leżała na całych stokach w środku wyostrzenia, i każde jej małe
+nachylenie było stromym nachyleniem podcięcia (fosa za plażą, dołek przy
+ścianie). Mieszany ze wszystkich marszów, a nie wzięty z najbliższego: dwa
+marsze 42 m od siebie u nasady zatoki czytały morze jako 0 i 1, najbliższy
+zmieniał się z węzła na węzeł, i wychodziły dołki wśród połowicznie
+podciętych komórek i wysepki nietkniętego lądu. Test liczy jedne i drugie
+(§10).
 
 ### 5.6 Dno
 
@@ -180,8 +226,10 @@ sstep(-160, -40, d))`, `floor = 7 m`: −7 m pod ścianą, w całym pasie i
 jeszcze 40 m w morze, a potem wraca do szelfu do 160 m od dawnej linii
 wody. Obejmuje to także punkty morza, więc `SEA_CLIFF.low = -40 m` (dno
 szelfu to ok. −46 m). Bez tego dawny szelf zostawał przed klifem jasnym
-pasem mielizny. Wynik: `k = m · cut · sharp(worth · sea)`, zmiana
-`k · (target - b)`.
+pasem mielizny. Wynik: `k = m · cut · sharp(cliff)`, gdzie `cliff` to
+interpolowany człon klifu (§5.5), zmiana `k · (target - b)`. Woda już na
+głębokości dna lub głębiej (`b <= -floor`) nie zmienia się nigdy, więc
+warstwa odpowiada 0 zanim zapyta siatkę.
 
 ### 5.7 Osady
 
@@ -225,8 +273,9 @@ czyta wysokość środka z `baseFields`, a tam klifu nie ma, więc się zgadza.
 
 Wszystko w `TerrainMesh`, na bliskiej siatce. Waga ściany:
 `wall = smoothstep(0.42, 0.7, slope) · (1 - smoothstep(180, 240, h))`, żeby
-nie ruszać gór. Każdy szum ściany siedzi w gałęzi `If(wall > 0.01)`, więc
-reszta terenu nie płaci za nic.
+nie ruszać gór (`slope` to tu większe z nachyleń komórki i normalnej
+światła). Każdy szum ściany siedzi w gałęzi `If(wall > 0.01)`, więc
+reszta terenu na GPU nie płaci za nic (SwiftShader płaci, §9).
 
 **Światło, bez trójkątów:**
 
@@ -241,7 +290,11 @@ reszta terenu nie płaci za nic.
   zaburzona różnicami skończonymi tego pola wzdłuż ściany i w górę jej, krok
   0,5 m, wygaszana z odległością od kamery (300–1200 m), żeby z daleka nie
   migotała. Różnice skończone, a nie pochodne ekranowe: pochodna w gałęzi
-  `If` jest w GLSL niezdefiniowana.
+  `If` jest w GLSL niezdefiniowana. Gałąź rzeźby ma własny warunek
+  `wall > 0.01 i odległość < 1200 m`: dalej wygaszenie i tak mnoży ją przez
+  zero, a pytała o dwanaście szumów. Spękania rzeźby zostają w 3D: szum samego
+  punktu nie ma ramienia dźwigni (niżej), a na pochylonej ścianie wije się
+  tylko jako rowek w świetle, pod prostymi spękaniami koloru.
 
 **Kolor, nie jeden:**
 
@@ -252,10 +305,17 @@ reszta terenu nie płaci za nic.
   i jasność o ±10%.
 - **Ławice:** ostre poziome pasy co 4,5 m (`fract(h / 4,5)` z wolnym
   zafalowaniem), ±8% jasności.
-- **Spękania i zacieki** we współrzędnej wzdłuż ściany (`run`: rzut
-  `worldXZ` na kierunek poziomy ściany z normalnej światła), nie po x, z:
-  inaczej wiją się na nachylonej ścianie. Spękania to cienkie ciemne linie
-  prawie pionowe, zacieki to szersze pionowe smugi.
+- **Spękania i zacieki na dwóch pionowych płaszczyznach**, `(x, h)` i
+  `(z, h)`, ważonych tym, w którą stronę patrzy ściana (`|n.z|` i `|n.x|`
+  normalnej światła). Nie w 3D po x, z: pochylona ściana przesuwa się w
+  poziomie, gdy rośnie, i spękania wiją się jak pismo. I nie we współrzędnej
+  wzdłuż ściany (`run`, rzut `worldXZ` na kierunek poziomy ściany), jak
+  planowano: to iloczyn skalarny pozycji w świecie z kierunkiem, więc obrót
+  interpolowanej normalnej o kilka stopni przesuwa go o odległość od początku
+  świata razy ten kąt, setki metrów 4,6 km od (0, 0), i spękania na krzywej
+  ścianie gięły się w papkę. Dwie płaszczyzny nie mają ramienia dźwigni i
+  kosztują dwa szumy więcej. Spękania to cienkie ciemne linie prawie
+  pionowe, zacieki to szersze pionowe smugi.
 - **Porost:** plamy jasnej żółtawej szarości, do 30%.
 - **Mokra stopa:** ściemnienie do połowy w dolnych 1,5–7 m.
 
@@ -281,6 +341,40 @@ Shader: nowy vantage `cliff` w `tools/vantages.ts` (klif seeda 42 z 45 m),
 Liczby idą do `docs/perf-notes.md`, metodą z tego pliku (mediana, minimum z
 rund).
 
+**Zmierzone** (Node, seed 42, pełne okno 313 600 tekseli, minimum z trzech
+rund, `MEASURE=1 npx vitest run tests/unit/seaCliffsCost.test.ts`): klif
+(3584, −2992) **+5,3%**, klif 2 (2720, 2240) **+6,0%**, początek świata
+**+4,7%**; w innych przebiegach +5,2..6,7%. Metoda różni się od planowanej:
+obie strony, z klifami i bez, idą **na przemian wiersz po wierszu**, a nie
+całe wypełnienia po kolei. Ta maszyna zrzuca zegar o ok. jedną trzecią po
+dwóch, trzech sekundach przebiegu, więc całe wypełnienia na zmianę mierzyły,
+która strona trafiła za spadek (+4..+12% dla tego samego kodu); wiersze na
+przemian idą pod jednym zegarem, a ten sam przeplot bez klifów po obu
+stronach czyta się w granicach 1,5% od zera. Zapas do budżetu to więc ok.
+1,5–2,5 punktu.
+
+Po rundach dołków i wysepek (3×3 marszów na węzeł, każdy z własnym odczytem
+wybrzeża) warstwa kosztowała +33..36%. Z dźwigni z listy weszła pierwsza
+(i do niej: woda głębsza niż dno odpada przed siatką); dwa kroki Newtona
+oblały test dołków i wysepek, siatki 96 m nie trzeba było, cache 8192
+oszczędzał 1% marszów i nie wszedł. Resztę zrobiły dźwignie, których lista
+nie miała, w kolejności: marsz bez linii nie czyta wybrzeża; marsze czytają
+samą wysokość, bez klimatu i bez pasma gór pod zerową maską; jeden krok
+Newtona z nachylenia siatki i potem sieczne (5,6 próbki na marsz zamiast 15);
+marsz, któremu linia wychodzi dalej niż 400 m, poddaje się; narożniki
+komórki pamiętane, póki wiersz ją przecina, i człon klifu poniżej
+wyostrzenia odpowiada przed maską. Tabela krok po kroku jest w
+`docs/perf-notes.md`. Czwarta i piąta ruszają teren (marsze lądują w innych
+punktach tej samej linii, 1,2–1,7% tekseli okna, udział wybrzeża 13,0 →
+13,3%), reszta nie zmienia niczego co do bitu.
+
+Gałąź ściany w shaderze: na GPU (WebGPU, znaczniki czasu, zainstalowany
+Chrome) bez mierzalnej różnicy, także na vantage `cliff` (2,16 ms po, 2,17–2,18
+przed w trzech z czterech przebiegów). Na SwiftShader (rasteryzator CI)
+wszystkie vantage z ziemią podrożały o 40–110%, także te bez klifu na
+ekranie: programowy rasteryzator płaci za ciało gałęzi, której żaden
+fragment nie bierze.
+
 ## 10. Testy
 
 - `tests/unit/seaCliffs.test.ts` (Node, sztuczna baza: rampa do morza, staw,
@@ -291,21 +385,49 @@ rund).
     linii wody bez zmian; płytki staw bez klifu; niski brzeg (czoło poniżej
     `minFace`) i góra (powyżej `maxFace`) bez zmian;
   - `share = 0` i maska zero dają 0;
-  - ten sam wynik przy dowolnej kolejności zapytań i po wyparciu cache.
-- **Seed 42** (prawdziwy sampler z biblioteką):
-  - bez dziur: na przekrojach prostopadłych do brzegu podcięcie zmienia się
-    najwyżej raz na 400 m;
-  - bez mielizn: w pasie podcięcia żadnej wysepki lądu (`h > 0`) mniejszej
-    niż 3×3 komórki;
-  - udział linii brzegu morza z czołem ≥ 20 m: 10–20% (cel „gdzieniegdzie”;
-    `cover` go ustawia); ściany między `minFace` a `maxFace`.
-- **Lot** (`FlightController` nad sztuczną ścianą 80 m, pilot i autopilot,
-  30 m nad wodą): prześwit nigdy poniżej `MIN_CLEARANCE`, zmiana `y` na krok
-  w granicy tego, co kontroler sam umie wznieść. Tu wyjaśni się 0,60 m na
-  krok pilota z probe 2.
-- **Drogi:** `heightAt` workera zawiera klify i zanika wokół końców.
-- Zmiany świadome: `ringGolden` (4 snapshoty), punkt startu w smoke teście,
-  jeśli klif go dosięga; złote wartości `WorldSampler.sample` bez zmian.
+  - ten sam wynik przy dowolnej kolejności zapytań i po wyparciu cache;
+  - dwa narożniki w jednym miejscu cache nie mieszają się (test regresji
+    §5.2);
+  - podcięcie wygasa w stronę węzła, który linii nie znalazł, bez stopnia
+    (sztuczny płaskowyż: było 36 m na komórkę).
+- **Seed 42** (prawdziwy sampler z biblioteką, `seaCliffsWorld.test.ts`):
+  okno 192×192 komórek wokół każdego z dwóch miejsc z §11, każde z ponad
+  100 podciętymi komórkami (wysokość ponad 2 m pod bazą). Test liczy wady,
+  które widać, a nie każde przejście przez próg: gładkie podcięcie
+  przechodzące przez próg 2 m w jednej komórce to nie dołek, a mokre
+  pasemko poniżej metra na brzegu częściowego podcięcia to postrzępiony
+  brzeg, nie ląd w morzu. W planie było „podcięcie zmienia się najwyżej raz
+  na 400 m” i „żadnej wysepki `h > 0` mniejszej niż 3×3”; oba łapały takie
+  przejścia.
+  - **bez dołków:** żadna komórka nie leży ponad 3 m niżej niż każda z
+    czterech sąsiednich;
+  - **bez wysepek:** żaden spójny kawałek lądu (`h > 0`) mniejszy niż 9
+    komórek, stykający się z podciętą komórką i nie dotykający brzegu okna
+    (ląd uciekający za okno może być stałym lądem, który okno ucięło), nie
+    wystaje najwyższym punktem ponad 1 m nad wodę;
+  - udział podciętego wybrzeża 10–20% (cel „gdzieniegdzie”; `cover` go
+    ustawia): próbki co 48 m w kwadracie 40 km, wybrzeże to baza 0,5–3 m,
+    podcięte to ponad 3 m pod bazą; zmierzone 13,3%. Testu „ściany między
+    `minFace` a `maxFace`” nie ma: pilnuje tego `worth` i test sztucznej bazy.
+- **Koszt** (`seaCliffsCost.test.ts`): +8% najwyżej, w trzech miejscach;
+  działa tylko z `MEASURE`, bo wspólny runner CI mierzy własną pogodę (§9).
+  W CI nie sprawdza więc niczego, a regresję kosztu widać dopiero, gdy ktoś
+  zmierzy.
+- **Lot** (`flightController.test.ts`, `FlightController` nad sztuczną
+  ścianą 60 m i 160 m, 30 m nad wodą, autopilot i pilot; pilotowi lot
+  przekazany naprawdę, `fly(0, 1)` i `fly(0, 0)`, bo `fly(0, 0)` przy
+  włączonym autopilocie nic nie robi): prześwit nigdy poniżej
+  `MIN_CLEARANCE` w obu trybach, a autopilot nie wznosi się szybciej niż
+  `CLIMB`. **Pilot nad ścianą 160 m się wznosi szybciej** i to jest
+  przypięte jako `it.fails`: sonda przed lotem wznosi się za późno i klamra
+  prześwitu podrzuca postać o 5,6 m na krok (112 m/s) przez dwa kroki. To
+  wyjaśnia 0,60 m na krok pilota z probe 2 i dotyczy każdej ściany, nie
+  tylko klifu; naprawa lotu to osobne zadanie, a test zrobi się czerwony,
+  gdy lot zostanie naprawiony (wtedy zwykłe `it`).
+- **Drogi** (`routeGround.test.ts`): wysokość workera (`RouteGround.ts`)
+  zawiera klify i zanika wokół końców przez promień osady i jej feather.
+- Zmiany świadome: snapshoty `ringGolden` zaktualizowane; punkt startu w
+  smoke teście bez zmian; złote wartości `WorldSampler.sample` bez zmian.
 - Browser: istniejący zestaw e2e na WebGL2 bez nowych błędów.
 
 ## 11. Narzędzia i dokumentacja
@@ -327,8 +449,8 @@ normalna na piksel, osobny kolor skały klifu w bibliotece, suwaki w panelu.
 
 ## 13. Ryzyka do obejrzenia
 
-- `front` w węźle czyta bazę W w górę stoku od linii wody, w kierunku
-  gradientu z ostatniego kroku Newtona; na krętym brzegu ten kierunek może
+- `front` w marszu czyta bazę W w górę stoku od linii wody, w kierunku
+  nachylenia siatki w węźle, z którego marsz wyszedł; na krętym brzegu ten kierunek może
   nie trafić w ląd za frontem. Widać to na zdjęciach, nie w teście.
 - Osada z `shoreBonus` przy brzegu w masce: zatoczka zamiast klifu. Jeśli
   wioska w zatoczce będzie wyglądać źle, alternatywą jest odsuwanie osad od

@@ -37,10 +37,10 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
-  `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
+  `terrain/SeaCliffs.ts`, `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
   `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
   `scenery/TreeLimit.ts`, `scenery/ShadeSheet.ts`,
-  `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
+  `scenery/RoadNetwork.ts`, `scenery/Route.ts`, `scenery/RouteGround.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -131,6 +131,43 @@ page works under a Pages subdirectory.
 - `WorldSampler` is a verbatim port of fly-with-me's `sampleWorld`; its unit
   tests hold golden values for seed 42, and a change to the terrain must
   update them deliberately.
+- **Here and there the sea has cut into the land** (`terrain/SeaCliffs.ts`):
+  within 70 to 190 m of the base water line the land is taken down to 7 m under
+  the sea, and the face stands where the cut ends, as tall as the land is there,
+  so a cliff rises where high land meets the sea and a low coast stays a beach.
+  It is a world layer added in `sampleWindow` after the hooks, weighed by no
+  biome (a hook's weight ended a cliff at a biome's border like a block cut off)
+  and by one minus a settlement's share, so a village on the shore stands in a
+  cove. `sample` and `baseFields` do not see it, so the golden values hold; the
+  route worker searches over it (`scenery/RouteGround.ts`) with a cove kept at
+  both ends. Where the water line is and whether a cliff stands on it (the sea
+  past it -- a pond is shallow 300 m past its line -- and land tall enough
+  behind it) are asked of **a lattice of nodes every 64 m**, each a pure
+  function of its indices: asked of the point, the distance is noise and the cut
+  is full of holes. Each node walks toward the line off the lattice's own
+  heights, and its distance is to the nearest line any walk of its 3x3 found,
+  its cliff term every such walk's answer weighed by `exp(-d / 64 m)`: its own
+  walk alone left pits where a neighbour's line was nearer, and the nearest
+  walk's answer alone flipped from node to node and left pits and islets. A node
+  with no line within reach says nothing (a NaN distance, left out of the mix):
+  a made-up one mixed with a real one drew a straight step on a lattice line.
+  The caches alias, so a slot is read out before the next is asked for.
+  `seaCliffsWorld.test.ts` counts what the eye sees at two cliffs of seed 42 --
+  no pit (a cell 3 m under all four neighbours), no islet (land under nine cells
+  standing a metre over the sea) -- and a fill costs 5 to 6 % more, measured
+  with the two sides interleaved a row at a time because this machine drops its
+  clock mid-run (`seaCliffsCost.test.ts` under `MEASURE=1`; the levers are in
+  `docs/perf-notes.md`). The face is 32 m wide and never less: a narrower step
+  saws along the 16 m grid. On the GPU (`TerrainMesh.ts`) a wall takes its light
+  from a normal two cells either side and a bump by finite differences, not
+  screen derivatives, which are undefined in a branch, and not past 1200 m; its
+  cracks and streaks are read on the (x, h) and (z, h) planes, because in 3D a
+  leaning face writes them like handwriting and a coordinate along the wall has
+  the distance from the origin for a lever arm. The branch is free on a GPU and
+  not on SwiftShader, which pays for it at every vantage, wall or none. Flown by
+  hand at a 160 m wall the clearance clamp still pops the figure up for two
+  steps, pinned as `it.fails` in `flightController.test.ts`.
+  `tools/cliffs/look.mjs` photographs one.
 - The simulation works in world coordinates (double precision); the scene is
   in the local frame of `Origin`, which jumps in whole cells. Shaders that
   read the world add `uWorldOrigin`; nothing else may read `positionWorld`
