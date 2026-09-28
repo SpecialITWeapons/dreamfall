@@ -8,6 +8,7 @@ import type { Biome } from '../../../library/contract';
 import { resolveHeight, resolvePresence } from '../../../library/standard/index.js';
 import { createFields } from './Fields';
 import { fbm, hash2, pyramidPeaks, ridgedMulti, sstep } from './noise';
+import { NO_CLIFFS, SEA_CLIFF, createSeaCliffs, type SeaCliffForm, type SeaCliffs } from './SeaCliffs';
 
 /** Terrain sample spacing, m. */
 export const CELL = 16;
@@ -58,6 +59,12 @@ export interface WorldSampler {
    * three registry indices those weights belong to.
    */
   sampleWindow(x: number, z: number, out: FieldsOut, slots: Uint8Array): void;
+  /**
+   * The sea cliffs `sampleWindow` adds after the biomes' hooks: the one place
+   * the cut is decided, so the route worker, which has no registry, cuts the
+   * same coast.
+   */
+  readonly cliffs: SeaCliffs;
 }
 
 /** Three field seeds hashed from the seed rather than sliced from its bits, so small seeds do not share a climate. */
@@ -70,7 +77,10 @@ export function fieldSeeds(seed: number): { S1: number; S2: number; S3: number }
   };
 }
 
-export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}): WorldSampler {
+export function createWorldSampler(
+  seed: number,
+  opts: { biomes?: Biome[]; seaCliffs?: SeaCliffForm | false } = {},
+): WorldSampler {
   const seeds = fieldSeeds(seed);
   const { S1, S2, S3 } = seeds;
   const scratch = new Float64Array(5);
@@ -78,9 +88,13 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
   const presences = biomes.map((b) => resolvePresence(b.presence));
   const heights = biomes.map((b) => (b.height ? resolveHeight(b.height) : null));
   const raw = new Float64Array(biomes.length);
+  // An entry that stands in a country -- a settlement -- is not cut: its share
+  // of a texel is taken off the cut, so a village on the shore stands in a cove.
+  const settles = biomes.map((b) => b.inherit !== undefined);
   const sampler: WorldSampler = {
     seed: seed >>> 0,
     seeds,
+    cliffs: NO_CLIFFS,
     sample(x, z, out) {
       this.baseFields(x, z, scratch);
       out[0] = scratch[0]!;
@@ -128,7 +142,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       // No library is the world of M1: one slot, all of it, the base height.
       if (biomes.length === 0) {
         this.baseFields(x, z, scratch);
-        out[0] = scratch[0]!;
+        out[0] = scratch[0]! + cliffs.at(x, z, scratch[0]!, 1);
         out[1] = 1;
         out[2] = out[3] = 0;
         slots[0] = slots[1] = slots[2] = 0;
@@ -176,7 +190,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       // texel is ever painted by nothing.
       if (!(sum > 0) || !(w0 > 0)) {
         this.baseFields(x, z, scratch);
-        out[0] = scratch[0]!;
+        out[0] = scratch[0]! + cliffs.at(x, z, scratch[0]!, 1);
         out[1] = 1;
         out[2] = out[3] = 0;
         slots[0] = slots[1] = slots[2] = 0;
@@ -210,10 +224,21 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
               ? -MAX_HEIGHT_DELTA
               : delta);
       }
-      out[0] = h;
+      let settled = 0;
+      for (let k = 0; k < SLOTS; k++) if (settles[slots[k]!]) settled += out[k + 1]!;
+      // The cut is not a hook: it has its own bounds (SEA_CLIFF) and is not
+      // weighed by any biome, or a cliff would end at a biome's border like a
+      // block cut off.
+      out[0] = h + cliffs.at(x, z, base, 1 - settled);
     },
   };
   // The fields read the sampler's own base fields, so they are built after it.
   const fields = createFields(sampler);
+  // The cliffs read the sampler's own base fields, so they are built after it.
+  const cliffs =
+    opts.seaCliffs === false
+      ? NO_CLIFFS
+      : createSeaCliffs((x, z, o) => sampler.baseFields(x, z, o), S3 + 101, opts.seaCliffs ?? SEA_CLIFF);
+  (sampler as { cliffs: SeaCliffs }).cliffs = cliffs;
   return sampler;
 }
