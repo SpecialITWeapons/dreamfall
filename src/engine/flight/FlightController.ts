@@ -57,6 +57,8 @@ export const AIRSPEED = { min: 30, max: 62, perVy: 0.92, ease: 1.2 };
 export const MANUAL = { turn: 0.35 };
 /** The ceiling's own margin: terrain that needs more than this turns the flight aside. */
 export const ESCAPE = { margin: 120, probe: 0.7 };
+/** How close to the height the path ahead needs the figure starts to climb for it, m. */
+export const LIFT = { band: 20 };
 
 /** Starting heading from the seed: different worlds fly in different directions, the same world always the same. */
 export function headingFromSeed(seed: number): number {
@@ -394,6 +396,19 @@ export function createFlightController(deps: FlightDeps): FlightController {
           }
         }
       }
+      // The climb the path ahead owes, in every mode. `wall` is the height from
+      // which four fifths of the best climb clears everything ahead, and it
+      // rises at that rate as a wall comes on; a floor approached at the
+      // target's gain of an eighth a second falls ninety metres behind that,
+      // and flown by hand -- where nothing else lifts the figure -- the
+      // clearance clamp was left to pop it up the last of the face. So within
+      // `LIFT.band` of it the figure climbs, reaching the best climb at the
+      // band's foot; it settles a fifth of the band over the rising floor. Over
+      // open air the band is far below and the vertical is whoever's it was.
+      const lift = CLIMB * Math.min(1, (wall + LIFT.band - s.y) / LIFT.band);
+      if (lift > 0) vyTarget = Math.max(vyTarget, lift);
+      // Nothing asks for more than the best climb, the floor's brake included.
+      vyTarget = Math.min(vyTarget, CLIMB);
       // Pulling up answers faster than settling down, so a wall entering the
       // look-ahead lifts the figure before the clearance clamp must.
       s.vy += (vyTarget - s.vy) * Math.min(1, dt * (vyTarget > s.vy ? 2.6 : 0.9));
