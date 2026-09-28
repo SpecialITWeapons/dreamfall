@@ -137,11 +137,13 @@ page works under a Pages subdirectory.
   so a cliff rises where high land meets the sea and a low coast stays a beach.
   It is a world layer added in `sampleWindow` after the hooks, weighed by no
   biome (a hook's weight ended a cliff at a biome's border like a block cut off)
-  and by one minus a settlement's share, so a village on the shore stands in a
-  cove. `sample` and `baseFields` do not see it, so the golden values hold; the
-  route worker searches over it (`scenery/RouteGround.ts`) with a cove kept at
-  both ends. Where the water line is and whether a cliff stands on it (the sea
-  past it -- a pond is shallow 300 m past its line -- and land tall enough
+  and by one minus a settlement's **raw presence**, so a village on the shore
+  stands in a cove whose sides rise over its feather -- never its slot weight,
+  which stays the settlement's until the last cell and put a wall side-on to
+  the coast there. `sample` and `baseFields` do not see it, so the golden
+  values hold; the route worker searches over it (`scenery/RouteGround.ts`)
+  with a cove kept at both ends over each end's own radius and feather. Where
+  the water line is and whether a cliff stands on it (the sea past it -- a pond is shallow 300 m past its line -- and land tall enough
   behind it) are asked of **a lattice of nodes every 64 m**, each a pure
   function of its indices: asked of the point, the distance is noise and the cut
   is full of holes. Each node walks toward the line off the lattice's own

@@ -11,10 +11,9 @@ export interface RouteEnd {
   x: number;
   z: number;
   radius: number;
+  /** Metres past the radius over which the cliffs come back: the settlement's own feather. */
+  feather: number;
 }
-
-/** Metres past a settlement's radius over which the cliffs come back: a settlement's own feather. */
-export const END_FEATHER = 150;
 
 export function routeGround(
   sampler: WorldSampler,
@@ -26,7 +25,7 @@ export function routeGround(
     const b = fields[0]!;
     let share = 1;
     for (const end of ends)
-      share = Math.min(share, sstep(end.radius, end.radius + END_FEATHER, Math.hypot(x - end.x, z - end.z)));
+      share = Math.min(share, sstep(end.radius, end.radius + end.feather, Math.hypot(x - end.x, z - end.z)));
     return b + sampler.cliffs.at(x, z, b, share);
   };
 }

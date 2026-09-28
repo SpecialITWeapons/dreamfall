@@ -6,6 +6,7 @@
  */
 export {
   CLIMATE,
+  LATTICE_FEATHER,
   SITE_STREAM,
   climatePoint,
   heightBand,

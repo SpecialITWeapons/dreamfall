@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Biome } from '../../library/contract';
 import { createLibrary } from '../../library/index.js';
+import { createOverrides } from '../../src/engine/scenery/Overrides';
+import { createSites } from '../../src/engine/scenery/Sites';
 import { createHeightfield } from '../../src/engine/terrain/Heightfield';
 import { createWorldSampler, type WorldSampler } from '../../src/engine/terrain/WorldSampler';
 
@@ -39,18 +41,83 @@ describe('sea cliffs in the sampler', () => {
     bare.sampleWindow(x, z, out, slots);
     expect(out[0]).toBeGreaterThan(b - 20);
   });
-  it('gives way to a settlement by exactly its share of the texel', () => {
+  it('gives way to a settlement by its own presence, not by its share of the slots', () => {
+    // A quarter of the town against all of the plain: the slots give the town
+    // a fifth of the texel, and the cut gives way by a quarter. A raw presence
+    // is what fades smoothly over a settlement's feather; the slots stay the
+    // settlement's until it is a thousandth, because a country's own presence
+    // is that small.
     const plain = { id: 'plain', presence: () => 1 } as unknown as Biome;
-    const town = { id: 'town', presence: () => 1, inherit: { trees: 0.5 } } as unknown as Biome;
-    const halved = createWorldSampler(42, { biomes: [plain, town] });
-    const { x, z, b } = cutNear(halved, PLACES[0]!.x, PLACES[0]!.z, 20);
+    const town = { id: 'town', presence: () => 0.25, inherit: { trees: 0.5 } } as unknown as Biome;
+    const quarter = createWorldSampler(42, { biomes: [plain, town] });
+    const { x, z, b } = cutNear(quarter, PLACES[0]!.x, PLACES[0]!.z, 20);
     const out = new Float64Array(4),
       slots = new Uint8Array(4);
-    halved.sampleWindow(x, z, out, slots);
-    expect(out[0]).toBeCloseTo(b + halved.cliffs.at(x, z, b, 0.5), 9);
+    quarter.sampleWindow(x, z, out, slots);
+    expect(out[2]).toBeCloseTo(0.2, 9);
+    expect(out[0]).toBeCloseTo(b + quarter.cliffs.at(x, z, b, 0.75), 9);
     const alone = createWorldSampler(42, { biomes: [plain] });
     alone.sampleWindow(x, z, out, slots);
     expect(out[0]).toBeCloseTo(b + alone.cliffs.at(x, z, b, 1), 9);
+  });
+  it('lets a coastal town go back to the cliffs over its whole feather, never in one cell', () => {
+    // Seed 42's town at about (-5289, -7577), 824 m wide, stands on a cliff
+    // coast. Its share of the cut used to be read off the normalised slots,
+    // which stay the town's until its raw presence is a thousandth, and then
+    // the cut came back whole in one 16 m step: a wall side-on to the coast.
+    // Every step along a radius across its rim is held against the two
+    // grounds it lies between -- the uncut one (a sampler without cliffs) and
+    // the fully cut one (that plus `cliffs.at(..., 1)`), neither of which
+    // knows the town. The town's say may add to a step at most half the full
+    // cut there: the face is 32 m, so a full cut of H metres is spread over at
+    // least two 16 m cells, H / 2 a cell. Mixed by a share that moves by at
+    // most one step of a sstep over the feather, the excess is |ds| * H.
+    const bare = createWorldSampler(42, { biomes: lib.biomes, seaCliffs: false });
+    const sites = createSites({
+      library: lib,
+      sampler,
+      heightfield: createHeightfield(sampler, { size: 32 }),
+      overrides: createOverrides(),
+    });
+    const town = sites.charted(-5349, -8069, 1000, []).find((s) => s.id.startsWith('town'));
+    expect(town).toBeDefined();
+    const { x: cx, z: cz, radius } = town!;
+    const out = new Float64Array(4),
+      slots = new Uint8Array(4),
+      base = new Float64Array(5);
+    const at = (x: number, z: number) => {
+      sampler.sampleWindow(x, z, out, slots);
+      const h = out[0]!;
+      bare.sampleWindow(x, z, out, slots);
+      sampler.baseFields(x, z, base);
+      const full = sampler.cliffs.at(x, z, base[0]!, 1);
+      return { h, bare: out[0]!, full };
+    };
+    // The largest excess, and the tightest against its allowance.
+    let largest = { excess: 0, allowed: 0, a: 0, r: 0 },
+      over = -Infinity,
+      cut = 0;
+    for (let a = 0; a < 360; a++) {
+      const ca = Math.cos((a * Math.PI) / 180),
+        sa = Math.sin((a * Math.PI) / 180);
+      let prev = at(cx + ca * (radius - 32), cz + sa * (radius - 32));
+      for (let r = radius - 16; r <= radius + 360; r += 16) {
+        const p = at(cx + ca * r, cz + sa * r);
+        if (p.full < -20) cut++;
+        const step = Math.abs(p.h - prev.h),
+          own = Math.max(Math.abs(p.bare - prev.bare), Math.abs(p.bare + p.full - prev.bare - prev.full));
+        const allowed = Math.max(-p.full, -prev.full) / 2;
+        if (step - own > largest.excess)
+          largest = { excess: step - own, allowed, a, r: Math.round(r - radius) };
+        over = Math.max(over, step - own - allowed);
+        prev = p;
+      }
+    }
+    console.log(
+      `town rim: largest excess ${largest.excess.toFixed(1)} m against ${largest.allowed.toFixed(1)} allowed, at ${largest.a} deg, ${largest.r} m past the radius; tightest ${over.toFixed(1)} m over`,
+    );
+    expect(cut).toBeGreaterThan(100); // the rim does run into the cliffs
+    expect(over).toBeLessThanOrEqual(0);
   });
   it('cuts without a pit and leaves no islet taller than a ripple in front of a cliff', () => {
     // Measures what the eye would see, not every threshold crossing: a smooth

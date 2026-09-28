@@ -233,10 +233,27 @@ warstwa odpowiada 0 zanim zapyta siatkę.
 
 ### 5.7 Osady
 
-`share = 1 - (udział slotów, których wpis ma inherit)`, liczony w
-`sampleWindow` z wag, które już tam są. Osada przy brzegu stoi w zatoczce,
-na jej krawędzi klif rośnie przez szerokość jej feathera (150 m). `plateau`
-czyta wysokość środka z `baseFields`, a tam klifu nie ma, więc się zgadza.
+`share = 1 - max(surowa obecność wpisów z inherit)`, liczony w
+`sampleWindow` z obecności przyciętych do 0..1, które sampler i tak liczy dla
+każdego biomu przed normalizacją. Osada przy brzegu stoi w zatoczce, a na jej
+krawędzi klif rośnie przez szerokość jej feathera (170 m wioska, 300 m
+miasto), bo tak zanika jej obecność. `plateau` czyta wysokość środka z
+`baseFields`, a tam klifu nie ma, więc się zgadza.
+
+W pierwszej wersji `share` brał **wagi slotów** (`1 - udział slotów, których
+wpis ma inherit`). Po normalizacji to nie działa: surowa obecność kraju obok
+osady bywa rzędu 10⁻⁴ (dżungla przy mieście seeda 42 koło (−5349, −8069):
+7·10⁻⁵), więc slot zostaje osady, dopóki jej obecność nie spadnie do ok.
+10⁻³, i znika w jednej komórce 16 m. Podcięcie wracało tam całe w jednym
+kroku: ściana bokiem do brzegu na skraju miasta (zmierzone: 38 m → −7 m
+między dwiema próbkami 16 m, 288 i 304 m za promieniem miasta).
+
+Rampa nie jest wyostrzana. Połowiczne podcięcie wysokiego lądu to niższy
+stok, nie mielizna; mieliznę robi tylko przy dawnej linii wody, a tam plaża
+zatoczki i tak ma płyciznę. Zmierzone w pasie feathera tego miasta: 75
+tekseli 8 m z wodą 0..−2,5 m przy rampie, 68 przy rampie wyostrzonej
+(`sstep(0.35, 0.65)`) i tyle samo przy pełnym podcięciu. Wyostrzona ścisnęłaby
+za to bok zatoczki do jednej trzeciej feathera.
 
 ## 6. Gdzie w silniku
 
@@ -256,9 +273,12 @@ czyta wysokość środka z `baseFields`, a tam klifu nie ma, więc się zgadza.
 
 - **Drogi.** `routes.worker.ts` liczy trasę po samym `baseFields`. Dostaje
   `cliffs.at(..., share)`, gdzie `share` zanika wokół obu końców trasy, żeby
-  zatoczki osad były dostępne. `RouteJob.a/b` dostają `radius` osady (Sites
-  go zna). Ściana ma nachylenie ponad `ROUTE.cliff` (60%), więc A* ją omija
-  sam.
+  zatoczki osad były dostępne. `RouteJob.a/b` dostają `radius` i `feather`
+  osady: `Site` niesie oba, feather czytany z deskryptora `lattice` wpisu
+  (domyślnie `LATTICE_FEATHER`, 150 m), więc worker zanika przez ten sam
+  feather co okno (170 m wioska, 300 m miasto). Stałe 150 m dla wszystkich
+  oddawało klify o 20 i 150 m za wcześnie. Ściana ma nachylenie ponad
+  `ROUTE.cliff` (60%), więc A* ją omija sam.
 - **Woda.** `WaterLook` czyta dalekie okno, a więc już z klifami; pas
   podcięcia poszerza morze o W, co ledwo rusza otwartość (pierścienie 250 i
   500 m). Przybój wg głębokości zwęzi się przy ścianie sam.
@@ -409,6 +429,14 @@ oszczędza, skoro płaci on za gałąź, której nie bierze.
     komórek, stykający się z podciętą komórką i nie dotykający brzegu okna
     (ląd uciekający za okno może być stałym lądem, który okno ucięło), nie
     wystaje najwyższym punktem ponad 1 m nad wodę;
+  - **skraj miasta na klifie:** skan promieniowy co 1° przez skraj miasta
+    seeda 42 koło (−5349, −8069), od promienia do 360 m za nim, co 16 m.
+    Każdy krok wysokości porównany z dwoma gruntami, których miasto nie zna:
+    bez klifów i z pełnym podcięciem (`cliffs.at(..., 1)`). Miasto może
+    dołożyć do kroku najwyżej połowę pełnego podcięcia w tym miejscu: ściana
+    ma 32 m, więc pełne podcięcie H rozkłada się na co najmniej dwie komórki,
+    H/2 na komórkę. Przy `share` z wag slotów: 38,6 m ponad oba grunty przy
+    dozwolonych 22,8 m; z surowej obecności: najwyżej 1,5 m przy 10,7 m;
   - udział podciętego wybrzeża 10–20% (cel „gdzieniegdzie”; `cover` go
     ustawia): próbki co 48 m w kwadracie 40 km, wybrzeże to baza 0,5–3 m,
     podcięte to ponad 3 m pod bazą; zmierzone 13,3%. Testu „ściany między
@@ -428,8 +456,10 @@ oszczędza, skoro płaci on za gałąź, której nie bierze.
   wyjaśnia 0,60 m na krok pilota z probe 2 i dotyczy każdej ściany, nie
   tylko klifu; naprawa lotu to osobne zadanie, a test zrobi się czerwony,
   gdy lot zostanie naprawiony (wtedy zwykłe `it`).
-- **Drogi** (`routeGround.test.ts`): wysokość workera (`RouteGround.ts`)
-  zawiera klify i zanika wokół końców przez promień osady i jej feather.
+- **Drogi** (`routeGround.test.ts`, `roads.test.ts`, `sites.test.ts`):
+  wysokość workera (`RouteGround.ts`) zawiera klify i zanika wokół końców
+  przez promień osady i jej własny feather; `Site` niesie feather wpisu
+  (300 m miasto, 170 m wioska), a `RouteJob` przekazuje go workerowi.
 - Zmiany świadome: snapshoty `ringGolden` zaktualizowane; punkt startu w
   smoke teście bez zmian; złote wartości `WorldSampler.sample` bez zmian.
 - Browser: istniejący zestaw e2e na WebGL2 bez nowych błędów.
