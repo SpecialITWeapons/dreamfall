@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COAST_NODE,
   NO_CLIFFS,
   SEA_CLIFF,
   createSeaCliffs,
@@ -78,6 +79,42 @@ describe('createSeaCliffs', () => {
     expect(cliffs.at(60, 0, 24, 0.5)).toBeCloseTo(cliffs.at(60, 0, 24, 1) / 2, 9);
     expect(createSeaCliffs(coast(0.4), 7, NOWHERE).at(60, 0, 24, 1)).toBe(0);
     expect(NO_CLIFFS.at(60, 0, 24, 1)).toBe(0);
+  });
+  it('reads a node before asking for the next, so two corners in one cache slot never mix up', () => {
+    // A straight coast along z: every node row is identical, so at() must
+    // answer the same for every z. Two of the four corners a lookup asks for
+    // can hash into the same CACHE slot; if a value is read only after all
+    // four corners are asked for, the later corner's node() overwrites the
+    // earlier corner's slot first, and the mix reads the wrong node's answer.
+    //
+    // `coast(0.4)` puts the shoreline at x = 0, where every ix a lookup near
+    // it asks for (0, 1, 2) happens to be a pair the CACHE (4096 slots, a
+    // fixed hash of ix and iz) never collides on, for any iz -- checked
+    // exhaustively up to 5e7 rows, so the brief's own x = 40 never hits the
+    // bug. `shiftedCoast` is the same shape moved out five COAST_NODE cells,
+    // to the nearest column (ix = 5, paired with 6) the CACHE does collide
+    // on -- at iz = 592, found the same way. Once there, the default face
+    // (32 m) keeps the cut saturated at "fully cut" on both sides of that
+    // collision, so a wrong node still reads back the same saturated answer;
+    // `face: 150` widens the cut's own fade so the two nodes' true distances
+    // (0 m for the node sitting on the shoreline, 64 m for the one a cell
+    // over) land on different parts of the fade, and the swap is a visibly
+    // different number, not just a differently-computed nought.
+    const shiftedCoast =
+      (rise: number): BaseHeight =>
+      (x, _z, out) => {
+        const xr = x - 5 * COAST_NODE;
+        out[0] = xr < 0 ? Math.max(-46, xr * 0.08) : xr * rise;
+      };
+    const wideFace: SeaCliffForm = { ...EVERYWHERE, face: 150 };
+    const cliffs = createSeaCliffs(shiftedCoast(0.4), 7, wideFace);
+    const x = 5 * COAST_NODE + 40;
+    const first = cliffs.at(x, 32, 16, 1);
+    expect(first).toBeLessThan(-1); // the point still has its cut, or the test proves nothing
+    for (let iz = 0; iz <= 20000; iz++) {
+      const z = iz * COAST_NODE + 32;
+      expect(cliffs.at(x, z, 16, 1)).toBe(first);
+    }
   });
   it('answers the same whatever the order of the questions and whatever the cache forgot', () => {
     const base = coast(0.4);

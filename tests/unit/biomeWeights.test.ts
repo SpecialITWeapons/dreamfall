@@ -33,7 +33,9 @@ describe('sampleWindow', () => {
     const base = new Float32Array(4);
     plain.sample(1000, -500, base);
     const s = sampleAt(plain, 1000, -500);
-    expect(s.h).toBeCloseTo(base[0]!, 6);
+    // Spec §6: the sea cliffs cut the window even with no library, so the
+    // M1 world's window is the base height plus whatever cliff is there.
+    expect(s.h).toBeCloseTo(base[0]! + plain.cliffs.at(1000, -500, base[0]!, 1), 6);
     expect(s.w).toEqual([1, 0, 0]);
     expect(s.i).toEqual([0, 0, 0]);
     expect(SLOTS).toBe(3);

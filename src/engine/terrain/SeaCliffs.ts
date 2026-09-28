@@ -123,15 +123,32 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
       iz = Math.floor(fz);
     const tx = fx - ix,
       tz = fz - iz;
+    // Each node's three values are read out right after its own node() call,
+    // before the next node() is asked for: two corners can hash to the same
+    // CACHE slot, and asking for the next corner overwrites that slot before
+    // a value read later would see it -- a texel then mixed the wrong node's
+    // answer in, deterministically, wherever two of the four corners collide.
     const a = node(ix, iz),
-      b = node(ix + 1, iz),
-      c = node(ix, iz + 1),
-      e = node(ix + 1, iz + 1);
-    const mix = (v: Float64Array) =>
-      (v[a]! * (1 - tx) + v[b]! * tx) * (1 - tz) + (v[c]! * (1 - tx) + v[e]! * tx) * tz;
-    coast.d = mix(distance);
-    coast.sea = mix(seaness);
-    coast.front = mix(frontOf);
+      ad = distance[a]!,
+      as = seaness[a]!,
+      af = frontOf[a]!;
+    const b = node(ix + 1, iz),
+      bd = distance[b]!,
+      bs = seaness[b]!,
+      bf = frontOf[b]!;
+    const c = node(ix, iz + 1),
+      cd = distance[c]!,
+      cs = seaness[c]!,
+      cf = frontOf[c]!;
+    const e = node(ix + 1, iz + 1),
+      ed = distance[e]!,
+      es = seaness[e]!,
+      ef = frontOf[e]!;
+    const mix = (av: number, bv: number, cv: number, ev: number) =>
+      (av * (1 - tx) + bv * tx) * (1 - tz) + (cv * (1 - tx) + ev * tx) * tz;
+    coast.d = mix(ad, bd, cd, ed);
+    coast.sea = mix(as, bs, cs, es);
+    coast.front = mix(af, bf, cf, ef);
     return coast;
   };
   return {
