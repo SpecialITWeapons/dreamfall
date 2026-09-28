@@ -300,7 +300,11 @@ export function createTerrain(deps: {
     float(1).sub(smoothstep(180, 240, positionWorld.y)),
   );
   // The rock's relief on a wall, in metres: strata, ledges every 4.5 m, cracks
-  // cut in, and a little grain. It only bends the light (the bump below).
+  // cut in, and a little grain. It only bends the light (the bump below). Its
+  // cracks stay 3D: a noise of the point alone has no lever arm (the colour's
+  // cracks below say what that is), and a 3D crack wanders on a leaning face
+  // only as a groove the light catches within the bump's fade, under the
+  // colour's straight ones.
   const relief = (p: Node<'vec3'>) =>
     mx_noise_float(vec3(p.x.mul(0.01), p.y.mul(0.16), p.z.mul(0.01)))
       .mul(0.9)
@@ -384,23 +388,34 @@ export function createTerrain(deps: {
     // world x and z smears into streaks on a wall, so everything here is 3D:
     // strata that change fast with height and slowly along the wall, ledges
     // every 4.5 m, thin cracks and water streaks running down it, lichen, and
-    // a wet foot. The cracks and streaks are read along the wall (`run`), not
-    // over x and z: a face that leans moves in x and z as it rises, and a crack
-    // read there wanders like handwriting.
+    // a wet foot. The cracks and streaks are read on two upright planes, (x, h)
+    // and (z, h), weighed by which way the wall faces, and never in 3D: a face
+    // that leans moves in x and z as it rises, and a crack read in 3D wanders
+    // like handwriting. Nor along the wall, from its normal: a coordinate
+    // along the wall is the world position dotted with a direction, so a turn
+    // of the interpolated normal of a few degrees moves it by the distance from
+    // the world's origin times that angle -- hundreds of metres 4.6 km out --
+    // and the cracks of a curving wall bend and turn to mush. Two planes have
+    // no lever arm.
     If(wallAt.greaterThan(0.01), () => {
       const x = worldXZ.x,
         z = worldXZ.y;
-      const run = worldXZ.dot(normalize(vec2(lightV.z.negate(), lightV.x).add(vec2(0.0001, 0))));
+      // The x plane shows on a wall facing along z, and the z plane on one facing along x.
+      const onX = abs(lightV.z),
+        onZ = abs(lightV.x);
+      const planes = (a: Node<'float'>, b: Node<'float'>) =>
+        a.mul(onX).add(b.mul(onZ)).div(onX.add(onZ).add(1e-4));
       const bands = mx_noise_float(vec3(x.mul(0.01), h.mul(0.16), z.mul(0.01)));
       const ledges = smoothstep(
         0.55,
         0.8,
         fract(h.div(4.5).add(mx_noise_float(vec3(x.mul(0.006), h.mul(0.02), z.mul(0.006))).mul(1.5))),
       ).sub(0.5);
-      const crack = float(1).sub(
-        smoothstep(0.02, 0.08, abs(mx_noise_float(vec2(run.mul(0.08), h.mul(0.004))))),
-      );
-      const streak = mx_noise_float(vec2(run.mul(0.22), h.mul(0.01))).max(0);
+      const crackOn = (w: Node<'float'>) =>
+        float(1).sub(smoothstep(0.02, 0.08, abs(mx_noise_float(vec2(w.mul(0.08), h.mul(0.004))))));
+      const streakOn = (w: Node<'float'>) => mx_noise_float(vec2(w.mul(0.22), h.mul(0.01))).max(0);
+      const crack = planes(crackOn(x), crackOn(z));
+      const streak = planes(streakOn(x), streakOn(z));
       const lichen = smoothstep(0.3, 0.6, mx_noise_float(vec3(x.mul(0.035), h.mul(0.05), z.mul(0.035))));
       const stone = mix(
         ground.mul(vec3(0.88, 0.96, 1.06)),
@@ -463,9 +478,12 @@ export function createTerrain(deps: {
   // differences along the wall and up it, in metres, rather than screen
   // derivatives, which are undefined inside a branch that not every fragment
   // of a quad takes. Faded out with distance, where it would only shimmer.
+  // No further than the fade reaches: past it the relief would only be asked
+  // for twelve noises and multiplied by nought.
+  const eye = positionWorld.distance(cameraPosition);
   const bumped = Fn(() => {
     const n = lightV.toVar();
-    If(wallAt.greaterThan(0.01), () => {
+    If(wallAt.greaterThan(0.01).and(eye.lessThan(1200)), () => {
       const p = vec3(worldXZ.x, h, worldXZ.y);
       const along = normalize(cross(n, vec3(0, 1, 0)).add(vec3(0.0001, 0, 0)));
       const up = cross(along, n);
@@ -477,7 +495,7 @@ export function createTerrain(deps: {
       const gu = relief(p.add(up.mul(e)))
         .sub(h0)
         .div(e);
-      const fade = wallAt.mul(float(1).sub(smoothstep(300, 1200, positionWorld.distance(cameraPosition))));
+      const fade = wallAt.mul(float(1).sub(smoothstep(300, 1200, eye)));
       n.assign(normalize(n.sub(along.mul(ga.mul(fade))).sub(up.mul(gu.mul(fade)))));
     });
     return n;

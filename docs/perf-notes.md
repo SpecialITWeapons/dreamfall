@@ -1256,23 +1256,49 @@ no lane takes -- seventeen noise calls a fragment (five for the colour, four in
 each of three reliefs), over a frame that is almost all fragment shading. That
 is a reading of the numbers, not something taken apart.
 
-On this machine's GPU (ANGLE on D3D11, still WebGL2 -- the page picks WebGL2
-under Playwright's Chromium here), the same bench with the arguments of
-`playwright.gpu.config.ts` plus `--disable-gpu-vsync --disable-frame-rate-limit`
-so the frame is not held to the display, three rounds of 120 frames, the two
-builds interleaved:
+On this machine's GPU the frame interval says nothing about the branch: the
+frame is the CPU's (5.5 to 6.4 ms at the four vantages near the ground, before
+and after alike, on WebGL2 over ANGLE D3D11 and on WebGPU both, against about
+2 ms of GPU), so a fragment cost would hide under it; an interval-only table
+said "nothing measurable" here in the first version of this note, and could not
+have said anything else. What does say something is GPU time, and that exists
+on WebGPU only (`?profile=1`, `__world.gpuMs`, the bench's `gpu ms` column: the
+render passes' timestamps, resolved a frame or two late).
 
-| Vantage | Before, A | After, A | After, B | Before, B |
-| ------- | --------- | -------- | -------- | --------- |
-| dawn    | 5.8 ms    | 5.7 ms   | 5.7 ms   | 5.7 ms    |
-| noon    | 5.8 ms    | 5.5 ms   | 5.7 ms   | 5.6 ms    |
-| far     | 4.1 ms    | 4.1 ms   | 4.1 ms   | 4.0 ms    |
-| deck    | 4.6 ms    | 4.6 ms   | 4.7 ms   | 4.5 ms    |
-| night   | 6.4 ms    | 6.4 ms   | 6.3 ms   | 6.3 ms    |
-| cliff   | 6.3 ms    | 6.2 ms   | 6.3 ms   | 6.1 ms    |
+Getting WebGPU under Playwright here took one finding. Playwright's own
+Chromium (153.0.8010.12) finds the adapter and fails to create the device --
+`DynamicLib.Open: dxil.dll Windows Error: 87` in Dawn's D3D12 backend, which
+cannot load the DXC libraries it ships -- and three falls back to WebGL2
+without a word past a console warning, which is why a run asking for WebGPU
+with `--enable-unsafe-webgpu` came out `webgl2`.
+`--disable-dawn-features=use_dxc` gets a device (FXC instead of DXC), and so
+does the installed Chrome
+(153.0.8010.54, `channel: 'chrome'`), which is what measured this. Arguments:
+`--enable-unsafe-webgpu --enable-webgpu-developer-features` (timestamps not
+quantised) `--enable-gpu --ignore-gpu-blocklist --force_high_performance_gpu`
+(the adapter is the NVIDIA Lovelace, not the Intel one) `--disable-gpu-vsync
+--disable-frame-rate-limit`. One round of 240 frames a run, four runs a build,
+before (9404aab) and after (with the fix below) in turn, the build swapped
+between runs; GPU ms is the median of each run's window, and the table is the
+minimum over the four runs, with the four beside it:
 
-There the branch costs nothing measurable anywhere, the cliff included: every
-difference is inside what one build does twice. The frame here is the page's
-own interval, not GPU time (WebGL2 has none worth reading), so a fragment cost
-hidden under the CPU's share of the frame would not show; what shows is that
-the frame did not get longer.
+| Vantage | Before, min | After, min | Before, four runs      | After, four runs       |
+| ------- | ----------- | ---------- | ---------------------- | ---------------------- |
+| dawn    | 1.58 ms     | 1.57 ms    | 1.58, 1.59, 1.58, 1.59 | 1.59, 1.60, 1.58, 1.57 |
+| noon    | 1.48 ms     | 1.48 ms    | 1.48, 1.50, 1.49, 1.51 | 1.50, 1.50, 1.48, 1.48 |
+| far     | 2.13 ms     | 2.11 ms    | 2.13, 2.13, 2.13, 2.13 | 2.11, 2.12, 2.12, 2.11 |
+| deck    | 2.58 ms     | 2.56 ms    | 2.58, 2.76, 2.59, 2.59 | 2.57, 2.56, 2.57, 2.56 |
+| night   | 2.05 ms     | 2.06 ms    | 2.05, 2.06, 2.06, 2.06 | 2.06, 2.06, 2.06, 2.06 |
+| cliff   | 2.01 ms     | 2.16 ms    | 2.17, 2.01, 2.18, 2.18 | 2.16, 2.16, 2.16, 2.16 |
+
+Where there is no wall the branch costs nothing a timestamp can see: every
+vantage but the cliff is the same to a hundredth or two. At the cliff the
+minimum reads +0.15 ms, but it is one run: the second "before", whose frames
+took 10.1 ms instead of 5.5 (something else had the machine then), and the
+other three read 2.17 and 2.18 against a steady 2.16. So on hardware the wall,
+about a tenth of the picture at the `cliff` vantage, costs nothing the
+timestamps resolve; the minimum says 0.15 ms, and says it off one odd run.
+
+The fix after the first review added two noises to the colour's branch (the
+cracks and the streaks each on two planes, seven in all) and stopped the bump
+past its own fade, 1 200 m; the SwiftShader table above is from before it.
