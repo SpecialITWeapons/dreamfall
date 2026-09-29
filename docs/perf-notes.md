@@ -1225,3 +1225,121 @@ give up, the coast share stays at 13% (13.3 against 13.0), no test of the
 cut's shape moved, and the ring's golden digests moved with it. A cache twice
 the size (8 192) spared 1% of the walks and was left out; two Newton steps
 instead of three failed the pit-and-islet test.
+
+### The far window pays seven times as much, and is left that way
+
+Everything above is the near window. The far one (264 texels a side at 64 m,
+69 696 of them) goes through the same `sampleWindow`, and the same test times
+it the same way (a far case in `seaCliffsCost.test.ts`, reported and never
+held to the budget), two runs after the settlements' share was moved to their
+raw presence:
+
+| Place                | Without      | With         | More          | A row           |
+| -------------------- | ------------ | ------------ | ------------- | --------------- |
+| cliff (3584, -2992)  | 127 / 132 ms | 180 / 188 ms | +41.8 / 42.0% | +0.20 / 0.21 ms |
+| cliff 2 (2720, 2240) | 124 / 130 ms | 184 / 195 ms | +48.3 / 49.9% | +0.23 / 0.25 ms |
+| origin               | 129 / 131 ms | 181 / 185 ms | +40.1 / 41.2% | +0.20 / 0.20 ms |
+
+(The near window in the same two runs: +5.7 to 6.7%.) A far texel stands on a
+node of the cliffs' 64 m lattice, so no two texels share a lattice cell and the
+four corners a row keeps are never asked twice, and a texel is 64 m of coast,
+so more of them are in a band. That is +52 to 65 ms on the start, where the
+far window is filled whole behind the veil, and about 0.2 ms each time the
+flight crosses a far cell and a row or a column is written. A fast path for a
+texel exactly on a node would take most of it back; it was ruled out as not
+worth a second way of reading the lattice for 0.2 ms a crossing.
+
+### Pits away from the photographed cliffs
+
+`seaCliffsWorld.test.ts` holds two cliffs of seed 42 near the origin to no pit
+(a cell 3 m under all four neighbours). Asked of the whole coast, the same
+definition finds pits in about one cliff in seven or eight: over a 120 km
+square, every point on a 256 m grid the cut takes down by more than 20 m, at
+least 3 km from the last one taken, and a window of 192 x 192 cells around it:
+
+| Seed | Cliffs | With a pit | Share |
+| ---- | ------ | ---------- | ----- |
+| 42   | 555    | 68         | 12.3% |
+| 7    | 541    | 77         | 14.2% |
+| 1234 | 541    | 75         | 13.9% |
+
+Among them seed 42 at (56864, -51888), seed 7 at (-11504, -9792) and seed
+1234 at (3888, -9696). The algorithm is left as it is; a test that asks more
+of it should walk this list rather than the two cliffs it was tuned on.
+
+### The wall's branch
+
+What a frame costs with the wall's look in the ground shader (the wide normal,
+the wall's colour and the relief bent into the light), seed 42, `npm run bench`
+at its defaults (WebGL2 on SwiftShader, two rounds of 24 frames, the median of
+the fastest round), with the `cliff` vantage: 450 m out to sea from the cliff at
+(3584, -2992), at 45 m. Two pairs, each run straight after the other; the same
+build measured twice moved by up to 25% between the pairs.
+
+| Vantage | Before, 1 | After, 1 | Before, 2 | After, 2 |
+| ------- | --------- | -------- | --------- | -------- |
+| dawn    | 1 544 ms  | 3 280 ms | 1 712 ms  | 2 888 ms |
+| noon    | 1 645 ms  | 3 364 ms | 2 052 ms  | 2 844 ms |
+| far     | 18 ms     | 17 ms    | 17 ms     | 18 ms    |
+| deck    | 1 439 ms  | 3 015 ms | 1 632 ms  | 2 459 ms |
+| night   | 2 004 ms  | 3 224 ms | 2 381 ms  | 3 429 ms |
+| cliff   | 1 566 ms  | 2 504 ms | 1 855 ms  | 2 770 ms |
+
+(`far` is the bimodal artefact described above: its window reads 1.69, 0.59,
+1.34 and 0.79 frames a second, so it went the way of the rest.)
+
+**On SwiftShader the branch is not free where there is no wall.** Dawn, noon
+and the deck have no cliff on screen and got 40 to 110% dearer, as much as the
+cliff did. The branch is gated (`If(wallAt > 0.01)`) and a fragment off a wall
+never takes it. A software rasteriser runs a shader over lanes of fragments
+with masks, and these numbers look like one that pays for the body of a branch
+no lane takes -- seventeen noise calls a fragment (five for the colour, four in
+each of three reliefs), over a frame that is almost all fragment shading. That
+is a reading of the numbers, not something taken apart.
+
+On this machine's GPU the frame interval says nothing about the branch: the
+frame is the CPU's (5.5 to 6.4 ms at the four vantages near the ground, before
+and after alike, on WebGL2 over ANGLE D3D11 and on WebGPU both, against about
+2 ms of GPU), so a fragment cost would hide under it; an interval-only table
+said "nothing measurable" here in the first version of this note, and could not
+have said anything else. What does say something is GPU time, and that exists
+on WebGPU only (`?profile=1`, `__world.gpuMs`, the bench's `gpu ms` column: the
+render passes' timestamps, resolved a frame or two late).
+
+Getting WebGPU under Playwright here took one finding. Playwright's own
+Chromium (153.0.8010.12) finds the adapter and fails to create the device --
+`DynamicLib.Open: dxil.dll Windows Error: 87` in Dawn's D3D12 backend, which
+cannot load the DXC libraries it ships -- and three falls back to WebGL2
+without a word past a console warning, which is why a run asking for WebGPU
+with `--enable-unsafe-webgpu` came out `webgl2`.
+`--disable-dawn-features=use_dxc` gets a device (FXC instead of DXC), and so
+does the installed Chrome
+(153.0.8010.54, `channel: 'chrome'`), which is what measured this. Arguments:
+`--enable-unsafe-webgpu --enable-webgpu-developer-features` (timestamps not
+quantised) `--enable-gpu --ignore-gpu-blocklist --force_high_performance_gpu`
+(the adapter is the NVIDIA Lovelace, not the Intel one) `--disable-gpu-vsync
+--disable-frame-rate-limit`. One round of 240 frames a run, four runs a build,
+before (9404aab) and after (with the fix below) in turn, the build swapped
+between runs; GPU ms is the median of each run's window, and the table is the
+minimum over the four runs, with the four beside it:
+
+| Vantage | Before, min | After, min | Before, four runs      | After, four runs       |
+| ------- | ----------- | ---------- | ---------------------- | ---------------------- |
+| dawn    | 1.58 ms     | 1.57 ms    | 1.58, 1.59, 1.58, 1.59 | 1.59, 1.60, 1.58, 1.57 |
+| noon    | 1.48 ms     | 1.48 ms    | 1.48, 1.50, 1.49, 1.51 | 1.50, 1.50, 1.48, 1.48 |
+| far     | 2.13 ms     | 2.11 ms    | 2.13, 2.13, 2.13, 2.13 | 2.11, 2.12, 2.12, 2.11 |
+| deck    | 2.58 ms     | 2.56 ms    | 2.58, 2.76, 2.59, 2.59 | 2.57, 2.56, 2.57, 2.56 |
+| night   | 2.05 ms     | 2.06 ms    | 2.05, 2.06, 2.06, 2.06 | 2.06, 2.06, 2.06, 2.06 |
+| cliff   | 2.01 ms     | 2.16 ms    | 2.17, 2.01, 2.18, 2.18 | 2.16, 2.16, 2.16, 2.16 |
+
+Where there is no wall the branch costs nothing a timestamp can see: every
+vantage but the cliff is the same to a hundredth or two. At the cliff the
+minimum reads +0.15 ms, but it is one run: the second "before", whose frames
+took 10.1 ms instead of 5.5 (something else had the machine then), and the
+other three read 2.17 and 2.18 against a steady 2.16. So on hardware the wall,
+about a tenth of the picture at the `cliff` vantage, costs nothing the
+timestamps resolve; the minimum says 0.15 ms, and says it off one odd run.
+
+The fix after the first review added two noises to the colour's branch (the
+cracks and the streaks each on two planes, seven in all) and stopped the bump
+past its own fade, 1 200 m; the SwiftShader table above is from before it.

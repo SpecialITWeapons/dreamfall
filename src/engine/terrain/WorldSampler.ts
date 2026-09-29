@@ -88,8 +88,8 @@ export function createWorldSampler(
   const presences = biomes.map((b) => resolvePresence(b.presence));
   const heights = biomes.map((b) => (b.height ? resolveHeight(b.height) : null));
   const raw = new Float64Array(biomes.length);
-  // An entry that stands in a country -- a settlement -- is not cut: its share
-  // of a texel is taken off the cut, so a village on the shore stands in a cove.
+  // An entry that stands in a country -- a settlement -- is not cut: its own
+  // presence is taken off the cut, so a village on the shore stands in a cove.
   const settles = biomes.map((b) => b.inherit !== undefined);
   // The base height, and the continentalness it is built on (left in
   // `groundCont`): the part of `baseFields` that is not climate. `always`
@@ -127,10 +127,22 @@ export function createWorldSampler(
     h = h * (0.55 + 0.45 * shelf) + (1 - shelf) * -6;
     return h;
   };
+  // The cliffs walk `ground` alone -- the base height, without the climate
+  // `baseFields` adds -- so they need nothing of the sampler below.
+  const cliffs =
+    opts.seaCliffs === false
+      ? NO_CLIFFS
+      : createSeaCliffs(
+          (x, z, o) => {
+            o[0] = ground(x, z, false);
+          },
+          S3 + 101,
+          opts.seaCliffs ?? SEA_CLIFF,
+        );
   const sampler: WorldSampler = {
     seed: seed >>> 0,
     seeds,
-    cliffs: NO_CLIFFS,
+    cliffs,
     sample(x, z, out) {
       this.baseFields(x, z, scratch);
       out[0] = scratch[0]!;
@@ -240,8 +252,15 @@ export function createWorldSampler(
               ? -MAX_HEIGHT_DELTA
               : delta);
       }
+      // A settlement gives the cut way by its raw presence, which fades over
+      // its feather. Its slot weight does not: a country's own presence can be
+      // a ten-thousandth, so the slots stay the settlement's until it is a
+      // thousandth and then leave within one cell, and the cut came back whole
+      // there -- a wall side-on to the coast at a town's rim. Not sharpened:
+      // a ramp over the feather adds a few texels of shallows where the
+      // sharpened one would squeeze the cove's side into a third of it.
       let settled = 0;
-      for (let k = 0; k < SLOTS; k++) if (settles[slots[k]!]) settled += out[k + 1]!;
+      for (let i = 0; i < biomes.length; i++) if (settles[i] && raw[i]! > settled) settled = raw[i]!;
       // The cut is not a hook: it has its own bounds (SEA_CLIFF) and is not
       // weighed by any biome, or a cliff would end at a biome's border like a
       // block cut off.
@@ -250,17 +269,5 @@ export function createWorldSampler(
   };
   // The fields read the sampler's own base fields, so they are built after it.
   const fields = createFields(sampler);
-  // The cliffs read the sampler's own base fields, so they are built after it.
-  const cliffs =
-    opts.seaCliffs === false
-      ? NO_CLIFFS
-      : createSeaCliffs(
-          (x, z, o) => {
-            o[0] = ground(x, z, false);
-          },
-          S3 + 101,
-          opts.seaCliffs ?? SEA_CLIFF,
-        );
-  (sampler as { cliffs: SeaCliffs }).cliffs = cliffs;
   return sampler;
 }

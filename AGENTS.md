@@ -37,10 +37,10 @@ page works under a Pages subdirectory.
   `scenery/Obstacles.ts`, `page/Memory.ts`, `audio/AmbienceModel.ts`,
   `avatar/Posture.ts`, `sky/Wind.ts`, `sky/GalaxyMatter.ts`, `sky/Haze.ts`, `sky/CloudCover.ts`, `sky/HighCloud.ts`,
   `render/Layers.ts`, `terrain/HookCost.ts`, `terrain/Country.ts`, `terrain/Lod.ts`,
-  `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
+  `terrain/SeaCliffs.ts`, `scenery/Claims.ts`, `scenery/Sowing.ts`, `terrain/SampledGround.ts`,
   `scenery/FarTrees.ts`, `scenery/ImpostorBake.ts`, `scenery/cardPack.ts`,
   `scenery/TreeLimit.ts`, `scenery/ShadeSheet.ts`,
-  `scenery/RoadNetwork.ts`, `scenery/Route.ts`,
+  `scenery/RoadNetwork.ts`, `scenery/Route.ts`, `scenery/RouteGround.ts`,
   `water/WaterLook.ts`) import neither
   `three/webgpu`, `three/tsl` nor
   the DOM; from `three` they take only the math classes (`Color`, `Vector2`, `Vector3`,
@@ -131,6 +131,30 @@ page works under a Pages subdirectory.
 - `WorldSampler` is a verbatim port of fly-with-me's `sampleWorld`; its unit
   tests hold golden values for seed 42, and a change to the terrain must
   update them deliberately.
+- **Here and there the sea has cut into the land** (`terrain/SeaCliffs.ts`):
+  within 70 to 190 m of the base water line the land is taken down to 7 m under
+  the sea, and the face stands where the cut ends, as tall as the land is there,
+  so a cliff rises where high land meets the sea and a low coast stays a beach.
+  It is a world layer added in `sampleWindow` after the hooks, weighed by no
+  biome (a hook's weight ended a cliff at a biome's border like a block cut
+  off); `sample` and `baseFields` do not see it, so the golden values hold.
+  Where the line is and whether a cliff stands on it are asked of **a lattice
+  of nodes every 64 m**: each walks toward the line off the lattice's heights,
+  takes the nearest line any walk of its 3x3 found and a cliff term blended from
+  all of them, and says nothing past `REACH`; a point mixes its cell's corners.
+  A node is a pure function of its indices, so a point is too, whatever the
+  order or the caches -- and the caches alias, so a slot is read out before
+  the next is asked for. The face is 32 m and never less: narrower, it saws
+  along the 16 m grid. A settlement gives the cut way by its **raw presence**,
+  never its slot weight, which stays the settlement's to the last cell and put
+  a wall side-on to the coast there; so a village on the shore stands in a cove
+  whose sides rise over its feather, and the route worker keeps the same cove
+  at both ends (`scenery/RouteGround.ts`, each `Site`'s radius and feather).
+  The cut is decided on the base height and added to the hooked one, so a
+  coastal biome's `offset` or `terraces` would move its floor too. A fill of
+  the near window costs 4.7 to 6.7 % more and one of the far window 40 to 50 %
+  (its texels sit on the lattice's nodes; numbers and levers in
+  `docs/perf-notes.md`); `tools/cliffs/look.mjs` photographs one.
 - The simulation works in world coordinates (double precision); the scene is
   in the local frame of `Origin`, which jumps in whole cells. Shaders that
   read the world add `uWorldOrigin`; nothing else may read `positionWorld`

@@ -27,6 +27,8 @@ export interface Vantage {
   /** Metres over the ground. */
   above: number;
   phase: number;
+  /** Where the camera looks, radians; the flight's own heading when unset. */
+  heading?: number;
   /** The night vantage waits for the galaxy's atlas; nothing else does. */
   galaxy?: boolean;
 }
@@ -42,6 +44,9 @@ export const VANTAGES: Vantage[] = [
   { name: 'deck', x: 0, z: 0, above: Math.round(DECK_TOP) + 180, phase: 0.5 },
   // The village at midnight: lit panes, and the galaxy over them.
   { name: 'night', x: VILLAGE.x, z: VILLAGE.z, above: 120, phase: 0.0, galaxy: true },
+  // A sea cliff from 450 m out at sea, at 45 m: the wall's branch of the
+  // ground shader on screen (docs/superpowers/specs/2026-09-28-klify-nadmorskie-design.md).
+  { name: 'cliff', x: 3270, z: -3315, above: 45, phase: 0.42, heading: 0.771 },
 ];
 
 /** The page, begun, the opening skipped and the loop stopped: frames are driven by hand from here. */
@@ -68,6 +73,7 @@ export const settle = async (page: Page, vantage: Vantage) => {
   await page.evaluate((v) => {
     window.__world!.jump(v.x, v.z, v.above);
     window.__world!.dayPhase = v.phase;
+    if (v.heading !== undefined) window.__world!.state.heading = v.heading;
   }, vantage);
   if (vantage.galaxy)
     await expect
@@ -75,17 +81,29 @@ export const settle = async (page: Page, vantage: Vantage) => {
       .toBe(true);
   // The ring rebuilds and the plan queue works itself off at 4 ms a frame; a
   // vantage measured while a town is still being planned measures the queue.
+  // Worked off, not always empty: a site the window cannot answer for keeps its
+  // turn until the flight comes nearer (Sites.ts), and at the cliff two villages
+  // five kilometres off do, which no frame of a flight held still will build.
+  // A frame builds at least one plan while one can be built, so three frames
+  // with the same plans and the same queue are a queue with nothing left to do.
+  let last = '',
+    same = 0;
   await expect
     .poll(
-      () =>
-        page.evaluate(() => {
+      async () => {
+        const { built, queued } = await page.evaluate(() => {
           const w = window.__world!;
           w.frame(1 / 60);
-          return w.scenery?.sitesQueued ?? 0;
-        }),
+          return { built: w.scenery?.sites ?? 0, queued: w.scenery?.sitesQueued ?? 0 };
+        });
+        const key = `${built}:${queued}`;
+        same = key === last ? same + 1 : 0;
+        last = key;
+        return queued === 0 || same >= 2;
+      },
       { timeout: 120_000 },
     )
-    .toBe(0);
+    .toBe(true);
   // The far land is sown from a queue at 2 ms a frame, and every few hundred
   // milliseconds of it rewrites the cards: sown here at once, or the frames
   // below measure the queue. A build from before the far trees has no such thing.

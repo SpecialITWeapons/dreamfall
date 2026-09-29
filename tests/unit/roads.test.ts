@@ -5,6 +5,7 @@ import {
   createRoads,
   stretchOf,
   type RoadRoute,
+  type RouteJob,
   type RouteRunner,
 } from '../../src/engine/scenery/Roads';
 import type { Site, Sites } from '../../src/engine/scenery/Sites';
@@ -15,6 +16,7 @@ const site = (id: string, x: number, z: number, radius = 200): Site => ({
   x,
   z,
   radius,
+  feather: 170,
   yaw: 0,
   fields: {} as Site['fields'],
   random: () => 0.5,
@@ -60,6 +62,27 @@ describe('createRoads', () => {
     const near = roads.near(0, 0, 2600, []);
     expect(near.map((r) => r.id)).toEqual(['village:0,0|village:1,0']);
     expect(near[0]!.a.id).toBe('village:0,0');
+  });
+
+  it("hands the worker each end's radius and feather, which the cliffs give way over", () => {
+    const jobs: RouteJob[] = [];
+    const town = { ...site('town:1,0', 6000, 0, 500), feather: 300 };
+    const roads = createRoads({
+      seed: 42,
+      sites: fixed([places[0]!, town]),
+      run: (job, done) => {
+        jobs.push(job);
+        done(null);
+        return () => {};
+      },
+    });
+    roads.update(0, 0);
+    expect(jobs.map((j) => [j.a, j.b])).toEqual([
+      [
+        { id: 'town:1,0', x: 6000, z: 0, radius: 500, feather: 300 },
+        { id: 'village:0,0', x: 0, z: 0, radius: 200, feather: 170 },
+      ],
+    ]);
   });
 
   it('counts a pair with no land way between as refused, and does not ask again', () => {

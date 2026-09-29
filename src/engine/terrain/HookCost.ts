@@ -5,11 +5,12 @@
 //
 // The measurement is the window fill's own work -- `sampleWindow`, once per
 // texel -- timed against a sampler with no registry at all, which takes the
-// base-field branch and nothing else. The difference is what presence and
-// height cost together, since a height hook cannot run until presence has said
-// whose ground this is. Each biome's own share is measured by leaving it out:
-// a marginal cost, which is the honest answer when ten of them share a texel
-// and three of them get to speak.
+// base-field branch and the sea cliffs and nothing else. Both sides cut the
+// coast, so the difference is what presence and height cost together, since a
+// height hook cannot run until presence has said whose ground this is. Each
+// biome's own share is measured by leaving it out: a marginal cost, which is
+// the honest answer when ten of them share a texel and three of them get to
+// speak.
 import type { Biome } from '../../../library/contract';
 import { createWorldSampler, type WorldSampler } from './WorldSampler';
 
@@ -21,9 +22,9 @@ export interface BiomeCost {
 
 export interface HookCosts {
   samples: number;
-  /** The base fields alone, µs a texel. */
+  /** No registry: the base fields and the sea cliffs, µs a texel. */
   base: number;
-  /** The base fields plus the registry's hooks, µs a texel. */
+  /** The same plus the registry's hooks, µs a texel. */
   all: number;
   /** What the hooks add: `all - base`, against the budget. */
   hooks: number;

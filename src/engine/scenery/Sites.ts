@@ -12,6 +12,7 @@ import type {
   Library,
   LineSpec,
   LotSpec,
+  Presence,
   Reservation,
   RoadSpec,
   SceneryColor,
@@ -21,7 +22,12 @@ import type {
   TreeSpec,
 } from '../../../library/contract';
 import { swatchColor } from '../../../library/contract';
-import { SITE_STREAM, resolvePopulate, resolvePresence } from '../../../library/standard/index.js';
+import {
+  LATTICE_FEATHER,
+  SITE_STREAM,
+  resolvePopulate,
+  resolvePresence,
+} from '../../../library/standard/index.js';
 import { Color } from 'three';
 import { countryOf, standingOf } from '../terrain/Country';
 import { createFields } from '../terrain/Fields';
@@ -69,6 +75,12 @@ export interface Site {
   x: number;
   z: number;
   radius: number;
+  /**
+   * How far past its radius its presence fades, m: its lattice hook's own
+   * feather, which is what the sea cliffs give way over (the route worker,
+   * which has no registry, is handed it).
+   */
+  feather: number;
   yaw: number;
   /** The fields at the site's own centre, copied: the shared one moves on. */
   fields: Fields;
@@ -93,6 +105,19 @@ export interface Sites {
   readonly queued: number;
 }
 
+/**
+ * The feather of a settlement's lattice hook, read off its presence
+ * descriptor; the widest one where a descriptor mixes several, and the
+ * lattice's own default for a presence of code, which cannot be read.
+ */
+const featherOf = (presence: Presence): number => {
+  if (typeof presence === 'function') return LATTICE_FEATHER;
+  if (presence.type === 'lattice') return presence.feather ?? LATTICE_FEATHER;
+  if (presence.type === 'mul' || presence.type === 'max')
+    return presence.of.reduce((widest, of) => Math.max(widest, featherOf(of)), 0);
+  return 0;
+};
+
 /** A copy of the fields, because the reader hands out one object and moves on. */
 const copyFields = (f: Fields): Fields => ({ ...f });
 
@@ -113,6 +138,7 @@ export function createSites(deps: {
       biome,
       spec: biome.sites,
       presence: resolvePresence(biome.presence),
+      feather: featherOf(biome.presence),
       salt: biome.sites.salt ?? LATTICE_SALT,
     }));
   const fields = createFields(sampler);
@@ -182,7 +208,7 @@ export function createSites(deps: {
    * which is what two coins do.
    */
   const seat = (entry: (typeof settled)[number], gx: number, gz: number): Site | null => {
-    const { spec, biome, salt, presence } = entry;
+    const { spec, biome, salt, presence, feather } = entry;
     const id = `${biome.id}:${gx},${gz}`;
     if (overrides.size > 0 && overrides.for(keyOf(id))?.skip) return null;
     // Any point of the cell gives the same hit; its centre is the plain one.
@@ -200,7 +226,7 @@ export function createSites(deps: {
     // the cell's own streams, which is what carries the world's seed into it --
     // `salt` here is the library's number and is the same in every world.
     const stream = mulberry32(Math.floor(hit.u(PLAN_STREAM) * 4294967296));
-    return { id, biome: biome.id, x, z, radius, yaw, fields: copyFields(here), random: stream };
+    return { id, biome: biome.id, x, z, radius, feather, yaw, fields: copyFields(here), random: stream };
   };
 
   /** The kit a build hook writes its plan through; it collects, it never draws. */

@@ -118,6 +118,9 @@ export function widestOf(radius) {
   return radius[1];
 }
 
+/** How far past its width a lattice's presence fades when the spec leaves it unsaid, m. */
+export const LATTICE_FEATHER = 150;
+
 /**
  * A place someone built on: one centre per cell of a lattice, and a circle of
  * presence around the centre that fades over a feather.
@@ -164,7 +167,7 @@ export function widestOf(radius) {
 export function lattice({
   cell,
   radius = 200,
-  feather = 150,
+  feather = LATTICE_FEATHER,
   odds = 0.5,
   salt = 0x5117,
   land = -Infinity,

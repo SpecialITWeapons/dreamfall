@@ -15,6 +15,8 @@ import { createWorldSampler } from '../../src/engine/terrain/WorldSampler';
 import { createFields } from '../../src/engine/terrain/Fields';
 import { resolvePresence, widthOf } from '../../library/standard/index.js';
 import { createLibrary } from '../../library/index.js';
+import { TOWN } from '../../library/settlements/town.js';
+import { VILLAGE } from '../../library/settlements/village.js';
 
 const ground = (() => ({ albedo: null })) as unknown as GroundHook;
 const cottage = defineStructure({
@@ -88,6 +90,19 @@ const sites = (lib: Library, overrides: Override[] = []) => {
 };
 
 describe('createSites', () => {
+  it("carries its lattice hook's feather, which the route worker gives the cliffs back over", () => {
+    const lib = createLibrary();
+    const sampler = createWorldSampler(42, { biomes: lib.biomes });
+    const found = createSites({
+      library: lib,
+      sampler,
+      heightfield: createHeightfield(sampler, { size: 32 }),
+      overrides: createOverrides(),
+    }).charted(0, 0, 30000, []);
+    expect(new Set(found.map((s) => s.biome))).toEqual(new Set(['village', 'town']));
+    for (const s of found)
+      expect(s.feather, s.id).toBe(s.biome === 'town' ? TOWN.plateau.feather : VILLAGE.plateau.feather);
+  });
   it('finds the same sites in the same places, however often it is asked', () => {
     const a = sites(library([village()])),
       b = sites(library([village()]));
