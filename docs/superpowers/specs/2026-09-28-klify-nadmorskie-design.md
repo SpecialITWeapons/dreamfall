@@ -474,12 +474,13 @@ oszczędza, skoro płaci on za gałąź, której nie bierze.
   przekazany naprawdę, `fly(0, 1)` i `fly(0, 0)`, bo `fly(0, 0)` przy
   włączonym autopilocie nic nie robi): prześwit nigdy poniżej
   `MIN_CLEARANCE` w obu trybach, a autopilot nie wznosi się szybciej niż
-  `CLIMB`. **Pilot nad ścianą 160 m się wznosi szybciej** i to jest
-  przypięte jako `it.fails`: sonda przed lotem wznosi się za późno i klamra
-  prześwitu podrzuca postać o 5,6 m na krok (112 m/s) przez dwa kroki. To
-  wyjaśnia 0,60 m na krok pilota z probe 2 i dotyczy każdej ściany, nie
-  tylko klifu; naprawa lotu to osobne zadanie, a test zrobi się czerwony,
-  gdy lot zostanie naprawiony (wtedy zwykłe `it`).
+  `CLIMB`. Pilot nad ścianą 160 m wznosił się szybciej: sonda przed lotem
+  wznosiła się za późno i klamra prześwitu podrzucała postać o 5,6 m na
+  krok (112 m/s) przez dwa kroki. To wyjaśniało 0,60 m na krok pilota z
+  probe 2 i dotyczyło każdej ściany, nie tylko klifu. Test był przypięty
+  jako `it.fails`, dopóki osobna zmiana lotu (#55) nie kazała pilotowi
+  wspinać się na wysokość, jakiej wymaga droga przed nim; teraz to zwykły
+  test.
 - **Drogi** (`routeGround.test.ts`, `roads.test.ts`, `sites.test.ts`):
   wysokość workera (`RouteGround.ts`) zawiera klify i zanika wokół końców
   przez promień osady i jej własny feather; `Site` niesie feather wpisu
