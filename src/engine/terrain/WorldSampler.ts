@@ -8,6 +8,7 @@ import type { Biome } from '../../../library/contract';
 import { resolveHeight, resolvePresence } from '../../../library/standard/index.js';
 import { createFields } from './Fields';
 import { fbm, hash2, pyramidPeaks, ridgedMulti, sstep } from './noise';
+import { NO_CLIFFS, SEA_CLIFF, createSeaCliffs, type SeaCliffForm, type SeaCliffs } from './SeaCliffs';
 
 /** Terrain sample spacing, m. */
 export const CELL = 16;
@@ -58,6 +59,12 @@ export interface WorldSampler {
    * three registry indices those weights belong to.
    */
   sampleWindow(x: number, z: number, out: FieldsOut, slots: Uint8Array): void;
+  /**
+   * The sea cliffs `sampleWindow` adds after the biomes' hooks: the one place
+   * the cut is decided, so the route worker, which has no registry, cuts the
+   * same coast.
+   */
+  readonly cliffs: SeaCliffs;
 }
 
 /** Three field seeds hashed from the seed rather than sliced from its bits, so small seeds do not share a climate. */
@@ -70,7 +77,10 @@ export function fieldSeeds(seed: number): { S1: number; S2: number; S3: number }
   };
 }
 
-export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}): WorldSampler {
+export function createWorldSampler(
+  seed: number,
+  opts: { biomes?: Biome[]; seaCliffs?: SeaCliffForm | false } = {},
+): WorldSampler {
   const seeds = fieldSeeds(seed);
   const { S1, S2, S3 } = seeds;
   const scratch = new Float64Array(5);
@@ -78,30 +88,27 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
   const presences = biomes.map((b) => resolvePresence(b.presence));
   const heights = biomes.map((b) => (b.height ? resolveHeight(b.height) : null));
   const raw = new Float64Array(biomes.length);
-  const sampler: WorldSampler = {
-    seed: seed >>> 0,
-    seeds,
-    sample(x, z, out) {
-      this.baseFields(x, z, scratch);
-      out[0] = scratch[0]!;
-      out[1] = scratch[1]!;
-      out[2] = scratch[2]!;
-      out[3] = scratch[3]!;
-    },
-    baseFields(x, z, out) {
-      const wx = x + 700 * fbm(x / 2200 + 31.7, z / 2200 - 12.3, S3, 3);
-      const wz = z + 700 * fbm(x / 2200 - 54.1, z / 2200 + 77.9, S3 + 7, 3);
-      const cont = fbm(wx / 3400, wz / 3400, S1, 4) * 0.5 + 0.5; // continentalness
-      const kx = x + 900 * fbm(x / 3000 + 4.1, z / 3000 - 2.2, S3 + 41, 2),
-        kz = z + 900 * fbm(x / 3000 - 7.7, z / 3000 + 5.5, S3 + 43, 2);
-      const temp = fbm(kx / CLIMATE_SCALE + 9.1, kz / CLIMATE_SCALE + 3.3, S2, 2) * 0.5 + 0.5;
-      const moist =
-        fbm(kx / (CLIMATE_SCALE * 0.8) - 8.4, kz / (CLIMATE_SCALE * 0.8) + 15.2, S2 + 3, 2) * 0.5 + 0.5;
-      const region =
-        fbm(kx / (CLIMATE_SCALE * 0.9) + 21.3, kz / (CLIMATE_SCALE * 0.9) - 8.8, S3 + 19, 2) * 0.5 + 0.5;
-      const land = sstep(0.4, 0.6, cont);
-      const hills = fbm(wx / 520, wz / 520, S1 + 11, 4);
-      const mountainMask = sstep(0.56, 0.82, cont);
+  // An entry that stands in a country -- a settlement -- is not cut: its share
+  // of a texel is taken off the cut, so a village on the shore stands in a cove.
+  const settles = biomes.map((b) => b.inherit !== undefined);
+  // The base height, and the continentalness it is built on (left in
+  // `groundCont`): the part of `baseFields` that is not climate. `always`
+  // false skips the range where its mask is nought -- the lift is then +0
+  // either way (ridge and peak are never negative), so the height is the
+  // same to the bit -- and is what the sea cliffs' walks ask for: a coast
+  // seldom stands where the range does. `baseFields` keeps the full sum, so
+  // what a fill costs without the cliffs is what it always was.
+  let groundCont = 0;
+  const ground = (x: number, z: number, always: boolean) => {
+    const wx = x + 700 * fbm(x / 2200 + 31.7, z / 2200 - 12.3, S3, 3);
+    const wz = z + 700 * fbm(x / 2200 - 54.1, z / 2200 + 77.9, S3 + 7, 3);
+    const cont = fbm(wx / 3400, wz / 3400, S1, 4) * 0.5 + 0.5; // continentalness
+    groundCont = cont;
+    const land = sstep(0.4, 0.6, cont);
+    const hills = fbm(wx / 520, wz / 520, S1 + 11, 4);
+    const mountainMask = sstep(0.56, 0.82, cont);
+    let lift = 0;
+    if (always || mountainMask > 0) {
       // The massif: a warped four-octave ridged multifractal, so crests carry
       // arêtes and gullies. On it, the pyramids: they stand in barely warped
       // coordinates (the 700 m continental warp would bend their faces into
@@ -112,12 +119,35 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       const px = x + 90 * fbm(x / 700 + 1.3, z / 700 + 2.1, S1 + 61, 2),
         pz = z + 90 * fbm(x / 700 - 3.7, z / 700 + 0.4, S1 + 63, 2);
       const peak = pyramidPeaks(px, pz, S1 + 47, PEAKS.cell, PEAKS.radius, PEAKS.power);
-      const lift =
-        (ridge * PEAKS.massif * (1 - 0.45 * sstep(0.05, 0.5, peak)) + peak * PEAKS.lift) * mountainMask;
-      let h = -70 + 150 * land + hills * (10 + 38 * land) + lift;
-      // a gentle shelf so beaches are wide and the shoreline never zigzags
-      const shelf = sstep(-30, 30, h);
-      h = h * (0.55 + 0.45 * shelf) + (1 - shelf) * -6;
+      lift = (ridge * PEAKS.massif * (1 - 0.45 * sstep(0.05, 0.5, peak)) + peak * PEAKS.lift) * mountainMask;
+    }
+    let h = -70 + 150 * land + hills * (10 + 38 * land) + lift;
+    // a gentle shelf so beaches are wide and the shoreline never zigzags
+    const shelf = sstep(-30, 30, h);
+    h = h * (0.55 + 0.45 * shelf) + (1 - shelf) * -6;
+    return h;
+  };
+  const sampler: WorldSampler = {
+    seed: seed >>> 0,
+    seeds,
+    cliffs: NO_CLIFFS,
+    sample(x, z, out) {
+      this.baseFields(x, z, scratch);
+      out[0] = scratch[0]!;
+      out[1] = scratch[1]!;
+      out[2] = scratch[2]!;
+      out[3] = scratch[3]!;
+    },
+    baseFields(x, z, out) {
+      const h = ground(x, z, true);
+      const cont = groundCont;
+      const kx = x + 900 * fbm(x / 3000 + 4.1, z / 3000 - 2.2, S3 + 41, 2),
+        kz = z + 900 * fbm(x / 3000 - 7.7, z / 3000 + 5.5, S3 + 43, 2);
+      const temp = fbm(kx / CLIMATE_SCALE + 9.1, kz / CLIMATE_SCALE + 3.3, S2, 2) * 0.5 + 0.5;
+      const moist =
+        fbm(kx / (CLIMATE_SCALE * 0.8) - 8.4, kz / (CLIMATE_SCALE * 0.8) + 15.2, S2 + 3, 2) * 0.5 + 0.5;
+      const region =
+        fbm(kx / (CLIMATE_SCALE * 0.9) + 21.3, kz / (CLIMATE_SCALE * 0.9) - 8.8, S3 + 19, 2) * 0.5 + 0.5;
       out[0] = h;
       out[1] = temp - Math.max(0, h) / 2600; // colder with altitude
       out[2] = moist;
@@ -128,7 +158,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       // No library is the world of M1: one slot, all of it, the base height.
       if (biomes.length === 0) {
         this.baseFields(x, z, scratch);
-        out[0] = scratch[0]!;
+        out[0] = scratch[0]! + cliffs.at(x, z, scratch[0]!, 1);
         out[1] = 1;
         out[2] = out[3] = 0;
         slots[0] = slots[1] = slots[2] = 0;
@@ -176,7 +206,7 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
       // texel is ever painted by nothing.
       if (!(sum > 0) || !(w0 > 0)) {
         this.baseFields(x, z, scratch);
-        out[0] = scratch[0]!;
+        out[0] = scratch[0]! + cliffs.at(x, z, scratch[0]!, 1);
         out[1] = 1;
         out[2] = out[3] = 0;
         slots[0] = slots[1] = slots[2] = 0;
@@ -210,10 +240,27 @@ export function createWorldSampler(seed: number, opts: { biomes?: Biome[] } = {}
               ? -MAX_HEIGHT_DELTA
               : delta);
       }
-      out[0] = h;
+      let settled = 0;
+      for (let k = 0; k < SLOTS; k++) if (settles[slots[k]!]) settled += out[k + 1]!;
+      // The cut is not a hook: it has its own bounds (SEA_CLIFF) and is not
+      // weighed by any biome, or a cliff would end at a biome's border like a
+      // block cut off.
+      out[0] = h + cliffs.at(x, z, base, 1 - settled);
     },
   };
   // The fields read the sampler's own base fields, so they are built after it.
   const fields = createFields(sampler);
+  // The cliffs read the sampler's own base fields, so they are built after it.
+  const cliffs =
+    opts.seaCliffs === false
+      ? NO_CLIFFS
+      : createSeaCliffs(
+          (x, z, o) => {
+            o[0] = ground(x, z, false);
+          },
+          S3 + 101,
+          opts.seaCliffs ?? SEA_CLIFF,
+        );
+  (sampler as { cliffs: SeaCliffs }).cliffs = cliffs;
   return sampler;
 }

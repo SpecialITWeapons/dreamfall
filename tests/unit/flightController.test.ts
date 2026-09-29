@@ -312,6 +312,66 @@ describe('createFlightController', () => {
     expect(up.state.y).toBeLessThanOrEqual(MAX_ALTITUDE);
     expect(up.state.y).toBeGreaterThan(MAX_ALTITUDE - 60);
   });
+  // Helper to test flight over a sea cliff: `key` is the arrow the pilot holds
+  // (-1 descends, 0 let go), or null for the autopilot
+  const overCliff = (key: number | null, tall: number) => {
+    const smooth = (a: number, b: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const groundAt = (x: number) => -7 + (tall + 7) * smooth(1000, 1032, x);
+    const c = createFlightController({
+      seed: 1,
+      groundAt,
+      pulls: hold(Math.PI / 2),
+      start: { heading: Math.PI / 2, y: 30 },
+      schedule: () => 0,
+    });
+    if (key !== null) {
+      // an arrow down and up again before the first step: the pilot has
+      // the stick, and letting go holds this height
+      c.fly(0, 1);
+      c.fly(0, key);
+      expect(c.autopilot).toBe(false);
+    }
+    let prev = c.state.y,
+      fastest = 0,
+      minClearance = Infinity;
+    for (let i = 0; i < 1200; i++) {
+      c.step(0.05);
+      fastest = Math.max(fastest, (c.state.y - prev) / 0.05);
+      prev = c.state.y;
+      minClearance = Math.min(minClearance, c.clearance());
+    }
+    return { c, fastest, minClearance };
+  };
+
+  it('keeps its clearance over a sea cliff in either mode, and the autopilot climbs no faster than it can', () => {
+    for (const key of [null, 0])
+      for (const tall of [60, 160]) {
+        const { c, fastest, minClearance } = overCliff(key, tall);
+        expect(c.state.x).toBeGreaterThan(1100); // it went over the cliff
+        expect(minClearance).toBeGreaterThanOrEqual(MIN_CLEARANCE - 1e-9);
+        if (key === null) {
+          expect(fastest).toBeLessThanOrEqual(CLIMB + 1e-6);
+        }
+      }
+  });
+
+  // Flown by hand, nothing but the look-ahead's floor lifts the figure, and
+  // approached at the target's own gain it fell so far behind that the
+  // clearance clamp lifted the figure 5.6 m a step (112 m/s) up the face; a
+  // pilot holding the dive into it was braked up at 33 m/s. The clamp never
+  // acts: the clearance stays clear of it.
+  it('climbs a tall sea cliff flown by hand no faster than it can climb', () => {
+    for (const key of [0, -1])
+      for (const tall of [60, 160]) {
+        const { c, fastest, minClearance } = overCliff(key, tall);
+        expect(c.state.x).toBeGreaterThan(1100);
+        expect(fastest).toBeLessThanOrEqual(CLIMB + 1e-6);
+        expect(minClearance).toBeGreaterThan(MIN_CLEARANCE + 1);
+      }
+  });
   it('turns aside from a range it cannot climb, in either mode', () => {
     // a ridge across the path, higher than the ceiling, with a gap to the left (-x)
     const groundAt = (x: number, z: number) => (z > 2000 && x > -400 ? 2200 : 0);

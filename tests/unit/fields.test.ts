@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFields } from '../../src/engine/terrain/Fields';
+import { NO_CLIFFS } from '../../src/engine/terrain/SeaCliffs';
 import { CELL, createWorldSampler, type WorldSampler } from '../../src/engine/terrain/WorldSampler';
 
 const fields = () => createFields(createWorldSampler(42));
@@ -162,6 +163,7 @@ describe('createFields', () => {
     const ground = (height: (x: number) => number): WorldSampler => ({
       seed: 0,
       seeds: { S1: 0, S2: 0, S3: 0 },
+      cliffs: NO_CLIFFS,
       sample(x, z, out) {
         this.baseFields(x, z, out);
       },

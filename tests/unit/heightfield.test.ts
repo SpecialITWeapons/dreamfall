@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { N, createHeightfield } from '../../src/engine/terrain/Heightfield';
+import { NO_CLIFFS } from '../../src/engine/terrain/SeaCliffs';
 import {
   CELL,
   createWorldSampler,
@@ -12,6 +13,7 @@ import {
 const plane = (ax: number, az: number, c = 0): WorldSampler => ({
   seed: 0,
   seeds: { S1: 0, S2: 0, S3: 0 },
+  cliffs: NO_CLIFFS,
   sample(x, z, out) {
     this.baseFields(x, z, out);
   },
@@ -88,6 +90,7 @@ describe('createHeightfield', () => {
     const saddle: WorldSampler = {
       seed: 0,
       seeds: { S1: 0, S2: 0, S3: 0 },
+      cliffs: NO_CLIFFS,
       sample(x, z, out) {
         this.baseFields(x, z, out);
       },
@@ -121,6 +124,7 @@ describe('createHeightfield', () => {
     const swapping: WorldSampler = {
       seed: 1,
       seeds: { S1: 0, S2: 0, S3: 0 },
+      cliffs: NO_CLIFFS,
       sample(x, z, out) {
         this.baseFields(x, z, out);
       },

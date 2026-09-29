@@ -36,8 +36,8 @@ export interface RoadRoute {
 export interface RouteJob {
   id: string;
   seed: number;
-  a: { id: string; x: number; z: number };
-  b: { id: string; x: number; z: number };
+  a: { id: string; x: number; z: number; radius: number };
+  b: { id: string; x: number; z: number; radius: number };
 }
 /** Searches one route and answers once; returns a way to stop listening. */
 export type RouteRunner = (
@@ -116,8 +116,8 @@ export function createRoads(deps: { seed: number; sites: Sites; run?: RouteRunne
       {
         id: job.id,
         seed,
-        a: { id: job.a.id, x: job.a.x, z: job.a.z },
-        b: { id: job.b.id, x: job.b.x, z: job.b.z },
+        a: { id: job.a.id, x: job.a.x, z: job.a.z, radius: job.a.radius },
+        b: { id: job.b.id, x: job.b.x, z: job.b.z, radius: job.b.radius },
       },
       (points) => {
         routes.set(job.id, points ? { id: job.id, a: job.a, b: job.b, points } : null);

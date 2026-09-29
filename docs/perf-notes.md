@@ -1176,3 +1176,52 @@ matters, and nothing here stands in its way.
 An experiment that made the pools and the cards upload only the used range of
 their instance buffers (`addUpdateRange`) changed nothing, which fits: the
 uploads were never the wait, the canvas was.
+
+## Sea cliffs: what the cut costs a fill
+
+A full window fill (313 600 texels, what `fillAll` asks of the sampler), seed
+42, Node 25.9 on the development machine (Windows 11, i7-13850HX), minimum of
+three rounds (`MEASURE=1 npx vitest run tests/unit/seaCliffsCost.test.ts`):
+
+| Place                | Without | With   | More  |
+| -------------------- | ------- | ------ | ----- |
+| cliff (3584, -2992)  | 555 ms  | 584 ms | +5.3% |
+| cliff 2 (2720, 2240) | 559 ms  | 592 ms | +6.0% |
+| origin               | 541 ms  | 567 ms | +4.7% |
+
+The two sides are interleaved a row at a time, not a fill at a time: this
+machine drops its clock by about a third two or three seconds into a run
+(ten fills without cliffs in a row: 551, 578, 574, 566, 698, 976, 826 ms...),
+so whole fills in turn measured which side came after the drop, and read
+anywhere from +4 to +12% for this same code. Row by row both sides run under
+one clock; the same interleaving with no cliffs on either side read within
+1.5% of nought.
+
+The probe paid +15 to 20% with three Newton steps a node on a 64 m lattice;
+the cut as it came out of the pits-and-islets rounds (a 3x3 of walks per node,
+each with its own coast reading) paid +33 to 36% by this measurement. What
+took it down, each step measured with the method above, in order:
+
+| Step                                                                                                                  | cliff  | cliff 2 | origin |
+| --------------------------------------------------------------------------------------------------------------------- | ------ | ------- | ------ |
+| the cut as it was                                                                                                     | +33.6% | +36.5%  | +35.4% |
+| water at or under the floor is never cut: answered before the lattice                                                 | +20.8% | +26.3%  | +22.2% |
+| a walk that found no line reads no coast; the node's own height is its walk's                                         | +19.3% | +24.1%  | +20.6% |
+| the walks sample the height alone, not the climate, nor the range where its mask is nought                            | +10.1% | +12.9%  | +11.0% |
+| one Newton step off the lattice's own slope, then the secant: 5.6 samples a walk where there were 15                  | +6.9%  | +7.7%   | +6.4%  |
+| a walk whose slope puts the line past 400 m gives up                                                                  | +6.4%  | +7.1%   | +5.8%  |
+| a cell's corners kept while a row crosses it; a cliff term under the sharpening answered before the mask and the band | +5.4%  | +6.2%   | +6.0%  |
+
+Most of it was samples of the base height: the walks asked for 139 000 of them
+in a window at the first cliff, against the fill's own 313 600, and ask for
+24 000 now. The first three steps and the last change nothing: a full window at
+all three places is the same to the bit (the third step also made the sampler's
+`at` small enough to inline, which measured as nothing). The fourth and fifth
+move the ground, where the walks now land on other points of the same line:
+3 688, 5 256 and 4 072 texels of the three windows by anything, 1 343, 2 410
+and 1 682 by over a metre. The secant finds the line as often as three Newton
+steps did (3 230 walks against 3 185 at the first cliff) before the far ones
+give up, the coast share stays at 13% (13.3 against 13.0), no test of the
+cut's shape moved, and the ring's golden digests moved with it. A cache twice
+the size (8 192) spared 1% of the walks and was left out; two Newton steps
+instead of three failed the pit-and-islet test.
