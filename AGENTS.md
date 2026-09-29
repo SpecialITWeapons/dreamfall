@@ -218,7 +218,12 @@ page works under a Pages subdirectory.
   clearance. `terrainAhead` and `climbAhead` follow the arc of the current turn
   and reach in proportion to the airspeed; terrain that asks for more altitude
   than the ceiling allows turns the figure aside (`escapeTurn`) -- the world has
-  no other edge. `Obstacles` is a 64 m hash grid and the only way scenery
+  no other edge. The height `climbAhead` asks for is climbed to, not approached:
+  within `LIFT.band` of it the figure climbs, up to `CLIMB` and never past it,
+  because approached at the target's gain a figure flown by hand fell ninety
+  metres behind a sea cliff and the clearance clamp popped it up the face at
+  112 m/s. The clamp is a last resort, and a test holds that it never acts
+  there. `Obstacles` is a 64 m hash grid and the only way scenery
   reaches the flight.
 - Airspeed is state (`state.speed`): a dive buys it and a climb spends it, in
   `AIRSPEED.min..max` about a second behind `vy`. Everything that measures the
