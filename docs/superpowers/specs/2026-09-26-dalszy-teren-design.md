@@ -189,6 +189,16 @@ Pomiary: `npm run bench` przed i po, wyniki w `docs/perf-notes.md`.
   czyta się wciąż z komórek 16 m bliskiego okna, a za pasem z komórek 64 m
   grubego, więc granica biomu przechodząca przez linię 4,2 km może zrobić
   schodek w kolorze. Ta sama rodzina, ta sama kolejna zmiana.
+  **Usunięte 2026-10-12**, prościej niż zapisano: gruba siatka bierze udziały
+  biomów i temperaturę linii śniegu z trzech narożników trójkąta (ta sama
+  przekątna co `surfaceHeight`), ważone barycentrycznie, a każdy narożnik
+  liczy się jako cały kraj (`countryOf` w węzłach, z osadami oddanymi krajowi
+  obok). Udziały dalej sumują się do jedności, więc warunek „te same trzy
+  biomy w narożnikach” okazał się niepotrzebny. W pasie `MORPH` bliska siatka
+  miesza swoje udziały z udziałami grubej tą samą wagą `rim` co wysokość, więc
+  na 4,2 km kolor jest jedną powierzchnią. Bliska siatka zostaje przy
+  najbliższym texelu, bo z jej komórek 16 m sieje pierścień i rośnie trawa.
+  Zdjęcia: `tools/terrain/look.mjs`.
 - **Koszt fragmentów.** Gruba siatka używa pełnego materiału gruntu, ale na
   ekranie zajmuje mały pas przy horyzoncie. Bench to rozstrzygnie.
 - **Start.** Zmierzone (`docs/perf-notes.md`, "Far terrain"): +354 ms do

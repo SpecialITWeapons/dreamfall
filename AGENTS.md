@@ -98,7 +98,11 @@ page works under a Pages subdirectory.
   grid to 8.2 km with a hole cut where the near grid lies; both grids and the
   water stand on one anchor, a whole far cell, so the hole never moves and the
   near grid always ends on a far grid line. The near grid's last `MORPH` metres
-  go over into the far surface. Nothing on the CPU reads the far window, and
+  go over into the far surface, its ground too. The far grid takes the biomes'
+  shares and the snow's temperature across its triangle (`smooth`), each corner
+  a whole country: off the nearest 64 m texel, a border and the snow line were
+  squares from high up. The near grid keeps the nearest texel, the cell the CPU
+  sows by. Nothing on the CPU reads the far window, and
   `heightAt` does not know about the bent rim: it begins 3.9 km out, past
   everything that asks. The far cover in `Fog.ts` and the cloud sea hide the
   far grid's own edge, at 8.2 km, and nothing else: started sooner, either is

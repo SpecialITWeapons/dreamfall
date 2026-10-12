@@ -194,8 +194,18 @@ export function createTerrain(deps: {
   cells?: number;
   /** Cells either side of the middle left out (terrain/Lod.ts `HOLE`): the far grid's, where the near one lies. */
   hole?: number;
-  /** The far terrain's loader: given, this grid's last `MORPH` metres go over into the far surface. */
-  coarse?: LoadCell;
+  /**
+   * The biomes' shares and the snow's temperature taken across the triangle
+   * rather than off the nearest texel: the far grid's, whose 64 m cells drew a
+   * biome border and the snow line as squares from high up.
+   */
+  smooth?: boolean;
+  /**
+   * The far terrain's loaders: given, this grid's last `MORPH` metres go over
+   * into the far surface -- its height, its normal, and its ground, which is
+   * the far grid's smooth shares.
+   */
+  coarse?: { load: LoadCell; slots: LoadCell };
 }) {
   const { heightfield: hf, uniforms: u, litMaterial, palette } = deps;
   const biomes = deps.biomes ?? [];
@@ -228,12 +238,12 @@ export function createTerrain(deps: {
   // grids are one surface and there is no crack between them to see the dome through.
   let hv: Node<'float'> = ownHeight;
   let surfaceNormal: Node<'vec3'> = ownNormal;
+  const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
   if (deps.coarse) {
-    const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
     const fx = wx.div(FAR_CELL).add(0.5).floor(),
       fz = wz.div(FAR_CELL).add(0.5).floor();
-    hv = mix(ownHeight, surfaceHeight(deps.coarse, FAR_CELL)(vec2(wx, wz)), rim);
-    surfaceNormal = normalize(mix(ownNormal, cellNormal(deps.coarse, FAR_CELL, fx, fz), rim));
+    hv = mix(ownHeight, surfaceHeight(deps.coarse.load, FAR_CELL)(vec2(wx, wz)), rim);
+    surfaceNormal = normalize(mix(ownNormal, cellNormal(deps.coarse.load, FAR_CELL, fx, fz), rim));
   }
   // The light on a cliff. A normal from one cell either side flips between
   // neighbouring vertices of a face two cells wide -- one at its top, one at
@@ -259,7 +269,6 @@ export function createTerrain(deps: {
         smoothstep(0.3, 0.55, float(1).sub(ownNormal.y)).mul(float(1).sub(smoothstep(180, 240, ownHeight))),
       ),
     );
-    const rim = smoothstep(NEAR_REACH - MORPH, NEAR_REACH, max(abs(positionLocal.x), abs(positionLocal.z)));
     lightNormal = normalize(mix(lightNormal, surfaceNormal, rim));
   }
   const lightV = varying(lightNormal).normalize();
@@ -298,6 +307,75 @@ export function createTerrain(deps: {
   // its share of a fragment is handed to the country beside it below.
   const hooks = biomes.map((biome) => (biome.ground ? resolveGround(biome.ground) : null));
   const inherits = biomes.map((biome) => biome.inherit !== undefined);
+  // One texel's share of each biome, as a share of the country there rather
+  // than of the whole texel. A slot naming an entry that stands in one -- a
+  // settlement -- is counted out, and the rest is spread back over one, which
+  // is `countryOf` (terrain/Country.ts) in nodes: the ring sows by that
+  // function, and a ground that disagreed with it would paint a meadow under a
+  // wood. Where nobody is a country the first biome takes it, the sampler's
+  // own rule for ground no presence claims.
+  const texelShares = (weights: Node<'vec4'>, slots: Node<'vec4'>) => {
+    // a byte texture reads back normalised, so the index comes home times 255
+    const id = [slots.x, slots.y, slots.z].map((c) => c.mul(255).round());
+    const share = [weights.y, weights.z, weights.w];
+    const named = (slot: number, k: number) => step(id[slot]!.sub(k).abs(), 0.5);
+    const countryIn = (slot: number) =>
+      inherits.reduce(
+        (acc: Node<'float'>, inherit, k) => (inherit ? acc.sub(named(slot, k)) : acc),
+        float(1),
+      );
+    const country = share
+      .map((w, slot) => w.mul(countryIn(slot)))
+      .reduce((a, b) => a.add(b))
+      .toVar();
+    const unclaimed = float(1).sub(step(COUNTRY_FLOOR, country));
+    return biomes.map((_biome, k) => {
+      const mask = share
+        .map((w, slot) => w.mul(named(slot, k)))
+        .reduce((a, b) => a.add(b))
+        .div(country.max(COUNTRY_FLOOR));
+      return k === 0 ? mask.add(unclaimed) : mask;
+    });
+  };
+  // Each biome's share of this fragment and the climate temperature the snow
+  // line is drawn on, from a window of `size` metres a texel. Off the nearest
+  // texel, the weights belong to the cell, as the CPU reads them; `smooth`
+  // takes them across the triangle the grid draws, with the diagonal of
+  // `surfaceHeight`, each corner a whole country of its own -- so the shares
+  // still add up to one, and a border needs no corners that agree about who
+  // stands there. The far grid takes that: its texel is 64 m, and nothing on
+  // the CPU reads it to disagree.
+  const sharesAt = (load: LoadCell, slotsAt: LoadCell, size: number, smooth: boolean) => {
+    if (!smooth) {
+      const i = wx.div(size).add(0.5).floor(),
+        j = wz.div(size).add(0.5).floor();
+      const slots = slotsAt(i, j);
+      return { masks: texelShares(load(i, j), slots), baseTemp: slots.w.mul(BASE_TEMP_RANGE) };
+    }
+    const at = vec2(wx, wz).div(size),
+      base = at.floor(),
+      f = fract(at);
+    const upper = step(1, f.x.add(f.y));
+    const s = mix(f.x, float(1).sub(f.y), upper),
+      t = mix(f.y, float(1).sub(f.x), upper);
+    const corners = (
+      [
+        [base.x.add(upper), base.y.add(upper), float(1).sub(s).sub(t)],
+        [base.x.add(1), base.y, s],
+        [base.x, base.y.add(1), t],
+      ] as const
+    ).map(([i, j, w]) => {
+      const slots = slotsAt(i, j);
+      return { w, masks: texelShares(load(i, j), slots), temp: slots.w };
+    });
+    return {
+      masks: biomes.map((_biome, k) => corners.map((c) => c.masks[k]!.mul(c.w)).reduce((a, b) => a.add(b))),
+      baseTemp: corners
+        .map((c) => c.temp.mul(c.w))
+        .reduce((a, b) => a.add(b))
+        .mul(BASE_TEMP_RANGE),
+    };
+  };
   // How much of a fragment is a cliff's wall: steep, and low enough not to be
   // a mountain's face, which keeps its own look (the snow, the alpine rock).
   const wallAt = smoothstep(0.42, 0.7, float(1).sub(lightV.y).max(slope)).mul(
@@ -336,6 +414,20 @@ export function createTerrain(deps: {
     // its business -- a salt flat at altitude, a volcano -- and it has been in
     // `contract.ts` unread since M3a.
     const snowShare = float(0).toVar();
+    const shares = sharesAt(loadCell, loadSlots, cell, deps.smooth ?? false);
+    const masks = shares.masks.map((mask) => mask.toVar());
+    const baseTemp = shares.baseTemp.toVar();
+    // In its last `MORPH` metres the near grid's ground goes over into the far
+    // grid's as its height does, or a border crossing the line at 4.2 km steps
+    // there from 16 m cells to the far grid's.
+    if (deps.coarse) {
+      const { load, slots } = deps.coarse;
+      If(rim.greaterThan(0), () => {
+        const far = sharesAt(load, slots, FAR_CELL, true);
+        masks.forEach((mask, k) => mask.assign(mix(mask, far.masks[k]!, rim)));
+        baseTemp.assign(mix(baseTemp, far.baseTemp, rim));
+      });
+    }
     if (biomes.length === 0) {
       // no registry: the built-in swatches, so the world still reads as ground
       const macro = smoothstep(0.18, 0.48, mx_noise_float(worldXZ.mul(0.012)));
@@ -343,40 +435,11 @@ export function createTerrain(deps: {
       ground.assign(mix(ground, K(ROCK), smoothstep(0.32, 0.55, slope)));
       snowShare.assign(1);
     } else {
-      const weights = loadCell(ix, iz);
-      const slots = loadSlots(ix, iz);
-      // a byte texture reads back normalised, so the index comes home times 255
-      const id = [slots.x, slots.y, slots.z].map((c) => c.mul(255).round());
-      const share = [weights.y, weights.z, weights.w];
-      // How much of this fragment is a country at all. A slot naming an entry
-      // that stands in one -- a settlement -- is counted out, and the rest is
-      // spread back over one, which is `countryOf` (terrain/Country.ts) in
-      // nodes: the ring sows by that function, and a ground that disagreed
-      // with it would paint a meadow under a wood.
-      const countryIn = (slot: number) =>
-        inherits.reduce(
-          (acc: Node<'float'>, inherit, k) => (inherit ? acc.sub(step(id[slot]!.sub(k).abs(), 0.5)) : acc),
-          float(1),
-        );
-      const country = share
-        .map((w, slot) => w.mul(countryIn(slot)))
-        .reduce((a, b) => a.add(b))
-        .toVar();
-      // Nobody here is a country: the first biome takes it, the sampler's own
-      // rule for ground no presence claims.
-      const unclaimed = float(1).sub(step(COUNTRY_FLOOR, country));
       const total = float(0).toVar();
       biomes.forEach((_biome, k) => {
         const hook = hooks[k];
         if (!hook) return;
-        // this fragment's share of this biome: the slots that name it, added
-        // up, as a share of the country rather than of the whole fragment
-        const mask = share
-          .map((w, slot) => w.mul(step(id[slot]!.sub(k).abs(), 0.5)))
-          .reduce((a, b) => a.add(b))
-          .div(country.max(COUNTRY_FLOOR))
-          .toVar();
-        if (k === 0) mask.addAssign(unclaimed);
+        const mask = masks[k]!;
         If(mask.greaterThan(BRANCH_FLOOR), () => {
           const out = hook({ ...context, weight: mask, params: biomeParams[k]! } as GroundCtx);
           ground.addAssign(out.albedo.mul(mask));
@@ -443,7 +506,6 @@ export function createTerrain(deps: {
     // a slow wander keeps it off the map. Snow holds where the ground is gentle
     // enough to hold it; a steeper face is the rock underneath, which is also
     // what makes a summit read as a summit rather than as an iced bun.
-    const baseTemp = loadSlots(ix, iz).w.mul(BASE_TEMP_RANGE);
     const wander = mx_noise_float(worldXZ.mul(1 / 260))
       .mul(SNOW.wander)
       .add(mx_noise_float(worldXZ.mul(1 / 70)).mul(SNOW.wander * 0.3));
@@ -511,6 +573,7 @@ export function createTerrain(deps: {
   return {
     mesh,
     loadCell,
+    loadSlots,
     uAnchor,
     update(anchorWorldX: number, anchorWorldZ: number, originX: number, originZ: number) {
       uAnchor.value.set(anchorWorldX, anchorWorldZ);

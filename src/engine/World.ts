@@ -284,6 +284,7 @@ export function createWorld(opts: WorldOptions): World {
     cell: FAR_CELL,
     cells: FAR_CELLS,
     hole: HOLE,
+    smooth: true,
   });
   const terrain = createTerrain({
     heightfield,
@@ -292,7 +293,7 @@ export function createWorld(opts: WorldOptions): World {
     palette,
     biomes: library.biomes,
     shade,
-    coarse: farTerrain.loadCell,
+    coarse: { load: farTerrain.loadCell, slots: farTerrain.loadSlots },
   });
   scene.add(terrain.mesh, farTerrain.mesh);
   const water = createWater({
