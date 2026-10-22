@@ -14,6 +14,114 @@ const PLACES = [
   { x: 2720, z: 2240 },
 ];
 
+/**
+ * Every pit the cut made on three seeds before a node listened to its 5x5 of
+ * walks, one place in 128 m: over a 120 km square, around every point on a
+ * 256 m grid the cut takes down by more than 20 m, at least 3 km from the last
+ * one taken, a window of 192 x 192 cells, counting only a pit the cut made.
+ */
+const OLD_PITS: Record<number, [number, number][]> = {
+  42: [
+    [44800, -54096],
+    [-2576, -53520],
+    [56864, -51888],
+    [11840, -44320],
+    [24112, -38752],
+    [-58352, -35712],
+    [57152, -30800],
+    [-12480, -10592],
+    [-56224, 1984],
+    [1264, 3776],
+    [27488, 3760],
+    [22464, 22192],
+    [3552, 23152],
+    [25616, 26304],
+    [42944, 26064],
+    [48752, 29824],
+    [-21696, 30832],
+    [-57856, 33328],
+    [24336, 36736],
+    [26032, 38400],
+    [44288, 37312],
+    [-37808, 43632],
+    [-32384, 47328],
+    [31072, 46208],
+    [-49536, 58320],
+  ],
+  7: [
+    [-27328, -59600],
+    [-46448, -56416],
+    [23488, -49984],
+    [-38704, -34176],
+    [-17520, -33920],
+    [-50688, -24432],
+    [-27312, -20368],
+    [-2240, -17360],
+    [40320, -14336],
+    [-11504, -9792],
+    [-13408, -4864],
+    [36544, -1552],
+    [-11808, -1440],
+    [29136, 48],
+    [-11792, 1280],
+    [11776, 7200],
+    [-4784, 11280],
+    [50992, 14144],
+    [-55152, 14672],
+    [20160, 15120],
+    [20624, 15376],
+    [26816, 14352],
+    [39296, 14528],
+    [15200, 16240],
+    [-37392, 16608],
+    [14848, 21200],
+    [15360, 21680],
+    [42832, 29632],
+    [18800, 35504],
+    [18736, 35984],
+    [-40256, 37200],
+    [-42624, 36496],
+    [53840, 43264],
+    [-55088, 44048],
+    [-54304, 44144],
+    [-18688, 54256],
+    [43456, 55616],
+    [-5344, 59984],
+  ],
+  1234: [
+    [16368, -59600],
+    [23040, -59280],
+    [56832, -53968],
+    [5904, -51904],
+    [-20816, -51136],
+    [-20368, -50304],
+    [-31312, -52080],
+    [53344, -48240],
+    [20256, -40432],
+    [-6656, -40704],
+    [-7792, -39744],
+    [28096, -29664],
+    [35456, -30080],
+    [512, -19952],
+    [-13456, 0],
+    [23552, 1936],
+    [35360, 2320],
+    [-37712, 5248],
+    [-26240, 9808],
+    [24192, 11920],
+    [-43264, 29568],
+    [35568, 31232],
+    [47488, 33584],
+    [-29056, 39440],
+    [-560, 40368],
+    [-58160, 46208],
+    [-8064, 48592],
+    [-54176, 54304],
+    [848, 55008],
+    [-58576, 56592],
+  ],
+};
+
 /** A point near (x, z) the cliffs cut by at least `depth` metres, on a 16 m grid. */
 const cutNear = (s: WorldSampler, x0: number, z0: number, depth: number) => {
   const out = new Float64Array(5);
@@ -210,6 +318,48 @@ describe('sea cliffs in the sampler', () => {
     }
     expect(totalPits).toBe(0);
     expect(totalIslets).toBe(0);
+  });
+  it('leaves no pit where a node that heard only its 3x3 of walks left one', () => {
+    // A pit here is the one the two places above are held to, made by the
+    // cut: a cell over 3 m under each of its four neighbours, which the cut
+    // touched (it or a neighbour stands apart from the ground without cliffs),
+    // and which that ground does not have already -- this world has hollows of
+    // its own, and counted with them these places were three times as many.
+    const R = 4,
+      size = 2 * R + 1;
+    const out = new Float64Array(4),
+      slots = new Uint8Array(4);
+    const still: string[] = [];
+    for (const [seed, places] of Object.entries(OLD_PITS)) {
+      const cut = createWorldSampler(+seed, { biomes: lib.biomes });
+      const bare = createWorldSampler(+seed, { biomes: lib.biomes, seaCliffs: false });
+      for (const [px, pz] of places) {
+        const h = new Float64Array(size * size),
+          b = new Float64Array(size * size);
+        for (let j = 0; j < size; j++)
+          for (let i = 0; i < size; i++) {
+            const x = px + (i - R) * 16,
+              z = pz + (j - R) * 16;
+            cut.sampleWindow(x, z, out, slots);
+            h[j * size + i] = out[0]!;
+            bare.sampleWindow(x, z, out, slots);
+            b[j * size + i] = out[0]!;
+          }
+        for (let j = 1; j < size - 1; j++)
+          for (let i = 1; i < size - 1; i++) {
+            const k = j * size + i,
+              near = [k - 1, k + 1, k - size, k + size];
+            const touched = [k, ...near].some((n) => Math.abs(h[n]! - b[n]!) > 0.01);
+            if (!touched || near.every((n) => b[k]! < b[n]! - 3)) continue;
+            if (near.every((n) => h[k]! < h[n]! - 3))
+              still.push(`${seed} (${px + (i - R) * 16}, ${pz + (j - R) * 16})`);
+          }
+      }
+    }
+    console.log(`pits still standing: ${still.join(', ') || 'none'}`);
+    // A cliff coast turns into a beach here within one node, and the walks on
+    // either side vote 1 and 0: what is left is that border, not the noise.
+    expect(still).toEqual(['1234 (-54160, 54304)']);
   });
   it('cuts a tenth to a fifth of the coast, here and there', () => {
     const out = new Float64Array(4),

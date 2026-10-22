@@ -138,12 +138,14 @@ z nachylenia siatki znajduje linię tak samo często za mniej niż połowę pró
 
 **Odległość węzła to nie długość jego własnego marszu**, tylko odległość od
 węzła do najbliższego punktu linii, który znalazł którykolwiek zbieżny marsz
-z jego sąsiedztwa 3×3, ze znakiem wysokości węzła (+ na lądzie). Na
+z jego sąsiedztwa 5×5, ze znakiem wysokości węzła (+ na lądzie). Na
 postrzępionym brzegu dwa sąsiednie marsze lądują na różnych odcinkach linii
 (odległości różniły się o ok. 3× między węzłami 64 m od siebie), i własny
-marsz sam zostawiał pojedyncze dołki po 13 m. Sąsiedztwo 5×5 kosztowało
-25 odczytów marszu na węzeł i też nie usuwało wszystkich wad; resztę usunął
-człon klifu z §5.5.
+marsz sam zostawiał pojedyncze dołki po 13 m. W pierwszej wersji sąsiedztwo
+było 3×3: 5×5 próbowane wtedy, przed członem klifu z §5.5, nie usuwało
+wszystkich wad i kosztowało 25 odczytów marszu na węzeł. Po członie klifu
+okazało się, że to 3×3 zostawia dołki na reszcie wybrzeża (§14), i weszło
+5×5.
 
 Węzeł, w którego sąsiedztwie żaden marsz nie znalazł linii albo którego
 najbliższa linia leży dalej niż `REACH` (najszerszy pas + `jag` + przekątna
@@ -208,7 +210,7 @@ wyostrzenie (`sharp = sstep(0.35, 0.65, ·)`), a maska `m` nie, bo ona ma
 zanikać łagodnie.
 
 **Człon klifu węzła** to `sharp(worth · sea)` każdego zbieżnego marszu z jego
-sąsiedztwa 3×3, uśredniony z wagą `exp(-d / 64 m)`, gdzie `d` to odległość od
+sąsiedztwa 5×5, uśredniony z wagą `exp(-d / 64 m)`, gdzie `d` to odległość od
 węzła do linii tego marszu; w punkcie, po interpolacji, wyostrzany jeszcze
 raz. Wyostrzany w marszu, a nie dopiero po zmieszaniu: mieszanka `sea` i
 `front` leżała na całych stokach w środku wyostrzenia, i każde jej małe
@@ -442,13 +444,9 @@ oszczędza, skoro płaci on za gałąź, której nie bierze.
   przejścia.
   - **bez dołków:** żadna komórka nie leży ponad 3 m niżej niż każda z
     czterech sąsiednich. Dotyczy dwóch klifów, na których algorytm był
-    strojony. Na całym wybrzeżu ta sama definicja znajduje dołki w ok.
-    jednym klifie na siedem, osiem: w kwadracie 120 km, okno 192×192 komórek
-    wokół każdego miejsca podciętego o ponad 20 m (co najmniej 3 km od
-    poprzedniego), seed 42: 68 z 555 (12,3%), seed 7: 77 z 541 (14,2%),
-    seed 1234: 75 z 541 (13,9%); np. seed 42 (56864, −51888), seed 7
-    (−11504, −9792), seed 1234 (3888, −9696). Algorytm zostaje bez zmian
-    (§13);
+    strojony. Reszta wybrzeża: test przechodzi po 93 miejscach, w których
+    sąsiedztwo 3×3 zostawiało dołek (§14), w oknie 9×9 każde; zostaje jedno,
+    nazwane w teście (granica klifu i plaży, nie szum);
   - **bez wysepek:** żaden spójny kawałek lądu (`h > 0`) mniejszy niż 9
     komórek, stykający się z podciętą komórką i nie dotykający brzegu okna
     (ląd uciekający za okno może być stałym lądem, który okno ucięło), nie
@@ -516,10 +514,55 @@ normalna na piksel, osobny kolor skały klifu w bibliotece, suwaki w panelu.
   maski.
 - Start lotu (0, 0): klif może stanąć 900 m od startu (probe 2). Scena
   otwarcia leci pod pokładem chmur; do obejrzenia, czy klif jej nie psuje.
-- Dołki poza dwoma klifami, na których algorytm był strojony: ok. 12–14%
-  klifów trzech seedów ma co najmniej jeden (§10, lista w
-  `docs/perf-notes.md`). Test ich nie widzi, bo pyta tylko o te dwa miejsca;
-  następna runda przy dołkach powinna zacząć od tej listy.
+- Dołki poza dwoma klifami, na których algorytm był strojony: **zamknięte
+  w §14**. Zostaje ok. 1% klifów, tam, gdzie klif przechodzi w plażę na
+  długości jednego węzła.
 - Podcięcie liczone jest z `base`, a dodawane do `h` po hakach. Dziś hak
   wysokości mają tylko osady (`plateau`), a im klif ustępuje; biom z `offset`
   albo `terraces` na wybrzeżu przesunąłby dno podcięcia o swoją zmianę.
+
+## 14. Dołki na całym wybrzeżu (2026-10-22)
+
+Lista z §13 zawyżała: pomiar liczył każdy dołek w oknie, także te, które
+teren ma sam z siebie, bez klifów, często na wzgórzu daleko od podcięcia.
+Liczony jako dołek podcięcia tylko wtedy, gdy podcięcie dotknęło komórki
+albo sąsiada, a goły teren nie ma tam dołka, wychodzi 4,3 / 6,3 / 5,2%
+klifów (seedy 42 / 7 / 1234), nie 12–14%.
+
+**Przyczyna.** Człon klifu węzła to głos marszów z sąsiedztwa. Przy 3×3 dwa
+węzły o komórkę od siebie słyszały różne marsze: ten przy brzegu marsze,
+które wylądowały obok niego, a następny w głąb lądu tylko te z własnego
+wiersza. Głos skakał więc z węzła na węzeł w poprzek pasa (0,43 → 0,65 →
+0,43 w jednym wierszu seeda 42 przy (1264, 3776)), a tam, gdzie miał
+szczyt w połowicznym podcięciu, jedna komórka była podcięta najgłębiej, czyli
+była dołkiem. Jeden taki leżał 150 m od wody: rowek za niepodciętym lądem.
+
+**Poprawka.** Sąsiedztwo 5×5 (`NEIGHBOURS = 2`): węzły w poprzek pasa
+słyszą w większości te same marsze. Dołki: 0,9 / 0,6 / 0,9%. Zostają tam,
+gdzie klif przechodzi w plażę w obrębie jednego węzła i marsze po obu
+stronach głosują 1 i 0: to granica, nie szum. Wysepek (definicja z §10)
+ubyło z 68 do 54 na trzech seedach; to głównie paski u stopy połowicznego
+podcięcia i ostańce tam, gdzie podcięte są oba brzegi wąskiego cypla, i były
+też przedtem.
+
+Sprawdzone i odrzucone: kierunek do odczytu `sea` i `front` brany ze
+spadku w punkcie linii zamiast z marszu, żeby głos należał do linii, a nie do
+marszu. Nie zmienił nic (33 / 25 / 29 klifów z dołkiem przy 3×3), a kosztuje
+dwie próbki na zbieżny marsz.
+
+**Koszt** (ten kontener, Node 22, metoda z §9): bliskie okno +5,0..6,5%
+wobec +4,5..6,5% przed zmianą, po zamianie `Math.hypot` na pierwiastek w
+pętli węzła (25 wywołań na węzeł; sam `hypot` kosztował prawie punkt
+procentowy). Dalekie okno +55..71% wobec +40..51%, czyli ok. 0,15 ms więcej
+na każdy zapisany wiersz dalekiego okna i ok. 35 ms na starcie, za zasłoną.
+
+**Świat się zmienił:** złote skróty `ringGolden` przesunięte (±1 drzewo albo
+prop w trzech miejscach), udział podciętego wybrzeża 13,2% (był 13,3%), oba
+sfotografowane klify bez dołków i wysepek, skraj miasta 1,4 m przy
+dozwolonych 9,7 m.
+
+**Test:** `seaCliffsWorld.test.ts` przechodzi po 93 miejscach (jedno na
+128 m), w których sąsiedztwo 3×3 zostawiało dołek, w oknie 9×9 komórek
+każde, i oczekuje dokładnie jednego, nazwanego: seed 1234 (−54160, 54304).
+Przy `NEIGHBOURS = 1` znajduje ich kilkadziesiąt. Liczby i tabela w
+`docs/perf-notes.md`.
