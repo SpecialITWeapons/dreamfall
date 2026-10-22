@@ -509,11 +509,15 @@ normalna na piksel, osobny kolor skały klifu w bibliotece, suwaki w panelu.
 - `front` w marszu czyta bazę W w górę stoku od linii wody, w kierunku
   nachylenia siatki w węźle, z którego marsz wyszedł; na krętym brzegu ten kierunek może
   nie trafić w ląd za frontem. Widać to na zdjęciach, nie w teście.
-- Osada z `shoreBonus` przy brzegu w masce: zatoczka zamiast klifu. Jeśli
-  wioska w zatoczce będzie wyglądać źle, alternatywą jest odsuwanie osad od
-  maski.
-- Start lotu (0, 0): klif może stanąć 900 m od startu (probe 2). Scena
-  otwarcia leci pod pokładem chmur; do obejrzenia, czy klif jej nie psuje.
+- Osada z `shoreBonus` przy brzegu w masce: zatoczka zamiast klifu.
+  **Obejrzane 2026-10-22**: miasto seeda 42 przy (−5289, −7577) z morza
+  (`tools/cliffs/look.mjs -5839 -8530 0.5 0.866`): ściana schodzi w plażę
+  przed miastem i zatoczka czyta się jak zatoczka; odsuwać osad od maski nie
+  trzeba.
+- Start lotu (0, 0): klif może stanąć 900 m od startu (probe 2). **Obejrzane
+  2026-10-22**: najbliższe podcięcie seeda 42 (ok. 19 m) leży 550 m od
+  startu, przy (328, −440), a otwarcie leci od startu na +x, +z, czyli tyłem
+  do niego; na trzynastu klatkach co 4 s otwarcia klifu nie widać.
 - Dołki poza dwoma klifami, na których algorytm był strojony: **zamknięte
   w §14**. Zostaje ok. 1% klifów, tam, gdzie klif przechodzi w plażę na
   długości jednego węzła.
