@@ -12,7 +12,7 @@
 // past a few metres from the water and the cut is full of holes. A node's own
 // straight walk down the gradient can land far from where a neighbour's does
 // -- a ragged coast bends between them -- so a node's distance is to the
-// nearest water-line point its own 3x3 neighbourhood of walks found, never to
+// nearest water-line point its own 5x5 neighbourhood of walks found, never to
 // its own walk alone: one walk's line, taken by itself, left pits where a
 // neighbour's was nearer. Whether it is a cliff coast is not the nearest
 // walk's answer but all of theirs, weighed by how near each landed: that
@@ -66,8 +66,15 @@ export const COAST_NODE = 64;
 const NEWTON_STEPS = 4;
 /** Nodes remembered; a power of two. */
 const CACHE = 4096;
-/** How far a node looks for a nearer walk, in cells either side: 1 is 3x3. */
-const NEIGHBOURS = 1;
+/**
+ * How far a node looks for a nearer walk, in cells either side: 2 is 5x5. It
+ * was 1, and two nodes a cell apart then heard different walks: one from the
+ * coast saw the walks that landed beside it and the next one inland only those
+ * of its own row, so the vote swung from node to node across the band and left
+ * a hollow wherever it peaked in a half-made cut -- in one cliff in twenty.
+ * Five by five, the nodes across a band share most of what they hear.
+ */
+const NEIGHBOURS = 2;
 /** Where the sharpening of the cliff term starts: at or under it, no cut. */
 const CLIFF_FLOOR = 0.35;
 /** How fast a walk's say in whether a node's coast is a cliff falls with distance, m. */
@@ -188,7 +195,7 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
     walkCliff[slot] = sharp(worth * sea);
     return slot;
   };
-  // The node: the nearest water-line point its own 3x3 neighbourhood of walks
+  // The node: the nearest water-line point its own 5x5 neighbourhood of walks
   // found, not its own walk alone -- two neighbours' straight descents can
   // land on different stretches of a ragged coast, and the nearer one is the
   // node's true distance. Whether its coast is a cliff coast is every
@@ -223,7 +230,11 @@ export function createSeaCliffs(base: BaseHeight, salt: number, form: SeaCliffFo
         // The node's own height is where its own walk set out from.
         if (dx === 0 && dz === 0) own = walkStart[w]!;
         if (!wConverged) continue;
-        const dist = Math.hypot(wLx - x0, wLz - z0);
+        // Not Math.hypot: this runs twenty-five times a node, and hypot paid
+        // for the larger neighbourhood's share of a near window by itself.
+        const ddx = wLx - x0,
+          ddz = wLz - z0;
+        const dist = Math.sqrt(ddx * ddx + ddz * ddz);
         if (dist < bestDist) bestDist = dist;
         // Relative to the nearest walk this is exp(-(dist - nearest) / BLEND),
         // and a walk lands 1.6 km off at most (four steps of 400 m), so the

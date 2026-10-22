@@ -1252,20 +1252,59 @@ worth a second way of reading the lattice for 0.2 ms a crossing.
 ### Pits away from the photographed cliffs
 
 `seaCliffsWorld.test.ts` holds two cliffs of seed 42 near the origin to no pit
-(a cell 3 m under all four neighbours). Asked of the whole coast, the same
-definition finds pits in about one cliff in seven or eight: over a 120 km
+(a cell 3 m under all four neighbours). Asked of the whole coast: over a 120 km
 square, every point on a 256 m grid the cut takes down by more than 20 m, at
-least 3 km from the last one taken, and a window of 192 x 192 cells around it:
+least 3 km from the last one taken, and a window of 192 x 192 cells around it.
 
-| Seed | Cliffs | With a pit | Share |
-| ---- | ------ | ---------- | ----- |
-| 42   | 555    | 68         | 12.3% |
-| 7    | 541    | 77         | 14.2% |
-| 1234 | 541    | 75         | 13.9% |
+The first count of this read a pit in one cliff in seven or eight (68, 77 and
+75 of seeds 42, 7 and 1234), and two thirds of that was the world's own: a
+hollow the ground without cliffs has already, often on a hill nowhere near the
+cut. Counted as the cut's only when the cut touched the cell or a neighbour and
+the bare ground has no pit there, the 3x3 neighbourhood the nodes had then left
+one in twenty, and the 5x5 they have now one in a hundred:
 
-Among them seed 42 at (56864, -51888), seed 7 at (-11504, -9792) and seed
-1234 at (3888, -9696). The algorithm is left as it is; a test that asks more
-of it should walk this list rather than the two cliffs it was tuned on.
+| Seed | Cliffs | With a pit, 3x3 | With a pit, 5x5 | Islets, 3x3 | Islets, 5x5 |
+| ---- | ------ | --------------- | --------------- | ----------- | ----------- |
+| 42   | 555    | 24 (4.3%)       | 5 (0.9%)        | 22          | 13          |
+| 7    | 541    | 34 (6.3%)       | 3 (0.6%)        | 20          | 24          |
+| 1234 | 541    | 28 (5.2%)       | 5 (0.9%)        | 26          | 17          |
+
+(The cliffs are counted again on the new ground, so the second column's total
+moves by a few. An islet is the test's: land under nine cells by a cut cell,
+standing over a metre. Most are slivers at the foot of a half-made cut, and a
+few are sea stacks where both sides of a narrow headland are cut; they were
+there before.)
+
+What the pits were: a node's cliff term is a vote of the walks around it, and
+with 3x3 two nodes a cell apart heard different walks -- the one by the coast
+the walks that landed beside it, the next one inland only those of its own row
+-- so the vote swung from node to node across the band (0.43, 0.65, 0.43 on
+one row of seed 42 at (1264, 3776)). Wherever it peaked inside a half-made cut,
+the cut was deepest at one cell and that cell was a hollow; one of them stood
+in the cut 150 m from the water, a groove behind uncut land. Taking the slope
+for the vote's two readings at the water-line point rather than along the
+walk, so that the vote belongs to the line, changed nothing (33, 25 and 29
+cliffs with a pit) and was left out. What is left with 5x5 is where a cliff
+coast turns to a beach within a node, the walks on either side voting 1 and 0:
+a border, not noise.
+
+`seaCliffsWorld.test.ts` walks every place the 3x3 made a pit, 93 of them on
+the three seeds, a 9 x 9 window each, in a tenth of a second; one of them,
+seed 1234 at (-54160, 54304), is such a border and is named in the test.
+
+What it costs, on the cloud container this was done in (Node 22, Linux), the
+method above, two runs of each interleaved with each other:
+
+| Window | 3x3          | 5x5          |
+| ------ | ------------ | ------------ |
+| near   | +4.5 to 6.5% | +5.0 to 6.5% |
+| far    | +40 to 51%   | +55 to 71%   |
+
+The near window pays nothing measurable once the node's distance is a square
+root rather than `Math.hypot`, which alone took most of a percentage point at
+twenty-five calls a node. The far one, whose every texel is a node, pays about
+fifteen points more: some 0.15 ms each time a far row is written, and about
+35 ms on the start, behind the veil.
 
 ### The wall's branch
 

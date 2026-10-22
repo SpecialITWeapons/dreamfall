@@ -140,7 +140,7 @@ page works under a Pages subdirectory.
   off); `sample` and `baseFields` do not see it, so the golden values hold.
   Where the line is and whether a cliff stands on it are asked of **a lattice
   of nodes every 64 m**: each walks toward the line off the lattice's heights,
-  takes the nearest line any walk of its 3x3 found and a cliff term blended from
+  takes the nearest line any walk of its 5x5 found and a cliff term blended from
   all of them, and says nothing past `REACH`; a point mixes its cell's corners.
   A node is a pure function of its indices, so a point is too, whatever the
   order or the caches -- and the caches alias, so a slot is read out before
@@ -152,7 +152,7 @@ page works under a Pages subdirectory.
   at both ends (`scenery/RouteGround.ts`, each `Site`'s radius and feather).
   The cut is decided on the base height and added to the hooked one, so a
   coastal biome's `offset` or `terraces` would move its floor too. A fill of
-  the near window costs 4.7 to 6.7 % more and one of the far window 40 to 50 %
+  the near window costs 5 to 6.5 % more and one of the far window 55 to 70 %
   (its texels sit on the lattice's nodes; numbers and levers in
   `docs/perf-notes.md`); `tools/cliffs/look.mjs` photographs one.
 - The simulation works in world coordinates (double precision); the scene is
